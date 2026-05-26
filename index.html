@@ -2,16 +2,88 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA essentials -->
     <meta name="theme-color" content="#0d9488" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Ammar Cell" />
+    <meta name="application-name" content="Ammar Cell" />
     <meta name="description" content="Ammar Cell - Sistem Kasir Terpadu" />
-    <title>Ammar Cell — Kasir</title>
-    <!-- PWA: bisa di-add to home screen di HP -->
+
+    <!-- Icons -->
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+
+    <!-- Prevent zoom on input focus (penting untuk kasir) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <title>Ammar Cell — Kasir</title>
+
+    <style>
+      /* Fullscreen safe area untuk notch/punch hole */
+      body {
+        margin: 0;
+        padding: 0;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
+      /* Splash screen saat loading */
+      #splash {
+        position: fixed; inset: 0;
+        background: linear-gradient(135deg, #0a7a70, #0d9488, #14b8a6);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        z-index: 9999; transition: opacity 0.4s;
+        font-family: sans-serif; color: white;
+      }
+      #splash.hide { opacity: 0; pointer-events: none; }
+      #splash-icon { font-size: 64px; margin-bottom: 12px; }
+      #splash-title { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; }
+      #splash-sub { font-size: 13px; opacity: 0.7; margin-top: 4px; }
+      #splash-spinner {
+        width: 32px; height: 32px; margin-top: 28px;
+        border: 3px solid rgba(255,255,255,0.3);
+        border-top-color: white; border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
+    <!-- Splash screen -->
+    <div id="splash">
+      <div id="splash-icon">🏪</div>
+      <div id="splash-title">Ammar Cell</div>
+      <div id="splash-sub">Sistem Kasir Terpadu</div>
+      <div id="splash-spinner"></div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <script>
+      // Sembunyikan splash setelah app load
+      window.addEventListener("load", () => {
+        setTimeout(() => {
+          const s = document.getElementById("splash");
+          if (s) { s.classList.add("hide"); setTimeout(() => s.remove(), 400); }
+        }, 800);
+      });
+
+      // Register Service Worker untuk PWA
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js")
+            .then(() => console.log("SW registered"))
+            .catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>
