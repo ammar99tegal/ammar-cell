@@ -202,18 +202,6 @@ function LoginPage({ users, onLogin }) {
         <button onClick={handleLogin} style={{width:"100%",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:800,fontSize:15,cursor:loading?"not-allowed":"pointer",marginTop:8,boxShadow:loading?"none":"0 4px 16px rgba(13,148,136,.4)"}}>
           {loading?"⏳ Masuk...":"Masuk →"}
         </button>
-        <div style={{marginTop:16,background:"#f0faf8",borderRadius:10,padding:"10px 12px",fontSize:11}}>
-          <div style={{fontWeight:800,color:"#0d9488",marginBottom:5}}>👤 Akun Demo:</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:3}}>
-            {Object.entries(users).map(([u,d])=>(
-              <div key={u} onClick={()=>{setUsername(u);setPassword(d.pass);setError("");}}
-                style={{background:"#fff",borderRadius:7,padding:"4px 8px",cursor:"pointer",border:"1px solid #e0f5f1"}}>
-                <span style={{fontWeight:700,color:"#0d9488"}}>{u}</span>
-                <span style={{fontSize:10,color:d.role==="admin"?"#8e44ad":"#888",marginLeft:4}}>{d.role==="admin"?"👑":d.outletId||"👷"}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -294,38 +282,71 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
 
   const openAddOutlet = ()=>{ setEditOutlet(null); setOForm({nama:"",alamat:""}); setShowOutletForm(true); };
   const openEditOutlet= o=>{ setEditOutlet(o); setOForm({nama:o.nama,alamat:o.alamat}); setShowOutletForm(true); };
-  const saveOutlet = ()=>{
+  const saveOutlet = async ()=>{
     if (!oForm.nama.trim()) return notify("Isi nama outlet!","err");
     if (editOutlet) {
-      setOutlets(prev=>prev.map(o=>o.id===editOutlet.id?{...o,...oForm}:o));
-      notify("Outlet diperbarui","ok");
+      try {
+        await db.updateOutlet(editOutlet.id, oForm);
+        setOutlets(prev=>prev.map(o=>o.id===editOutlet.id?{...o,...oForm}:o));
+        notify("Outlet diperbarui","ok");
+      } catch(e) { notify("Gagal simpan outlet!","err"); return; }
     } else {
       const id="o"+uid();
-      setOutlets(prev=>[...prev,{id,nama:oForm.nama.trim(),alamat:oForm.alamat.trim(),aktif:true}]);
-      setStocks(prev=>({...prev,[id]:Object.fromEntries(products.map(p=>[p.id,0]))}));
-      notify("Outlet ditambahkan","ok");
+      const newOutlet = {id,nama:oForm.nama.trim(),alamat:oForm.alamat.trim(),aktif:true};
+      try {
+        await db.addOutlet(newOutlet);
+        setOutlets(prev=>[...prev,newOutlet]);
+        setStocks(prev=>({...prev,[id]:Object.fromEntries(products.map(p=>[p.id,0]))}));
+        notify("Outlet ditambahkan","ok");
+      } catch(e) { notify("Gagal tambah outlet!","err"); return; }
     }
     setShowOutletForm(false);
   };
-  const toggleOutlet = id=>setOutlets(prev=>prev.map(o=>o.id===id?{...o,aktif:!o.aktif}:o));
-  const deleteOutlet = id=>{ setOutlets(prev=>prev.filter(o=>o.id!==id)); setStocks(prev=>{const s={...prev};delete s[id];return s;}); setConfirmDel(null); notify("Outlet dihapus","warn"); };
+  const toggleOutlet = async id=>{
+    const o = outlets.find(x=>x.id===id);
+    if(!o) return;
+    try {
+      await db.updateOutlet(id, {aktif:!o.aktif});
+      setOutlets(prev=>prev.map(x=>x.id===id?{...x,aktif:!x.aktif}:x));
+    } catch(e) { notify("Gagal update outlet!","err"); }
+  };
+  const deleteOutlet = async id=>{
+    try {
+      await db.deleteOutlet(id);
+      setOutlets(prev=>prev.filter(o=>o.id!==id));
+      setStocks(prev=>{const s={...prev};delete s[id];return s;});
+      setConfirmDel(null); notify("Outlet dihapus","warn");
+    } catch(e) { notify("Gagal hapus outlet!","err"); }
+  };
 
   const openAddUser  = ()=>{ setEditUser(null); setUForm({username:"",pass:"",nama:"",outletId:"",role:"karyawan"}); setShowUserForm(true); };
   const openEditUser = (u,k)=>{ setEditUser(k); setUForm({username:k,pass:u.pass,nama:u.nama,outletId:u.outletId||"",role:u.role}); setShowUserForm(true); };
-  const saveUser = ()=>{
+  const saveUser = async ()=>{
     if (!uForm.username.trim()||!uForm.pass||!uForm.nama) return notify("Isi semua field!","err");
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
-    const key = editUser||uForm.username.toLowerCase();
-    setUsers(prev=>{
-      const n={...prev};
-      if(editUser&&editUser!==uForm.username.toLowerCase()){delete n[editUser];}
-      n[uForm.username.toLowerCase()]={pass:uForm.pass,nama:uForm.nama.trim(),role:uForm.role,outletId:uForm.outletId||null};
-      return n;
-    });
-    notify(editUser?"User diperbarui":"User ditambahkan","ok");
-    setShowUserForm(false);
+    const userData = {pass:uForm.pass,nama:uForm.nama.trim(),role:uForm.role,outletId:uForm.outletId||null};
+    try {
+      if(editUser && editUser!==uForm.username.toLowerCase()) {
+        await db.deleteUser(editUser);
+      }
+      await db.upsertUser(uForm.username.toLowerCase(), userData);
+      setUsers(prev=>{
+        const n={...prev};
+        if(editUser&&editUser!==uForm.username.toLowerCase()){delete n[editUser];}
+        n[uForm.username.toLowerCase()]=userData;
+        return n;
+      });
+      notify(editUser?"User diperbarui":"User ditambahkan","ok");
+      setShowUserForm(false);
+    } catch(e) { notify("Gagal simpan user!","err"); }
   };
-  const deleteUser = k=>{ setUsers(prev=>{const n={...prev};delete n[k];return n;}); setConfirmDel(null); notify("User dihapus","warn"); };
+  const deleteUser = async k=>{
+    try {
+      await db.deleteUser(k);
+      setUsers(prev=>{const n={...prev};delete n[k];return n;});
+      setConfirmDel(null); notify("User dihapus","warn");
+    } catch(e) { notify("Gagal hapus user!","err"); }
+  };
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
@@ -487,62 +508,210 @@ function CategoryEditRow({ cat, onSave }) {
 // PRODUK (Master Produk — tanpa stok, stok ada di per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
 function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }) {
-  const [showModal,  setShowModal]  = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [form,       setForm]       = useState({name:"",barcode:"",category:"",price:"",modal:""});
-  const [search,     setSearch]     = useState("");
-  const [catFilter,  setCatFilter]  = useState("Semua");
-  const [confirmDel, setConfirmDel] = useState(null);
-  const [editCats,   setEditCats]   = useState(false); // mode edit kategori
-  const [catForm,    setCatForm]    = useState(""); // nama kategori baru
+  const [showModal,   setShowModal]   = useState(false);
+  const [editTarget,  setEditTarget]  = useState(null);
+  const [form,        setForm]        = useState({name:"",barcode:"",category:"",price:"",modal:""});
+  const [search,      setSearch]      = useState("");
+  const [catFilter,   setCatFilter]   = useState("Semua");
+  const [confirmDel,  setConfirmDel]  = useState(null);
+  const [editCats,    setEditCats]    = useState(false);
+  const [catForm,     setCatForm]     = useState("");
+  const [bulkMode,    setBulkMode]    = useState(false);
+  const [bulkData,    setBulkData]    = useState([]);
+  const [showImport,  setShowImport]  = useState(false);
+  const [importText,  setImportText]  = useState("");
+  const [importError, setImportError] = useState("");
+  const [saving,      setSaving]      = useState(false);
 
-  const allCats = ["Semua",...Array.from(new Set(products.map(p=>p.category)))];
+  const allCats    = ["Semua",...Array.from(new Set(products.map(p=>p.category)))];
   const uniqueCats = Array.from(new Set(products.map(p=>p.category)));
   const fp = products.filter(p=>(catFilter==="Semua"||p.category===catFilter)&&(p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search)));
 
   const openAdd  = ()=>{ setEditTarget(null); setForm({name:"",barcode:"",category:"",price:"",modal:""}); setShowModal(true); };
   const openEdit = p=>{ setEditTarget(p); setForm({name:p.name,barcode:p.barcode||"",category:p.category,price:String(p.price),modal:String(p.modal)}); setShowModal(true); };
 
-  const save = ()=>{
+  const save = async ()=>{
     if(!form.name.trim())    return notify("Isi nama produk!","err");
     if(!form.price)          return notify("Isi harga jual!","err");
     if(!form.category.trim())return notify("Isi kategori!","err");
     if(editTarget){
-      setProducts(prev=>prev.map(p=>p.id===editTarget.id?{...p,name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0}:p));
-      notify("Produk diperbarui ✓","ok");
+      const updated={name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0};
+      try{ await db.updateProduct(editTarget.id,updated); setProducts(prev=>prev.map(p=>p.id===editTarget.id?{...p,...updated}:p)); notify("Produk diperbarui ✓","ok"); }
+      catch{ notify("Gagal simpan!","err"); return; }
     } else {
-      const newId=Math.max(0,...products.map(p=>p.id))+1;
-      setProducts(prev=>[...prev,{id:newId,name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0}]);
-      // tambah ke semua stok outlet dengan nilai 0
-      setStocks(prev=>{ const s={...prev}; Object.keys(s).forEach(oid=>{s[oid]={...s[oid],[newId]:0};}); return s; });
-      notify("Produk ditambahkan ✓","ok");
+      const newProd={name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0};
+      try{
+        const saved=await db.addProduct(newProd);
+        setProducts(prev=>[...prev,saved]);
+        setStocks(prev=>{ const s={...prev}; Object.keys(s).forEach(oid=>{s[oid]={...s[oid],[saved.id]:0};}); return s; });
+        notify("Produk ditambahkan ✓","ok");
+      } catch{ notify("Gagal tambah!","err"); return; }
     }
     setShowModal(false);
   };
 
-  const del = id=>{
-    setProducts(prev=>prev.filter(p=>p.id!==id));
-    setStocks(prev=>{ const s={...prev}; Object.keys(s).forEach(oid=>{const o={...s[oid]};delete o[id];s[oid]=o;}); return s; });
-    setConfirmDel(null); notify("Produk dihapus","warn");
+  const del = async id=>{
+    try{ await db.deleteProduct(id); setProducts(prev=>prev.filter(p=>p.id!==id)); setStocks(prev=>{ const s={...prev}; Object.keys(s).forEach(oid=>{const o={...s[oid]};delete o[id];s[oid]=o;}); return s; }); setConfirmDel(null); notify("Produk dihapus","warn"); }
+    catch{ notify("Gagal hapus!","err"); }
   };
 
-  // Rename kategori
-  const renameCategory = (oldCat, newCat)=>{
+  const renameCategory = async (oldCat,newCat)=>{
     if(!newCat.trim()||newCat===oldCat) return;
-    setProducts(prev=>prev.map(p=>p.category===oldCat?{...p,category:newCat.trim()}:p));
-    notify(`Kategori "${oldCat}" → "${newCat}"`, "ok");
+    try{ await Promise.all(products.filter(p=>p.category===oldCat).map(p=>db.updateProduct(p.id,{...p,category:newCat.trim()}))); setProducts(prev=>prev.map(p=>p.category===oldCat?{...p,category:newCat.trim()}:p)); notify("Kategori diperbarui","ok"); }
+    catch{ notify("Gagal update kategori!","err"); }
+  };
+
+  // ── EXPORT MASSAL ──────────────────────────────────────────────────────────
+  const exportCSV = () => {
+    const rows=[["Nama Produk","Barcode","Kategori","Harga Modal","Harga Jual"]];
+    products.forEach(p=>rows.push([p.name, p.barcode||"", p.category, p.modal, p.price]));
+    const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download=`produk-ammar-cell.csv`; a.click();
+    notify(`Export ${products.length} produk berhasil!`,"ok");
+  };
+
+  // ── EDIT MASSAL ────────────────────────────────────────────────────────────
+  const startBulkEdit = () => { setBulkData(fp.map(p=>({...p}))); setBulkMode(true); };
+  const updateBulkRow = (id, field, val) => setBulkData(prev=>prev.map(p=>p.id===id?{...p,[field]:val}:p));
+  const saveBulkEdit = async () => {
+    setSaving(true);
+    try{
+      await Promise.all(bulkData.map(p=>db.updateProduct(p.id,{name:p.name,barcode:p.barcode||"",category:p.category,price:+p.price||0,modal:+p.modal||0})));
+      setProducts(prev=>prev.map(p=>{ const b=bulkData.find(x=>x.id===p.id); return b?{...p,...b,price:+b.price||0,modal:+b.modal||0}:p; }));
+      setBulkMode(false); notify(`${bulkData.length} produk disimpan ✓`,"ok");
+    } catch{ notify("Gagal simpan massal!","err"); }
+    setSaving(false);
+  };
+
+  // ── IMPORT MASSAL CSV ──────────────────────────────────────────────────────
+  const handleImportFile = e => {
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>setImportText(ev.target.result);
+    reader.readAsText(file,"UTF-8");
+    e.target.value="";
+  };
+
+  const doImport = async () => {
+    setImportError("");
+    if(!importText.trim()) return setImportError("File kosong atau belum dipilih!");
+    try{
+      const lines=importText.trim().split(/\r?\n/).filter(l=>l.trim());
+      const startIdx=lines[0].toLowerCase().replace(/"/g,"").includes("nama")?1:0;
+      const newProds=[];
+      for(let i=startIdx;i<lines.length;i++){
+        const cols=lines[i].split(",").map(c=>c.trim().replace(/^"|"$/g,""));
+        if(cols.length<3) continue;
+        const [name,barcode,category,modal,price] = cols.length>=5
+          ? [cols[0],cols[1],cols[2],cols[3],cols[4]]
+          : [cols[0],"",cols[1],cols[2],cols[3]];
+        if(!name||!category) continue;
+        newProds.push({name:name.trim(),barcode:barcode?.trim()||"",category:category.trim(),modal:+modal||0,price:+price||0});
+      }
+      if(newProds.length===0) return setImportError("Tidak ada data valid. Pastikan format CSV: Nama,Barcode,Kategori,Modal,Jual");
+      setSaving(true);
+      const saved=await Promise.all(newProds.map(p=>db.addProduct(p)));
+      setProducts(prev=>[...prev,...saved]);
+      setStocks(prev=>{ const s={...prev}; saved.forEach(p=>{Object.keys(s).forEach(oid=>{s[oid]={...s[oid],[p.id]:0};});}); return s; });
+      notify(`${saved.length} produk berhasil diimport!`,"ok");
+      setShowImport(false); setImportText(""); setSaving(false);
+    } catch(e){ setImportError("Error: "+e.message); setSaving(false); }
   };
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <SubHeader title="🛍️ Manajemen Produk" onBack={onBack}
         right={
-          <div style={{display:"flex",gap:7}}>
-            <button onClick={()=>setEditCats(p=>!p)} style={{background:editCats?"#fff":"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"7px 12px",color:editCats?"#0d9488":"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✏️ Kategori</button>
-            <button onClick={openAdd} style={{background:"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"7px 14px",color:"#0d9488",fontWeight:800,fontSize:12,display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontFamily:"inherit"}}>{Ic.PlusCirc()} Tambah Produk</button>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>setEditCats(p=>!p)} style={{background:editCats?"#fff":"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:editCats?"#0d9488":"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Kategori</button>
+            <button onClick={startBulkEdit} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📝 Edit Massal</button>
+            <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📥 Import CSV</button>
+            <button onClick={exportCSV} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📤 Export CSV</button>
+            <button onClick={openAdd} style={{background:"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"6px 13px",color:"#0d9488",fontWeight:800,fontSize:12,display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontFamily:"inherit"}}>{Ic.PlusCirc()} Tambah</button>
           </div>
         }
       />
+
+      {/* ── BULK EDIT TABLE ── */}
+      {bulkMode&&(
+        <div style={{padding:"14px 18px",maxWidth:1000,margin:"0 auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📝 Edit Massal — {bulkData.length} produk</div>
+            <div style={{display:"flex",gap:7}}>
+              <button onClick={()=>setBulkMode(false)} style={{background:"#f0f0f0",border:"none",borderRadius:9,padding:"7px 14px",fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+              <button onClick={saveBulkEdit} disabled={saving} style={{background:saving?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"7px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                {saving?"⏳ Menyimpan...":"💾 Simpan Semua"}
+              </button>
+            </div>
+          </div>
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#e0faf5"}}>
+                {["#","Nama Produk","Barcode","Kategori","Harga Modal","Harga Jual"].map(h=>(
+                  <th key={h} style={{padding:"9px 10px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {bulkData.map((p,i)=>(
+                  <tr key={p.id} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
+                    <td style={{padding:"5px 10px",color:"#ccc",fontSize:11,width:30}}>{i+1}</td>
+                    {[{f:"name",w:200,t:"text"},{f:"barcode",w:110,t:"text"},{f:"category",w:110,t:"text"},{f:"modal",w:90,t:"number"},{f:"price",w:90,t:"number"}].map(({f,w,t})=>(
+                      <td key={f} style={{padding:"4px 6px"}}>
+                        <input type={t} value={p[f]||""} onChange={e=>updateBulkRow(p.id,f,e.target.value)}
+                          style={{width:w,padding:"5px 8px",borderRadius:7,border:"1px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{fontSize:11,color:"#aaa",marginTop:6}}>* Edit langsung di tabel, lalu klik "Simpan Semua" untuk menyimpan ke database</div>
+        </div>
+      )}
+
+      {/* ── IMPORT MODAL ── */}
+      {showImport&&(
+        <Modal onClose={()=>setShowImport(false)} title="📥 Import Produk dari CSV">
+          <div style={{background:"#f0faf8",borderRadius:9,padding:"10px 13px",marginBottom:12,fontSize:12}}>
+            <div style={{fontWeight:700,color:"#0d9488",marginBottom:4}}>Format CSV yang diterima:</div>
+            <code style={{fontSize:11,color:"#555",display:"block",lineHeight:1.8}}>
+              Nama Produk, Barcode, Kategori, Harga Modal, Harga Jual<br/>
+              VC ISAT 6GB, 8991101152, INDOSAT, 9295, 11000<br/>
+              Kabel Data, , AKSESORIS, 15000, 25000
+            </code>
+            <div style={{fontSize:10,color:"#aaa",marginTop:4}}>* Baris pertama (header) boleh ada atau tidak · Barcode boleh kosong</div>
+          </div>
+          <div style={{marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",marginBottom:5,display:"block"}}>Upload File CSV / TXT</label>
+            <input type="file" accept=".csv,.txt" onChange={handleImportFile}
+              style={{width:"100%",padding:"8px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}/>
+          </div>
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",marginBottom:5,display:"block"}}>Atau Paste Data CSV di sini</label>
+            <textarea value={importText} onChange={e=>setImportText(e.target.value)}
+              placeholder={"Nama Produk,Barcode,Kategori,Modal,Jual\nVC TRI 10GB,,TRI,12400,14500"}
+              style={{width:"100%",padding:"9px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,minHeight:120,resize:"vertical",outline:"none",fontFamily:"monospace"}}/>
+          </div>
+          {importError&&<div style={{background:"#fff0f0",border:"1px solid #ffd6d6",borderRadius:8,padding:"8px 11px",fontSize:12,color:"#ff4757",fontWeight:700,marginBottom:10}}>⚠ {importError}</div>}
+          {importText&&!importError&&(
+            <div style={{background:"#e0faf5",borderRadius:8,padding:"7px 11px",fontSize:11,color:"#0d9488",fontWeight:700,marginBottom:10}}>
+              ✓ {importText.trim().split(/\r?\n/).filter(l=>l.trim()).length} baris terdeteksi
+            </div>
+          )}
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowImport(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+            <button onClick={doImport} disabled={saving||!importText.trim()} style={{flex:2,background:saving||!importText.trim()?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              {saving?"⏳ Mengimport...":"📥 Import Sekarang"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── NORMAL VIEW ── */}
+      {!bulkMode&&(
       <div style={{padding:"14px 18px",maxWidth:920,margin:"0 auto"}}>
 
         {/* Edit Kategori Panel */}
@@ -611,6 +780,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
           {fp.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:30,fontSize:13}}>Tidak ada produk</div>}
         </div>
       </div>
+      )}{/* end !bulkMode */}
 
       {showModal&&(
         <Modal onClose={()=>setShowModal(false)} title={editTarget?"✏️ Edit Produk":"➕ Tambah Produk"}>
@@ -1882,7 +2052,10 @@ function ShiftModal({ mode, shift, transactions, onOpen, onClose, onCancel }) {
 // ROOT
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [user,        setUser]        = useState(null);
+  // ── Session: ambil dari localStorage agar tidak login ulang ──────────────
+  const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
+
+  const [user,        setUserState]   = useState(savedUser);
   const [page,        setPage]        = useState("menu");
   const [products,    setProductsState] = useState([]);
   const [outlets,     setOutletsState]  = useState([]);
@@ -1892,6 +2065,15 @@ export default function App() {
   const [toast,       setToast]         = useState(null);
   const [loading,     setLoading]       = useState(true);
   const [dbError,     setDbError]       = useState(null);
+
+  // Simpan user ke localStorage setiap kali berubah
+  const setUser = (u) => {
+    setUserState(u);
+    try {
+      if (u) localStorage.setItem('ammar_user', JSON.stringify(u));
+      else    localStorage.removeItem('ammar_user');
+    } catch {}
+  };
 
   const notify = (msg,type="ok")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
 
