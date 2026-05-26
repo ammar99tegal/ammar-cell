@@ -1581,6 +1581,98 @@ function LaporanPage({ transactions, outlets, onBack }) {
   );
 }
 
+// ── Stok Opname untuk Karyawan (komponen terpisah agar hooks benar) ──────────
+function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stocks, setStocks }) {
+  const [realStocks,  setRealStocks]  = useState(()=>{ const m={}; products.forEach(p=>{m[p.id]=outletStock[p.id]??0;}); return m; });
+  const [opnameSaved, setOpnameSaved] = useState(false);
+  const [srch,        setSrch]        = useState("");
+
+  const saveOpname = async () => {
+    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
+    await Promise.all(Object.entries(realStocks).map(([pid,qty])=>db.upsertStock(selectedOutlet,+pid,qty).catch(()=>{})));
+    setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
+  };
+
+  const filteredP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase()));
+  const getStatus = s => s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
+  const ss = {
+    habis:  {bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},
+    menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},
+    over:   {bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},
+    aman:   {bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"},
+  };
+
+  return (
+    <div style={{padding:"14px 18px",maxWidth:820,margin:"0 auto",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#0d9488"}}>📦 Stok Opname — {outletNama}</div>
+        <div style={{display:"flex",gap:7,alignItems:"center"}}>
+          <div style={{position:"relative"}}>
+            <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
+            <input value={srch} onChange={e=>setSrch(e.target.value)} placeholder="Cari produk..."
+              style={{padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",width:150}}/>
+          </div>
+          <button onClick={saveOpname} style={{background:opnameSaved?"#2ecc71":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"8px 14px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            {opnameSaved?"✓ Tersimpan!":"💾 Simpan Opname"}
+          </button>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div style={{display:"flex",gap:8,marginBottom:11}}>
+        {[
+          {l:"Habis",     v:products.filter(p=>(realStocks[p.id]??0)===0).length,                              c:"#c0392b",bg:"#ffe5e5"},
+          {l:"Menipis ≤2",v:products.filter(p=>{const s=realStocks[p.id]??0;return s>0&&s<=2;}).length,        c:"#ff4757",bg:"#fff0f0"},
+          {l:"Over ≥20",  v:products.filter(p=>(realStocks[p.id]??0)>=20).length,                              c:"#f39c12",bg:"#fffbe6"},
+          {l:"Aman",      v:products.filter(p=>{const s=realStocks[p.id]??0;return s>2&&s<20;}).length,        c:"#2ecc71",bg:"#e8f8f4"},
+        ].map(s=>(
+          <div key={s.l} style={{flex:1,background:s.bg,borderRadius:9,padding:"7px 10px",textAlign:"center",border:`1px solid ${s.c}22`}}>
+            <div style={{fontWeight:900,fontSize:16,color:s.c}}>{s.v}</div>
+            <div style={{fontSize:10,fontWeight:700,color:s.c,opacity:.8}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{background:"#e0faf5"}}>
+            {["#","Produk","Kategori","Status","Stok Sistem","Stok Nyata","Selisih"].map(h=>(
+              <th key={h} style={{padding:"9px 11px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {filteredP.map((p,i)=>{
+              const sysQty  = outletStock[p.id]??0;
+              const realQty = realStocks[p.id]??sysQty;
+              const diff    = realQty - sysQty;
+              const st      = getStatus(realQty);
+              return (
+                <tr key={p.id} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
+                  <td style={{padding:"7px 11px",color:"#ccc"}}>{i+1}</td>
+                  <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
+                  <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{p.category}</span></td>
+                  <td style={{padding:"7px 11px"}}><span style={{background:ss[st].bg,color:ss[st].c,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{ss[st].l}</span></td>
+                  <td style={{padding:"7px 11px",fontWeight:800,color:sysQty<=2?"#ff4757":"#1a2e2a"}}>{sysQty}</td>
+                  <td style={{padding:"7px 11px"}}>
+                    <input type="number" min="0" value={realQty}
+                      onChange={e=>setRealStocks(prev=>({...prev,[p.id]:Number(e.target.value)}))}
+                      style={{width:64,padding:"4px 7px",borderRadius:7,border:"2px solid #b2ede6",fontWeight:700,fontSize:13,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
+                  </td>
+                  <td style={{padding:"7px 11px",fontWeight:800,fontSize:13,color:diff===0?"#2ecc71":diff>0?"#f39c12":"#ff4757"}}>
+                    {diff>0?`+${diff}`:diff===0?"✓":diff}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {filteredP.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:24,fontSize:13}}>Tidak ada produk</div>}
+      </div>
+      <div style={{fontSize:10,color:"#aaa",marginTop:7,fontWeight:600}}>* Isi "Stok Nyata" sesuai hitungan fisik → klik Simpan Opname</div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // KASIR APP (per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1895,94 +1987,16 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       )}
 
       {/* STOK OUTLET — opname lengkap untuk karyawan */}
-      {page==="stok"&&(()=>{
-        const [realStocks, setRealStocks] = useState(()=>{const m={};products.forEach(p=>{m[p.id]=outletStock[p.id]??0;});return m;});
-        const [opnameSaved, setOpnameSaved] = useState(false);
-        const [srch, setSrch] = useState("");
-
-        const saveOpname = async () => {
-          // update stok di state + Supabase
-          const updated = {...(stocks[selectedOutlet]||{}),...realStocks};
-          setStocks(prev=>({...prev,[selectedOutlet]:updated}));
-          await Promise.all(Object.entries(realStocks).map(([pid,qty])=>db.upsertStock(selectedOutlet,+pid,qty).catch(()=>{})));
-          setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
-        };
-
-        const filteredP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase()));
-        const getStatus = s => s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
-        const ss = {habis:{bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},over:{bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},aman:{bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"}};
-
-        return (
-          <div style={{padding:"14px 18px",maxWidth:820,margin:"0 auto"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-              <div style={{fontWeight:800,fontSize:15,color:"#0d9488"}}>📦 Stok Opname — {outlet?.nama}</div>
-              <div style={{display:"flex",gap:7,alignItems:"center"}}>
-                <div style={{position:"relative"}}>
-                  <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
-                  <input value={srch} onChange={e=>setSrch(e.target.value)} placeholder="Cari produk..."
-                    style={{padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",width:150}}/>
-                </div>
-                <button onClick={saveOpname} style={{background:opnameSaved?"#2ecc71":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"8px 14px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                  {opnameSaved?"✓ Tersimpan!":"💾 Simpan Opname"}
-                </button>
-              </div>
-            </div>
-
-            {/* Summary kecil */}
-            <div style={{display:"flex",gap:8,marginBottom:11}}>
-              {[
-                {l:"Habis",    v:products.filter(p=>(realStocks[p.id]??0)===0).length,   c:"#c0392b",bg:"#ffe5e5"},
-                {l:"Menipis ≤2",v:products.filter(p=>{const s=realStocks[p.id]??0;return s>0&&s<=2;}).length, c:"#ff4757",bg:"#fff0f0"},
-                {l:"Over ≥20", v:products.filter(p=>(realStocks[p.id]??0)>=20).length,  c:"#f39c12",bg:"#fffbe6"},
-                {l:"Aman",     v:products.filter(p=>{const s=realStocks[p.id]??0;return s>2&&s<20;}).length,  c:"#2ecc71",bg:"#e8f8f4"},
-              ].map(s=>(
-                <div key={s.l} style={{flex:1,background:s.bg,borderRadius:9,padding:"7px 10px",textAlign:"center",border:`1px solid ${s.c}22`}}>
-                  <div style={{fontWeight:900,fontSize:16,color:s.c}}>{s.v}</div>
-                  <div style={{fontSize:10,fontWeight:700,color:s.c,opacity:.8}}>{s.l}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{background:"#e0faf5"}}>
-                  {["#","Produk","Kategori","Status","Stok Sistem","Stok Nyata","Selisih"].map(h=>(
-                    <th key={h} style={{padding:"9px 11px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr></thead>
-                <tbody>
-                  {filteredP.map((p,i)=>{
-                    const sysQty  = outletStock[p.id]??0;
-                    const realQty = realStocks[p.id]??sysQty;
-                    const diff    = realQty - sysQty;
-                    const st      = getStatus(realQty);
-                    return (
-                      <tr key={p.id} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
-                        <td style={{padding:"7px 11px",color:"#ccc"}}>{i+1}</td>
-                        <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
-                        <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{p.category}</span></td>
-                        <td style={{padding:"7px 11px"}}><span style={{background:ss[st].bg,color:ss[st].c,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{ss[st].l}</span></td>
-                        <td style={{padding:"7px 11px",fontWeight:800,color:sysQty<=2?"#ff4757":"#1a2e2a"}}>{sysQty}</td>
-                        <td style={{padding:"7px 11px"}}>
-                          <input type="number" min="0" value={realQty}
-                            onChange={e=>setRealStocks(prev=>({...prev,[p.id]:Number(e.target.value)}))}
-                            style={{width:64,padding:"4px 7px",borderRadius:7,border:"2px solid #b2ede6",fontWeight:700,fontSize:13,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
-                        </td>
-                        <td style={{padding:"7px 11px",fontWeight:800,fontSize:13,
-                          color:diff===0?"#2ecc71":diff>0?"#f39c12":"#ff4757"}}>
-                          {diff>0?`+${diff}`:diff===0?"✓":diff}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {filteredP.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:24,fontSize:13}}>Tidak ada produk</div>}
-            </div>
-            <div style={{fontSize:10,color:"#aaa",marginTop:7,fontWeight:600}}>* Isi kolom "Stok Nyata" sesuai hitungan fisik → klik Simpan Opname</div>
-          </div>
-        );
-      })()}
+      {page==="stok"&&(
+        <KasirStokPage
+          products={products}
+          outletStock={outletStock}
+          outletNama={outlet?.nama}
+          selectedOutlet={selectedOutlet}
+          stocks={stocks}
+          setStocks={setStocks}
+        />
+      )}
 
       {/* MODALS */}
       {showManual&&(
