@@ -1929,24 +1929,45 @@ export default function App() {
   },[]);
 
   // ── Wrapper setProducts: update state + Supabase ─────────────────────────
-  const setProducts = useCallback(async (fn) => {
+  const setProducts = useCallback((fn) => {
     setProductsState(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn;
-      // Sync ke Supabase (add/update/delete ditangani di ProdukPage langsung)
       return next;
     });
   },[]);
 
-  const setOutlets = useCallback(async (fn) => {
+  const setOutlets = useCallback((fn) => {
     setOutletsState(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn;
+      // Sync outlet baru/update ke Supabase
+      next.forEach(o => {
+        const old = prev.find(x => x.id === o.id);
+        if (!old || JSON.stringify(old) !== JSON.stringify(o)) {
+          db.addOutlet ? null : null; // handled in OutletPage directly
+        }
+      });
       return next;
     });
   },[]);
 
-  const setUsers = useCallback(async (fn) => {
+  const setUsers = useCallback((fn) => {
     setUsersState(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn;
+      // Sync semua perubahan user ke Supabase
+      Object.entries(next).forEach(([username, u]) => {
+        const old = prev[username];
+        // User baru atau ada perubahan
+        if (!old || old.pass !== u.pass || old.nama !== u.nama ||
+            old.role !== u.role || old.outletId !== u.outletId) {
+          db.upsertUser(username, u).catch(console.error);
+        }
+      });
+      // User yang dihapus
+      Object.keys(prev).forEach(username => {
+        if (!next[username]) {
+          db.deleteUser(username).catch(console.error);
+        }
+      });
       return next;
     });
   },[]);
