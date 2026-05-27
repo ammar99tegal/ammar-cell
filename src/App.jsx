@@ -2,49 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { db } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
-// INITIAL DATA
+// CONSTANTS — semua data awal diambil dari Supabase, bukan hardcoded
 // ══════════════════════════════════════════════════════════════════════════════
-const TEMPLATE_PRODUCTS = [
-  { id:1,  name:"Indomie Goreng",       barcode:"8991101152", price:3500,  modal:2800,  category:"Mie" },
-  { id:2,  name:"Aqua 600ml",           barcode:"8996001100", price:4000,  modal:3000,  category:"Minuman" },
-  { id:3,  name:"Teh Botol 350ml",      barcode:"8992388000", price:5000,  modal:3800,  category:"Minuman" },
-  { id:4,  name:"Roti Tawar Sari Roti", barcode:"8994350010", price:14000, modal:11000, category:"Roti" },
-  { id:5,  name:"Susu Ultra 250ml",     barcode:"8999999010", price:5500,  modal:4200,  category:"Susu" },
-  { id:6,  name:"Chitato 68g",          barcode:"8991101200", price:10000, modal:7500,  category:"Snack" },
-  { id:7,  name:"Good Day Cappuccino",  barcode:"8998866010", price:3000,  modal:2200,  category:"Minuman" },
-  { id:8,  name:"Roma Kelapa",          barcode:"8994350050", price:8000,  modal:6000,  category:"Snack" },
-  { id:9,  name:"Minyak Goreng 1L",     barcode:"8992100010", price:18000, modal:15000, category:"Dapur" },
-  { id:10, name:"Sabun Lifebuoy",       barcode:"8991101300", price:5000,  modal:3800,  category:"Kebersihan" },
-  { id:11, name:"Pocari Sweat 500ml",   barcode:"8997005010", price:8000,  modal:6000,  category:"Minuman" },
-  { id:12, name:"Biskuit Oreo",         barcode:"8993272010", price:9000,  modal:7000,  category:"Snack" },
-];
-
-const mkStock = (qty=50) => Object.fromEntries(TEMPLATE_PRODUCTS.map(p=>[p.id, qty]));
-
-// Outlet: id, nama, alamat, aktif
-// Stok per outlet: { outletId: { productId: qty } }
-// Kasir per outlet: satu user per outlet
-const INIT_OUTLETS = [
-  { id:"o1", nama:"Ammar Cell Pusat",    alamat:"Jl. Utama No.1",   aktif:true },
-  { id:"o2", nama:"Ammar Cell Cabang 1", alamat:"Jl. Cabang No.2",  aktif:true },
-  { id:"o3", nama:"Ammar Cell Cabang 2", alamat:"Jl. Cabang No.3",  aktif:true },
-];
-
-const INIT_STOCKS = {
-  o1: mkStock(80),
-  o2: mkStock(50),
-  o3: mkStock(30),
-};
-
-// users: username → { pass, role, nama, outletId }
-const INIT_USERS = {
-  "admin":  { pass:"admin123", role:"admin",    nama:"Admin",        outletId:null },
-  "ammar":  { pass:"boss123",  role:"admin",    nama:"Ammar (Boss)", outletId:null },
-  "kasir1": { pass:"kasir123", role:"karyawan", nama:"Kasir Pusat",  outletId:"o1" },
-  "kasir2": { pass:"kasir456", role:"karyawan", nama:"Kasir Cabang1",outletId:"o2" },
-  "kasir3": { pass:"kasir789", role:"karyawan", nama:"Kasir Cabang2",outletId:"o3" },
-};
-
 const SALDO_APPS = ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
 
 const fmt   = n => new Intl.NumberFormat("id-ID").format(n??0);
@@ -1756,6 +1715,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     const cashFinal=cashNum>=total?cashNum:total;
     const trx={id:uid(),time:now(),date:today(),shiftId:shift?.id,shiftNama:shift?.nama,kasir:user.nama,outletId:selectedOutlet,
       items:cart.map(i=>({...i,refunded:false,refundReason:""})),total,cash:cashFinal,kembalian:cashFinal-total};
+    // Simpan ke Supabase dulu, baru update state
+    db.addTransaction(trx).catch(e=>console.error("Gagal simpan transaksi:",e));
     setTx(prev=>[trx,...prev]);
     setStocks(prev=>{
       const s={...prev,[selectedOutlet]:{...prev[selectedOutlet]}};
@@ -1768,7 +1729,13 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const doRefund=()=>{
     if(!refundReason.trim()) return notify("Isi alasan refund!","err");
-    setTx(prev=>prev.map(t=>t.id!==refundModal.trxId?t:{...t,items:t.items.map(i=>i.cartId!==refundModal.cartId?i:{...i,refunded:true,refundReason})}));
+    setTx(prev=>prev.map(t=>{
+      if(t.id!==refundModal.trxId) return t;
+      const updated={...t,items:t.items.map(i=>i.cartId!==refundModal.cartId?i:{...i,refunded:true,refundReason})};
+      // Sync ke Supabase
+      db.updateTransactionItems(t.id, updated.items).catch(e=>console.error("Gagal sync refund:",e));
+      return updated;
+    }));
     notify("Item direfund","ok");setRefundModal(null);setRefundReason("");
   };
 
@@ -2175,6 +2142,27 @@ export default function App() {
 
   const notify = (msg,type="ok")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
 
+  // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
+  const reloadData = async () => {
+    try {
+      const [prods, outs, stks, txs, usrs] = await Promise.all([
+        db.getProducts(), db.getOutlets(), db.getStocks(),
+        db.getTransactions(), db.getUsers(),
+      ]);
+      setProductsState(prods);
+      setOutletsState(outs);
+      setStocksState(stks);
+      setTx(txs.map(t=>({
+        id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
+        shiftNama:t.shift_nama, kasir:t.kasir,
+        date:t.date, time:t.time,
+        total:t.total, cash:t.cash, kembalian:t.kembalian,
+        items:t.items||[],
+      })));
+      setUsersState(usrs);
+    } catch(e) { console.error("Reload gagal:",e); }
+  };
+
   // ── Load semua data dari Supabase saat pertama buka ──────────────────────
   useEffect(()=>{
     const load = async () => {
@@ -2339,8 +2327,8 @@ export default function App() {
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTxWithSync} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
+      {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="dashboard" && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
