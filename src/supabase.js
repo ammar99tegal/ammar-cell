@@ -150,28 +150,11 @@ export const db = {
 }
 
 // ── SALDO APPS CONFIG ─────────────────────────────────────────────────────────
-// Tambahkan di supabase.js
-export const dbSaldo = {
 export const dbSaldo = {
   getSaldoApps: async () => {
     const { data, error } = await supabase.from('saldo_apps').select('*').order('urutan')
     if (error) {
       console.warn('saldo_apps table not found, using defaults');
-      return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
-    }
-    return data.map(d => d.nama)
-  },
-  saveSaldoApps: async (list) => {
-    await supabase.from('saldo_apps').delete().neq('id', 0)
-    const rows = list.map((nama, i) => ({ nama, urutan: i }))
-    const { error } = await supabase.from('saldo_apps').insert(rows)
-    if (error) throw error
-  }
-}
-export const dbSaldo = {
-  getSaldoApps: async () => {
-    const { data, error } = await supabase.from('saldo_apps').select('*').order('urutan')
-    if (error) {
       return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
     }
     return data.map(d => d.nama)
