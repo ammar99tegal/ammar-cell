@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://acxqzupnlkqvmsitolzj.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHF6dXBubGtxdm1zaXRvbHpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODA4OTAsImV4cCI6MjA5NTM1Njg5MH0.qRZ3HkhMYmFOUk1y6sh0aJujSBNJ-Ov1G8Q5s_h6_qU'
 
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ── PRODUCTS ──────────────────────────────────────────────────────────────────
@@ -164,5 +165,92 @@ export const dbSaldo = {
     const rows = list.map((nama, i) => ({ nama, urutan: i }))
     const { error } = await supabase.from('saldo_apps').insert(rows)
     if (error) throw error
+  }
+}
+
+// ── ACTIVE SHIFTS ─────────────────────────────────────────────────────────────
+export const dbShift = {
+  // Ambil shift aktif untuk outlet + user tertentu
+  getActiveShift: async (outletId, userId) => {
+    const { data, error } = await supabase
+      .from('active_shifts')
+      .select('*')
+      .eq('outlet_id', outletId)
+      .eq('user_id', userId)
+      .single()
+    if (error) return null
+    return data ? {
+      id: data.id,
+      nama: data.nama,
+      start: data.start_time,
+      outletId: data.outlet_id,
+      ...data.saldo_data
+    } : null
+  },
+
+  // Simpan shift baru (buka shift)
+  openShift: async (shift, outletId, userId) => {
+    const { error } = await supabase.from('active_shifts').upsert({
+      id: shift.id,
+      outlet_id: outletId,
+      user_id: userId,
+      nama: shift.nama,
+      start_time: shift.start,
+      saldo_data: {
+        saldoApps: shift.saldoApps,
+        cashKembalian: shift.cashKembalian,
+        totalSaldoApps: shift.totalSaldoApps,
+        waktuBuka: shift.start,
+      }
+    }, { onConflict: 'id' })
+    if (error) console.error('Gagal simpan shift:', error)
+  },
+
+  // Tutup shift: hapus dari active_shifts, simpan ke shift_logs
+  closeShift: async (shift, outletId, userId, closeData) => {
+    // Simpan ke shift_logs
+    await supabase.from('shift_logs').insert({
+      id: shift.id,
+      outlet_id: outletId,
+      user_id: userId,
+      nama: shift.nama,
+      start_time: shift.start,
+      end_time: closeData.waktuTutup,
+      saldo_open: {
+        saldoApps: shift.saldoApps,
+        cashKembalian: shift.cashKembalian,
+        totalSaldoApps: shift.totalSaldoApps,
+        waktuBuka: shift.start,
+      },
+      saldo_close: {
+        saldoAppsAkhir: closeData.saldoAppsClose,
+        cashKembClose: closeData.cashKembC,
+        waktuTutup: closeData.waktuTutup,
+      },
+      rekap: {
+        setorTunai: closeData.setorTunai,
+        hutang: closeData.hutang,
+        pending: closeData.pending,
+        pengeluaran: closeData.pengeluaran,
+        noteKlr: closeData.noteKlr,
+        kasNyataSystem: closeData.kasNyataSystem,
+        kasNyataFisik: closeData.kasNyataFisik,
+        selisih: closeData.selisih,
+        notes: closeData.notes,
+      }
+    }).catch(e => console.error('Gagal simpan shift_log:', e))
+
+    // Hapus dari active_shifts
+    await supabase.from('active_shifts').delete().eq('id', shift.id)
+      .catch(e => console.error('Gagal hapus active_shift:', e))
+  },
+
+  // Ambil semua riwayat shift (untuk laporan admin)
+  getShiftLogs: async (outletId = null) => {
+    let q = supabase.from('shift_logs').select('*').order('created_at', { ascending: false }).limit(200)
+    if (outletId) q = q.eq('outlet_id', outletId)
+    const { data, error } = await q
+    if (error) return []
+    return data
   }
 }
