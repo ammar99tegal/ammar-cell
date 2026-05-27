@@ -1671,7 +1671,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   // Wrapper setCart — auto simpan ke localStorage
   const setCartPersist = (fn) => {
-    setCartPersist(prev=>{
+    setCart(prev=>{
       const next = typeof fn==="function" ? fn(prev) : fn;
       try{ localStorage.setItem(cartKey, JSON.stringify(next)); }catch{}
       return next;
