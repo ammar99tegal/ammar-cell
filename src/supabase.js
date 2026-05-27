@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 
 // ⚠️ GANTI dengan URL dan KEY dari project Supabase kamu
 // Cara dapat: Supabase Dashboard → Settings → API
-const SUPABASE_URL = 'https://XXXX.supabase.co'   // ← ganti ini
-const SUPABASE_KEY = 'eyJXXXX...'                  // ← ganti ini (anon/public key)
+const SUPABASE_URL = 'https://acxqzupnlkqvmsitolzj.supabase.co'   // ← ganti ini
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHF6dXBubGtxdm1zaXRvbHpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODA4OTAsImV4cCI6MjA5NTM1Njg5MH0.qRZ3HkhMYmFOUk1y6sh0aJujSBNJ-Ov1G8Q5s_h6_qU'                  // ← ganti ini (anon/public key)
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
@@ -152,17 +152,16 @@ export const db = {
 // ── SALDO APPS CONFIG ─────────────────────────────────────────────────────────
 // Tambahkan di supabase.js
 export const dbSaldo = {
+export const dbSaldo = {
   getSaldoApps: async () => {
     const { data, error } = await supabase.from('saldo_apps').select('*').order('urutan')
     if (error) {
-      // Jika tabel belum ada, return default
       console.warn('saldo_apps table not found, using defaults');
       return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
     }
     return data.map(d => d.nama)
   },
   saveSaldoApps: async (list) => {
-    // Hapus semua lalu insert ulang
     await supabase.from('saldo_apps').delete().neq('id', 0)
     const rows = list.map((nama, i) => ({ nama, urutan: i }))
     const { error } = await supabase.from('saldo_apps').insert(rows)
