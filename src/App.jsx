@@ -913,18 +913,22 @@ function LogRow({ l, i, onEdit, onDelete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
   const [selectedOutlet, setSelectedOutlet] = useState(outlets[0]?.id||"");
-  const [tab,            setTab]            = useState("opname"); // opname | masuk | keluar | transfer | log
+  const [tab,            setTab]            = useState("opname");
   const [search,         setSearch]         = useState("");
-  const [log,            setLog]            = useState([]); // { time, type, outletNama, productName, qty, note }
-  const [showForm,       setShowForm]       = useState(false);
+  const [log,            setLog]            = useState([]);
   const [form,           setForm]           = useState({productId:"",qty:"",note:""});
   const [transferTo,     setTransferTo]     = useState("");
   const [realStocks,     setRealStocks]     = useState({});
+  // Bulk state
+  const [bulkMode,       setBulkMode]       = useState(false);
+  const [bulkType,       setBulkType]       = useState("masuk"); // masuk|keluar|transfer
+  const [bulkRows,       setBulkRows]       = useState([]);
+  const [bulkTransferTo, setBulkTransferTo] = useState("");
+  const [bulkSaving,     setBulkSaving]     = useState(false);
 
   const outletStock = stocks[selectedOutlet]||{};
   const outlet      = outlets.find(o=>o.id===selectedOutlet);
 
-  // sync realStocks saat ganti outlet
   const initReal = (oid)=>{
     const s={};
     Object.entries(stocks[oid]||{}).forEach(([pid,qty])=>{s[pid]=qty;});
@@ -934,15 +938,18 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
   const addLog = (type,oid,pid,qty,note="")=>{
     const p=products.find(x=>x.id===+pid);
     const o=outlets.find(x=>x.id===oid);
-    setLog(prev=>[{id:uid(),time:now(),type,outletNama:o?.nama,productName:p?.name,qty,note},...prev]);
+    const logEntry={id:uid(),time:now(),type,outletNama:o?.nama,productName:p?.name,qty,note};
+    setLog(prev=>[logEntry,...prev]);
+    db.addStockLog(logEntry).catch(()=>{});
   };
 
   const doMasuk = ()=>{
     if(!form.productId||!form.qty||+form.qty<=0) return notify("Lengkapi form!","err");
     setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:(prev[selectedOutlet]?.[form.productId]||0)+(+form.qty)}}));
+    db.upsertStock(selectedOutlet,+form.productId,(stocks[selectedOutlet]?.[form.productId]||0)+(+form.qty)).catch(()=>{});
     addLog("masuk",selectedOutlet,form.productId,+form.qty,form.note);
     notify(`Stok masuk +${form.qty} berhasil`,"ok");
-    setForm({productId:"",qty:"",note:""}); setShowForm(false);
+    setForm({productId:"",qty:"",note:""});
   };
 
   const doKeluar = ()=>{
@@ -950,37 +957,151 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
     const cur=stocks[selectedOutlet]?.[form.productId]||0;
     if(+form.qty>cur) return notify("Stok tidak cukup!","err");
     setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:cur-(+form.qty)}}));
+    db.upsertStock(selectedOutlet,+form.productId,cur-(+form.qty)).catch(()=>{});
     addLog("keluar",selectedOutlet,form.productId,+form.qty,form.note);
     notify(`Stok keluar -${form.qty} berhasil`,"ok");
-    setForm({productId:"",qty:"",note:""}); setShowForm(false);
+    setForm({productId:"",qty:"",note:""});
   };
 
   const doTransfer = ()=>{
     if(!form.productId||!form.qty||+form.qty<=0||!transferTo) return notify("Lengkapi semua!","err");
     const cur=stocks[selectedOutlet]?.[form.productId]||0;
     if(+form.qty>cur) return notify("Stok tidak cukup!","err");
-    setStocks(prev=>({
-      ...prev,
-      [selectedOutlet]:{...prev[selectedOutlet],[form.productId]:cur-(+form.qty)},
-      [transferTo]:{...prev[transferTo],[form.productId]:(prev[transferTo]?.[form.productId]||0)+(+form.qty)},
-    }));
+    const newSrc=cur-(+form.qty);
+    const newDst=(stocks[transferTo]?.[form.productId]||0)+(+form.qty);
+    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:newSrc},[transferTo]:{...prev[transferTo],[form.productId]:newDst}}));
+    db.upsertStock(selectedOutlet,+form.productId,newSrc).catch(()=>{});
+    db.upsertStock(transferTo,+form.productId,newDst).catch(()=>{});
     const oTujuan=outlets.find(o=>o.id===transferTo)?.nama;
     addLog("transfer",selectedOutlet,form.productId,+form.qty,`→ ${oTujuan}`);
     notify(`Transfer berhasil → ${oTujuan}`,"ok");
-    setForm({productId:"",qty:"",note:""}); setShowForm(false);
+    setForm({productId:"",qty:"",note:""});
   };
 
   const saveOpname = ()=>{
     setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
+    Object.entries(realStocks).forEach(([pid,qty])=>db.upsertStock(selectedOutlet,+pid,qty).catch(()=>{}));
     notify("Stok opname disimpan ✓","ok");
+  };
+
+  // ── BULK OPERATIONS ────────────────────────────────────────────────────────
+  const startBulk = (type) => {
+    setBulkType(type);
+    setBulkRows(products.map(p=>({id:p.id, name:p.name, stokSaat:outletStock[p.id]??0, qty:"", note:""})));
+    setBulkMode(true);
+    setBulkTransferTo("");
+  };
+
+  const updateBulkRow = (id, field, val) => setBulkRows(prev=>prev.map(r=>r.id===id?{...r,[field]:val}:r));
+
+  const saveBulk = async () => {
+    const toProcess = bulkRows.filter(r=>r.qty&&+r.qty>0);
+    if(toProcess.length===0) return notify("Isi minimal 1 qty!","err");
+    if(bulkType==="transfer"&&!bulkTransferTo) return notify("Pilih outlet tujuan!","err");
+
+    setBulkSaving(true);
+    let successCount=0;
+    const newStocks={...stocks};
+
+    for(const row of toProcess){
+      const cur = newStocks[selectedOutlet]?.[row.id]??0;
+      const qty = +row.qty;
+
+      if(bulkType==="masuk"){
+        const newQty=cur+qty;
+        if(!newStocks[selectedOutlet]) newStocks[selectedOutlet]={};
+        newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newQty};
+        await db.upsertStock(selectedOutlet,row.id,newQty).catch(()=>{});
+        addLog("masuk",selectedOutlet,row.id,qty,row.note||"bulk masuk");
+      } else if(bulkType==="keluar"){
+        if(qty>cur){ notify(`Stok ${row.name} tidak cukup (${cur})!`,"warn"); continue; }
+        const newQty=cur-qty;
+        newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newQty};
+        await db.upsertStock(selectedOutlet,row.id,newQty).catch(()=>{});
+        addLog("keluar",selectedOutlet,row.id,qty,row.note||"bulk keluar");
+      } else if(bulkType==="transfer"){
+        if(qty>cur){ notify(`Stok ${row.name} tidak cukup (${cur})!`,"warn"); continue; }
+        const newSrc=cur-qty;
+        const newDst=(newStocks[bulkTransferTo]?.[row.id]??0)+qty;
+        newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newSrc};
+        if(!newStocks[bulkTransferTo]) newStocks[bulkTransferTo]={};
+        newStocks[bulkTransferTo]={...newStocks[bulkTransferTo],[row.id]:newDst};
+        await db.upsertStock(selectedOutlet,row.id,newSrc).catch(()=>{});
+        await db.upsertStock(bulkTransferTo,row.id,newDst).catch(()=>{});
+        const oTujuan=outlets.find(o=>o.id===bulkTransferTo)?.nama;
+        addLog("transfer",selectedOutlet,row.id,qty,`→ ${oTujuan} (bulk)`);
+      }
+      successCount++;
+    }
+
+    setStocks(newStocks);
+    setBulkSaving(false);
+    setBulkMode(false);
+    notify(`${successCount} produk berhasil diproses ✓`,"ok");
   };
 
   const filteredProds = products.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
   const getStatus = s=>s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss={habis:{bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},over:{bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},aman:{bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"}};
-
   const typeColor={masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"};
   const typeIcon={masuk:"⬇ Masuk",keluar:"⬆ Keluar",transfer:"⇄ Transfer"};
+
+  // ── BULK TABLE VIEW ────────────────────────────────────────────────────────
+  if(bulkMode) return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <SubHeader title={`📦 ${bulkType==="masuk"?"Stok Masuk Massal":bulkType==="keluar"?"Stok Keluar Massal":"Transfer Massal"}`} onBack={()=>setBulkMode(false)}
+        right={
+          <div style={{display:"flex",gap:7,alignItems:"center"}}>
+            {bulkType==="transfer"&&(
+              <select value={bulkTransferTo} onChange={e=>setBulkTransferTo(e.target.value)}
+                style={{padding:"6px 10px",borderRadius:9,border:"2px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.15)",color:"#fff",fontWeight:700,fontSize:12,fontFamily:"inherit",outline:"none"}}>
+                <option value="" style={{color:"#000"}}>— Outlet Tujuan —</option>
+                {outlets.filter(o=>o.id!==selectedOutlet).map(o=><option key={o.id} value={o.id} style={{color:"#000"}}>{o.nama}</option>)}
+              </select>
+            )}
+            <button onClick={saveBulk} disabled={bulkSaving} style={{background:bulkSaving?"#ccc":"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"7px 16px",color:"#0d9488",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              {bulkSaving?"⏳ Menyimpan...":"💾 Simpan Semua"}
+            </button>
+          </div>
+        }
+      />
+      <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
+        <div style={{background:"#fff8e1",border:"2px solid #f39c12",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#b7770d",fontWeight:600}}>
+          💡 Outlet: <b>{outlet?.nama}</b> · Isi kolom QTY untuk produk yang mau diproses · Kosongkan untuk skip
+        </div>
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{background:"#e0faf5"}}>
+              {["#","Produk","Kategori","Stok Saat Ini","QTY","Catatan"].map(h=>(
+                <th key={h} style={{padding:"9px 11px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {bulkRows.map((row,i)=>(
+                <tr key={row.id} style={{borderTop:"1px solid #f0faf8",background:row.qty&&+row.qty>0?(bulkType==="masuk"?"#f0fdf4":bulkType==="keluar"?"#fff5f5":"#eff6ff"):i%2===0?"#fff":"#fafffe"}}>
+                  <td style={{padding:"7px 11px",color:"#ccc"}}>{i+1}</td>
+                  <td style={{padding:"7px 11px",fontWeight:700}}>{row.name}</td>
+                  <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{products.find(p=>p.id===row.id)?.category}</span></td>
+                  <td style={{padding:"7px 11px",fontWeight:800,color:row.stokSaat<=2?"#ff4757":"#1a2e2a"}}>{row.stokSaat}</td>
+                  <td style={{padding:"7px 11px"}}>
+                    <input type="number" min="0" value={row.qty} onChange={e=>updateBulkRow(row.id,"qty",e.target.value)}
+                      placeholder="0"
+                      style={{width:70,padding:"5px 8px",borderRadius:7,border:`2px solid ${row.qty&&+row.qty>0?typeColor[bulkType]:"#b2ede6"}`,fontWeight:700,fontSize:13,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
+                  </td>
+                  <td style={{padding:"7px 11px"}}>
+                    <input value={row.note} onChange={e=>updateBulkRow(row.id,"note",e.target.value)}
+                      placeholder="opsional..."
+                      style={{width:150,padding:"5px 8px",borderRadius:7,border:"1px solid #b2ede6",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{fontSize:11,color:"#aaa",marginTop:7}}>* Baris yang QTY-nya diisi akan diproses. Baris kosong dilewati otomatis.</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
@@ -988,17 +1109,30 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
       <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
 
         {/* Pilih outlet */}
-        <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#555"}}>Outlet:</span>
           {outlets.map(o=>(
             <button key={o.id} onClick={()=>{setSelectedOutlet(o.id);initReal(o.id);}} style={{padding:"6px 14px",borderRadius:20,border:"2px solid",borderColor:selectedOutlet===o.id?"#0d9488":"#b2ede6",background:selectedOutlet===o.id?"#0d9488":"#fff",color:selectedOutlet===o.id?"#fff":"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{o.nama}</button>
           ))}
         </div>
 
+        {/* Bulk action buttons */}
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <button onClick={()=>startBulk("masuk")} style={{background:"linear-gradient(135deg,#27ae60,#2ecc71)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+            ⬇ Masuk Massal
+          </button>
+          <button onClick={()=>startBulk("keluar")} style={{background:"linear-gradient(135deg,#e74c3c,#ff6b6b)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+            ⬆ Keluar Massal
+          </button>
+          <button onClick={()=>startBulk("transfer")} style={{background:"linear-gradient(135deg,#2980b9,#3498db)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+            ⇄ Transfer Massal
+          </button>
+        </div>
+
         {/* Tabs */}
         <div style={{display:"flex",gap:0,marginBottom:14,background:"#fff",borderRadius:12,padding:4,border:"2px solid #e0f5f1",width:"fit-content",flexWrap:"wrap"}}>
-          {[{k:"opname",l:"📋 Stok Opname"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"},{k:"transfer",l:"⇄ Transfer"},{k:"log",l:"📜 Log"}].map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"7px 16px",borderRadius:9,border:"none",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:tab===t.k?"#0d9488":"transparent",color:tab===t.k?"#fff":"#888",transition:"all .15s"}}>{t.l}</button>
+          {[{k:"opname",l:"📋 Opname"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"},{k:"transfer",l:"⇄ Transfer"},{k:"log",l:"📜 Log"}].map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"7px 14px",borderRadius:9,border:"none",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:tab===t.k?"#0d9488":"transparent",color:tab===t.k?"#fff":"#888",transition:"all .15s"}}>{t.l}</button>
           ))}
         </div>
 
@@ -1456,12 +1590,12 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
 // LAPORAN (per outlet + per shift)
 // ══════════════════════════════════════════════════════════════════════════════
 function LaporanPage({ transactions, outlets, onBack }) {
-  const [filterOutlet, setFilterOutlet] = useState("all");
-  const [filterShift,  setFilterShift]  = useState("all");
+  const [filterOutlet,  setFilterOutlet]  = useState("all");
+  const [filterShift,   setFilterShift]   = useState("all");
+  const [selectedShift, setSelectedShift] = useState(null); // untuk detail shift
 
   const calcOmset = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
 
-  // Daftar shift unik
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
 
   const filtered = transactions.filter(t=>
@@ -1469,7 +1603,6 @@ function LaporanPage({ transactions, outlets, onBack }) {
     (filterShift==="all"||(filterShift==="noshift"?!t.shiftId:t.shiftId===filterShift))
   );
 
-  // group per shift
   const groups = {};
   filtered.forEach(t=>{
     const key=t.shiftId||"no-shift";
@@ -1482,6 +1615,146 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
   const omsetTotal=calcOmset(filtered);
   const itemTotal =filtered.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
+
+  // ── Detail shift: ringkasan produk terjual + saldo ──────────────────────
+  const getShiftDetail = (group) => {
+    const prodMap={};
+    group.items.forEach(t=>{
+      t.items.filter(i=>!i.refunded).forEach(i=>{
+        if(!prodMap[i.name]) prodMap[i.name]={name:i.name,qty:0,omset:0};
+        prodMap[i.name].qty+=i.qty;
+        prodMap[i.name].omset+=i.price*i.qty;
+      });
+    });
+    return Object.values(prodMap).sort((a,b)=>b.qty-a.qty);
+  };
+
+  // Ambil info saldo dari transaksi shift (disimpan di shiftData via localStorage)
+  const getShiftSaldo = (shiftId) => {
+    try{
+      const key=`ammar_shift_saldo_${shiftId}`;
+      const s=localStorage.getItem(key);
+      return s?JSON.parse(s):null;
+    }catch{return null;}
+  };
+
+  // ── Modal detail shift ────────────────────────────────────────────────────
+  if(selectedShift){
+    const group=selectedShift;
+    const detail=getShiftDetail(group);
+    const gOmset=calcOmset(group.items);
+    const gItems=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
+    const saldo=getShiftSaldo(group.key);
+
+    return (
+      <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+        <SubHeader title={`📋 Detail Shift: ${group.label}`} onBack={()=>setSelectedShift(null)}
+          badge={group.outletNama}
+        />
+        <div style={{padding:"14px 18px",maxWidth:800,margin:"0 auto"}}>
+
+          {/* Ringkasan shift */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+            {[
+              {l:"Omset Bersih",  v:fmtRp(gOmset),        c:"#0d9488", bg:"linear-gradient(135deg,#0d9488,#14b8a6)", tc:"#fff"},
+              {l:"Item Terjual",  v:`${gItems} pcs`,        c:"#8e44ad", bg:"#f5eeff",                                tc:"#8e44ad"},
+              {l:"Transaksi",     v:`${group.items.length}`, c:"#2980b9", bg:"#e8f4fd",                                tc:"#2980b9"},
+            ].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"12px 15px"}}>
+                <div style={{fontWeight:900,fontSize:18,color:k.tc}}>{k.v}</div>
+                <div style={{fontSize:11,fontWeight:700,color:k.tc,opacity:.8}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Saldo catatan */}
+          {saldo&&(
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>📱 Catatan Saldo Shift</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {saldo.saldoApps&&Object.entries(saldo.saldoApps).filter(([,v])=>v&&+v>0).map(([app,val])=>(
+                  <div key={app} style={{display:"flex",justifyContent:"space-between",background:"#f0faf8",borderRadius:8,padding:"6px 10px"}}>
+                    <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{app}</span>
+                    <span style={{fontSize:12,fontWeight:900,color:"#0d9488"}}>{fmtRp(+val)}</span>
+                  </div>
+                ))}
+                {saldo.cashKembalian>0&&(
+                  <div style={{display:"flex",justifyContent:"space-between",background:"#fff8e1",borderRadius:8,padding:"6px 10px"}}>
+                    <span style={{fontSize:12,fontWeight:700,color:"#b7770d"}}>Cash Kembalian</span>
+                    <span style={{fontSize:12,fontWeight:900,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
+                  </div>
+                )}
+              </div>
+              {saldo.totalSaldoApps>0&&(
+                <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
+                  <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>Total Saldo Aplikasi</span>
+                  <span style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Produk terjual */}
+          <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",overflow:"hidden",marginBottom:14}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #f0faf8",fontWeight:800,fontSize:13,color:"#0d9488"}}>
+              🏷️ Produk Terjual ({detail.length} jenis)
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#e0faf5"}}>
+                {["#","Produk","Qty Terjual","Omset"].map(h=>(
+                  <th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:800,color:"#0d9488"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {detail.map((p,i)=>(
+                  <tr key={p.name} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
+                    <td style={{padding:"8px 12px",color:"#ccc"}}>{i+1}</td>
+                    <td style={{padding:"8px 12px",fontWeight:700}}>{p.name}</td>
+                    <td style={{padding:"8px 12px",fontWeight:900,color:"#0d9488"}}>{p.qty} pcs</td>
+                    <td style={{padding:"8px 12px",fontWeight:800,color:"#555"}}>{fmtRp(p.omset)}</td>
+                  </tr>
+                ))}
+                {detail.length===0&&<tr><td colSpan={4} style={{padding:24,textAlign:"center",color:"#ccc"}}>Tidak ada produk terjual</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Transaksi detail */}
+          <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:8}}>🧾 Detail Transaksi</div>
+          {group.items.map((t,ti)=>{
+            const rt=t.items.filter(i=>i.refunded).reduce((s,i)=>s+i.price*i.qty,0);
+            return (
+              <div key={t.id} style={{background:"#fff",borderRadius:11,padding:"10px 13px",marginBottom:8,border:"1px solid #e0f5f1"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <div style={{display:"flex",gap:7,alignItems:"center"}}>
+                    <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>#{t.id}</span>
+                    <span style={{fontSize:11,color:"#aaa"}}>{t.time}</span>
+                    {t.kasir&&<span style={{fontSize:10,color:"#888"}}>({t.kasir})</span>}
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontWeight:900,fontSize:13}}>{fmtRp(t.total)}</div>
+                    {rt>0&&<div style={{fontSize:10,color:"#ff4757"}}>bersih:{fmtRp(t.total-rt)}</div>}
+                  </div>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                  {t.items.filter(i=>!i.refunded).map(item=>(
+                    <span key={item.cartId} style={{background:"#f0faf8",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:700,color:"#0d9488"}}>
+                      {item.name} ×{item.qty}
+                    </span>
+                  ))}
+                  {t.items.filter(i=>i.refunded).map(item=>(
+                    <span key={item.cartId} style={{background:"#fff0f0",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:700,color:"#ff4757",textDecoration:"line-through"}}>
+                      {item.name} ×{item.qty}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   const exportCSV=()=>{
     const rows=[["ID","Outlet","Shift","Kasir","Waktu","Produk","Qty","Harga","Subtotal","Status","Alasan Refund"]];
@@ -1569,9 +1842,14 @@ function LaporanPage({ transactions, outlets, onBack }) {
                   {filterOutlet==="all"&&<span style={{fontSize:11,opacity:.8,marginLeft:8}}>({group.outletNama})</span>}
                   <span style={{fontSize:11,opacity:.8,marginLeft:8}}>{group.items.length} trx · {gItems} item</span>
                 </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontWeight:900,fontSize:16}}>{fmtRp(gOmset)}</div>
-                  <div style={{fontSize:10,opacity:.75}}>omset bersih</div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <button onClick={()=>setSelectedShift(group)} style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.4)",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                    🔍 Detail
+                  </button>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontWeight:900,fontSize:16}}>{fmtRp(gOmset)}</div>
+                    <div style={{fontSize:10,opacity:.75}}>omset bersih</div>
+                  </div>
                 </div>
               </div>
               <div style={{background:"#fff",border:"2px solid #e0f5f1",borderTop:"none",borderRadius:"0 0 12px 12px",overflow:"hidden"}}>
@@ -1759,6 +2037,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   );
 
   const addToCart = product=>{
+    if(!shift) return notify("⚠ Buka shift dulu sebelum transaksi!","err");
     setCartPersist(prev=>{
       const ex=prev.find(i=>i.id===product.id&&!i.isManual);
       if(ex) return prev.map(i=>i.id===product.id&&!i.isManual?{...i,qty:i.qty+1}:i);
@@ -1768,6 +2047,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   };
   const addManual=()=>{
     if(!manualForm.name||!manualForm.price) return notify("Isi nama & harga!","err");
+    if(!shift) return notify("⚠ Buka shift dulu sebelum transaksi!","err");
     setCartPersist(prev=>[...prev,{id:`m-${uid()}`,cartId:uid(),isManual:true,stock:null,name:manualForm.name,modal:+manualForm.modal||0,price:+manualForm.price,qty:+manualForm.qty||1}]);
     setManualForm({name:"",modal:"",price:"",qty:1});setShowManual(false);
     notify("Item manual ditambahkan","ok");
@@ -1780,6 +2060,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const handleBarcode=e=>{
     if(e.key!=="Enter") return;
+    if(!shift) return notify("⚠ Buka shift dulu sebelum transaksi!","err");
     const p=products.find(x=>x.barcode===barcode);
     if(p){addToCart(p);setBarcode("");}else notify("Produk tidak ditemukan!","err");
   };
@@ -1813,7 +2094,14 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     notify("Item direfund","ok");setRefundModal(null);setRefundReason("");
   };
 
-  const openShift =data=>{setShift({id:uid(),nama:data.namaShift,start:now(),...data});setShowShift(false);notify("Shift dibuka!","ok");};
+  const openShift =data=>{
+    const s={id:uid(),nama:data.namaShift,start:now(),...data};
+    setShift(s);
+    // Simpan data saldo ke localStorage
+    try{ localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({saldoApps:data.saldoApps,cashKembalian:data.cashKembalian,totalSaldoApps:data.totalSaldoApps})); }catch{}
+    setShowShift(false);
+    notify("Shift dibuka!","ok");
+  };
   const closeShift=data=>{setShift(null);setShowShift(false);notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");};
 
   const calcOmset=list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
@@ -1857,7 +2145,24 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
       {/* KASIR */}
       {page==="kasir"&&(
-        <div className="kasir-layout">
+        <div className="kasir-layout" style={{position:"relative"}}>
+
+          {/* ── OVERLAY: Shift belum dibuka ── */}
+          {!shift&&(
+            <div style={{position:"absolute",inset:0,zIndex:50,background:"rgba(10,122,112,.92)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,backdropFilter:"blur(4px)"}}>
+              <div style={{fontSize:56}}>🔒</div>
+              <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Belum Dibuka</div>
+              <div style={{fontSize:14,color:"rgba(255,255,255,.8)",textAlign:"center",maxWidth:300,lineHeight:1.6}}>
+                Kamu harus membuka shift terlebih dahulu sebelum bisa melakukan transaksi
+              </div>
+              <button
+                onClick={()=>{setShiftMode("open");setShowShift(true);}}
+                style={{background:"#fff",border:"none",borderRadius:14,padding:"14px 32px",color:"#0d9488",fontWeight:900,fontSize:16,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 20px rgba(0,0,0,.2)",marginTop:4}}
+              >
+                🟢 Buka Shift Sekarang
+              </button>
+            </div>
+          )}
           <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:"10px 10px 10px 14px"}}>
             <div style={{display:"flex",gap:6,marginBottom:7}}>
               <div style={{flex:1,position:"relative"}}>
