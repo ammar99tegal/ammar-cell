@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { db, dbSaldo, dbShift } from "./supabase.js";
+import { db, dbSaldo, dbShift, supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -2830,6 +2830,69 @@ export default function App() {
       }
     };
     load();
+  },[]);
+
+  // ── Realtime listener — stok & produk update otomatis di semua device ─────
+  useEffect(()=>{
+    // Channel stocks: update stok otomatis di semua kasir
+    const stockChannel = supabase
+      .channel('realtime-stocks')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'stocks' },
+        (payload) => {
+          const row = payload.new || payload.old;
+          if (!row) return;
+          if (payload.eventType === 'DELETE') {
+            setStocksState(prev => {
+              const s = {...prev};
+              if (s[row.outlet_id]) {
+                s[row.outlet_id] = {...s[row.outlet_id]};
+                delete s[row.outlet_id][row.product_id];
+              }
+              return s;
+            });
+          } else {
+            // INSERT atau UPDATE
+            setStocksState(prev => ({
+              ...prev,
+              [row.outlet_id]: {
+                ...(prev[row.outlet_id]||{}),
+                [row.product_id]: row.qty
+              }
+            }));
+          }
+        }
+      )
+      .subscribe();
+
+    // Channel products: produk baru / edit / hapus otomatis
+    const productChannel = supabase
+      .channel('realtime-products')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setProductsState(prev => {
+              // Hindari duplikat
+              if (prev.find(p => p.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setProductsState(prev =>
+              prev.map(p => p.id === payload.new.id ? {...p, ...payload.new} : p)
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setProductsState(prev => prev.filter(p => p.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    // Cleanup saat komponen unmount
+    return () => {
+      supabase.removeChannel(stockChannel);
+      supabase.removeChannel(productChannel);
+    };
   },[]);
 
   // ── Wrapper setProducts: update state + Supabase ─────────────────────────
