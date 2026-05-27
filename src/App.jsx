@@ -2180,8 +2180,8 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
   const blank=()=>{const m={};APPS.forEach(a=>{m[a]="";});return m;};
   const [namaShift,setNamaShift]=useState("");
   const [cashKemb,setCashKemb]=useState("");
-  const [saldoApps,setSaldoApps]=useState(blank());
-  const [saldoAppsC,setSaldoAppsC]=useState(blank());
+  const [saldoOpen,setSaldoOpen]=useState(blank());
+  const [saldoClose,setSaldoClose]=useState(blank());
   const [cashKembC,setCashKembC]=useState("");
   const [setor,setSetor]=useState("");
   const [hutang,setHutang]=useState("");
@@ -2191,8 +2191,8 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
   const [kasNyata,setKasNyata]=useState("");
   const [notes,setNotes]=useState("");
 
-  const tAppO=Object.values(saldoApps).reduce((s,v)=>s+(+v||0),0);
-  const tAppC=Object.values(saldoAppsC).reduce((s,v)=>s+(+v||0),0);
+  const tAppO=Object.values(saldoOpen).reduce((s,v)=>s+(+v||0),0);
+  const tAppC=Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0);
   const shiftTrx=transactions.filter(t=>t.shiftId===shift?.id);
   const totalP=shiftTrx.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
   const st=+setor||0,htg=+hutang||0,pnd=+pending||0,pk=+klr||0;
@@ -2222,7 +2222,7 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
             <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginBottom:7}}>* Hanya catatan</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
               {APPS.map(app=>(
-                <div key={app}><label style={{...lS,color:"#555"}}>Saldo {app}</label><input type="number" value={saldoApps[app]} onChange={e=>setSaldoApps(p=>({...p,[app]:e.target.value}))} placeholder="0" style={iS}/></div>
+                <div key={app}><label style={{...lS,color:"#555"}}>Saldo {app}</label><input type="number" value={saldoOpen[app]||""} onChange={e=>setSaldoOpen(p=>({...p,[app]:e.target.value}))} placeholder="0" style={iS}/></div>
               ))}
             </div>
             <div style={{background:"#e0faf5",borderRadius:9,padding:"9px 12px",marginTop:10,display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:700,fontSize:12,color:"#0d9488"}}>Total Saldo Aplikasi</span><span style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{fmtRp(tAppO)}</span></div>
@@ -2235,7 +2235,7 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
             <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginBottom:7}}>* Hanya catatan</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
               {APPS.map(app=>(
-                <div key={app}><label style={{...lS,color:"#555"}}>Saldo {app}</label><input type="number" value={saldoAppsC[app]} onChange={e=>setSaldoAppsC(p=>({...p,[app]:e.target.value}))} placeholder="0" style={iS}/></div>
+                <div key={app}><label style={{...lS,color:"#555"}}>Saldo {app}</label><input type="number" value={saldoClose[app]||""} onChange={e=>setSaldoClose(p=>({...p,[app]:e.target.value}))} placeholder="0" style={iS}/></div>
               ))}
             </div>
             <div style={{background:"#e0faf5",borderRadius:9,padding:"9px 12px",marginTop:8,marginBottom:2,display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:700,fontSize:12,color:"#0d9488"}}>Total Saldo Aplikasi</span><span style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{fmtRp(tAppC)}</span></div>
@@ -2279,7 +2279,10 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
         )}
         <div style={{display:"flex",gap:8,marginTop:14}}>
           <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:10,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
-          <button onClick={mode==="open"?()=>{if(!namaShift.trim())return alert("Isi nama shift!");onOpen({namaShift,cashKembalian:+cashKemb||0,saldoApps,totalSaldoApps:tAppO});}:()=>onClose({saldoAppsC,cashKembC:+cashKembC||0,setorTunai:st,hutang:htg,pending:pnd,pengeluaran:pk,noteKlr,kasNyataSystem:kasSystem,kasNyataFisik:kasFisik,selisih,notes})} style={{flex:2,background:`linear-gradient(135deg,${mode==="open"?"#0d9488,#14b8a6":"#e74c3c,#ff6b6b"})`,border:"none",borderRadius:9,padding:10,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+          <button onClick={mode==="open"
+            ?()=>{if(!namaShift.trim())return alert("Isi nama shift!");onOpen({namaShift,cashKembalian:+cashKemb||0,saldoApps:saldoOpen,totalSaldoApps:tAppO});}
+            :()=>onClose({saldoAppsClose:saldoClose,cashKembC:+cashKembC||0,setorTunai:st,hutang:htg,pending:pnd,pengeluaran:pk,noteKlr,kasNyataSystem:kasSystem,kasNyataFisik:kasFisik,selisih,notes})}
+            style={{flex:2,background:`linear-gradient(135deg,${mode==="open"?"#0d9488,#14b8a6":"#e74c3c,#ff6b6b"})`,border:"none",borderRadius:9,padding:10,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             {mode==="open"?"Buka Shift":"Tutup & Simpan Shift"}
           </button>
         </div>
