@@ -1,10 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
-import { db } from "./supabase.js";
+import { db, dbSaldo } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CONSTANTS — semua data awal diambil dari Supabase, bukan hardcoded
+// CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
-const SALDO_APPS = ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
+const DEFAULT_SALDO_APPS = ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
+
+// ── Responsive helpers ────────────────────────────────────────────────────────
+const useDevice = () => {
+  const [w, setW] = useState(window.innerWidth);
+  useEffect(() => {
+    const fn = () => setW(window.innerWidth);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  // breakpoints
+  const isMobile  = w < 768;
+  const isTablet  = w >= 768 && w < 1200;
+  const isDesktop = w >= 1200;
+  const fs = isMobile ? 0.85 : isTablet ? 0.95 : 1; // font scale
+  return { w, isMobile, isTablet, isDesktop, fs };
+};
 
 const fmt   = n => new Intl.NumberFormat("id-ID").format(n??0);
 const fmtRp = n => `Rp ${fmt(n)}`;
@@ -55,6 +71,63 @@ const css = `
   @keyframes slideIn{from{transform:translateX(60px);opacity:0}to{transform:none;opacity:1}}
   @keyframes fadeUp{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
   button,input,textarea,select{font-family:'Nunito',sans-serif;}
+
+  /* ── Responsive base ── */
+  html { font-size: 16px; }
+
+  /* Desktop besar */
+  @media (min-width: 1400px) {
+    html { font-size: 18px; }
+  }
+  /* Desktop normal */
+  @media (min-width: 1200px) and (max-width: 1399px) {
+    html { font-size: 16px; }
+  }
+  /* Tablet */
+  @media (min-width: 768px) and (max-width: 1199px) {
+    html { font-size: 14px; }
+  }
+  /* HP landscape */
+  @media (max-width: 767px) and (orientation: landscape) {
+    html { font-size: 12px; }
+  }
+  /* HP portrait — sarankan landscape */
+  @media (max-width: 767px) and (orientation: portrait) {
+    html { font-size: 13px; }
+  }
+
+  /* Kasir layout responsif */
+  .kasir-layout {
+    display: flex;
+    height: calc(100vh - 48px);
+  }
+  .kasir-produk { flex: 1; overflow: hidden; padding: 10px; }
+  .kasir-cart   { width: 280px; }
+
+  @media (min-width: 1400px) {
+    .kasir-cart { width: 340px; }
+  }
+  @media (min-width: 768px) and (max-width: 1199px) {
+    .kasir-cart { width: 250px; }
+  }
+  @media (max-width: 767px) {
+    .kasir-layout { flex-direction: column; height: auto; }
+    .kasir-cart   { width: 100%; }
+  }
+
+  /* Portrait warning overlay */
+  .portrait-warn {
+    display: none;
+  }
+  @media (max-width: 767px) and (orientation: portrait) {
+    .portrait-warn {
+      display: flex;
+      position: fixed; inset: 0; z-index: 9998;
+      background: linear-gradient(135deg,#0a7a70,#0d9488);
+      flex-direction: column; align-items: center; justify-content: center;
+      color: white; text-align: center; padding: 24px;
+    }
+  }
 `;
 
 function Toast({ toast }) {
@@ -174,6 +247,7 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"kasir",    icon:Ic.Cart(),    label:"Kasir",             desc:"Buka transaksi penjualan",    color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"produk",   icon:Ic.Produk(),  label:"Manajemen Produk",  desc:"Tambah, edit & hapus produk", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),  label:"Manajemen Outlet",  desc:"Kelola outlet & kasir",       color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
+    {id:"saldo",    icon:Ic.Cash(22),  label:"Saldo Aplikasi",    desc:"Kelola list saldo di shift",  color:"#16a085", bg:"#e0faf5", roles:["admin"]},
     {id:"stok",     icon:Ic.Stock(),   label:"Stok",              desc:"Stok masuk, keluar & transfer",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"dashboard",icon:Ic.Dashboard(),label:"Dashboard",        desc:"Pantau omset & performa",     color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
     {id:"laporan",  icon:Ic.Laporan(), label:"Laporan",           desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
@@ -1635,7 +1709,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ══════════════════════════════════════════════════════════════════════════════
 // KASIR APP (per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, onBack, notify }) {
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
@@ -1783,7 +1857,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
       {/* KASIR */}
       {page==="kasir"&&(
-        <div style={{display:"flex",height:"calc(100vh - 48px)"}}>
+        <div className="kasir-layout">
           <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:"10px 10px 10px 14px"}}>
             <div style={{display:"flex",gap:6,marginBottom:7}}>
               <div style={{flex:1,position:"relative"}}>
@@ -1822,7 +1896,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           </div>
 
           {/* KERANJANG */}
-          <div style={{width:296,background:"#fff",borderLeft:"2px solid #e0f5f1",display:"flex",flexDirection:"column"}}>
+          <div className="kasir-cart" style={{background:"#fff",borderLeft:"2px solid #e0f5f1",display:"flex",flexDirection:"column"}}>
             <div style={{padding:"10px 13px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>{Ic.Cart(17)} Keranjang {cart.length>0&&<span style={{background:"#0d9488",color:"#fff",borderRadius:20,fontSize:10,padding:"1px 7px",marginLeft:5}}>{cart.length}</span>}</span>
               {cart.length>0&&<button onClick={()=>setCartPersist([])} style={{background:"#fff0f0",border:"none",color:"#ff4757",borderRadius:7,padding:"3px 9px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Kosongkan</button>}
@@ -1993,7 +2067,107 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           </div>
         </Modal>
       )}
-      {showShift&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)}/>}
+      {showShift&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)}/>}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SALDO APPS PAGE — kelola list saldo aplikasi (Admin only)
+// ══════════════════════════════════════════════════════════════════════════════
+function SaldoAppsPage({ saldoApps, setSaldoApps, onBack, notify }) {
+  const [list,    setList]    = useState([...saldoApps]);
+  const [newName, setNewName] = useState("");
+  const [saving,  setSaving]  = useState(false);
+
+  const addApp = () => {
+    if (!newName.trim()) return notify("Isi nama aplikasi!","err");
+    if (list.includes(newName.trim())) return notify("Sudah ada!","err");
+    setList(prev=>[...prev, newName.trim()]);
+    setNewName("");
+  };
+
+  const removeApp = (name) => setList(prev=>prev.filter(a=>a!==name));
+
+  const moveUp   = (i) => { if(i===0) return; const l=[...list]; [l[i-1],l[i]]=[l[i],l[i-1]]; setList(l); };
+  const moveDown = (i) => { if(i===list.length-1) return; const l=[...list]; [l[i],l[i+1]]=[l[i+1],l[i]]; setList(l); };
+
+  const save = async () => {
+    if (list.length===0) return notify("Minimal 1 aplikasi!","err");
+    setSaving(true);
+    try {
+      await dbSaldo.saveSaldoApps(list);
+      setSaldoApps(list);
+      notify(`${list.length} saldo aplikasi disimpan ✓`,"ok");
+      onBack();
+    } catch(e) {
+      // Tetap simpan ke state meski Supabase gagal (tabel belum dibuat)
+      setSaldoApps(list);
+      notify("Disimpan lokal (jalankan SQL saldo_apps dulu untuk permanen)","warn");
+      onBack();
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <SubHeader title="📱 Kelola Saldo Aplikasi" onBack={onBack}
+        right={
+          <button onClick={save} disabled={saving} style={{background:saving?"#ccc":"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"7px 16px",color:"#0d9488",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"⏳ Menyimpan...":"💾 Simpan & Terapkan"}
+          </button>
+        }
+      />
+      <div style={{padding:"16px 20px",maxWidth:500,margin:"0 auto"}}>
+
+        <div style={{background:"#fff8e1",border:"2px solid #f39c12",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12,color:"#b7770d",fontWeight:600}}>
+          💡 List ini berlaku untuk <b>semua outlet</b> — tampil di form Buka Shift dan Tutup Shift setiap kasir.
+        </div>
+
+        {/* Tambah baru */}
+        <div style={{background:"#fff",borderRadius:13,padding:"14px 16px",marginBottom:14,border:"2px solid #e0f5f1"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>➕ Tambah Aplikasi Baru</div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={newName} onChange={e=>setNewName(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&addApp()}
+              placeholder="Contoh: Dana, M-Poin, MyTelkomsel..."
+              style={{flex:1,padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+            <button onClick={addApp} style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"9px 16px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              + Tambah
+            </button>
+          </div>
+        </div>
+
+        {/* List aplikasi */}
+        <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+          <div style={{padding:"11px 16px",borderBottom:"1px solid #f0faf8",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>Daftar Saldo Aplikasi</span>
+            <span style={{fontSize:11,color:"#aaa",fontWeight:600}}>{list.length} aplikasi</span>
+          </div>
+          {list.length===0?(
+            <div style={{textAlign:"center",color:"#ccc",padding:30,fontSize:13}}>Belum ada aplikasi</div>
+          ):list.map((app,i)=>(
+            <div key={app} style={{display:"flex",alignItems:"center",padding:"10px 16px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe"}}>
+              <div style={{flex:1,fontWeight:700,fontSize:13,color:"#1a2e2a"}}>
+                <span style={{background:"#e0faf5",color:"#0d9488",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,marginRight:8}}>{i+1}</span>
+                {app}
+              </div>
+              <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                {/* Urutan */}
+                <button onClick={()=>moveUp(i)} disabled={i===0} style={{background:"#f0f0f0",border:"none",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:i===0?"not-allowed":"pointer",color:i===0?"#ccc":"#555",fontFamily:"inherit"}}>↑</button>
+                <button onClick={()=>moveDown(i)} disabled={i===list.length-1} style={{background:"#f0f0f0",border:"none",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:i===list.length-1?"not-allowed":"pointer",color:i===list.length-1?"#ccc":"#555",fontFamily:"inherit"}}>↓</button>
+                <button onClick={()=>removeApp(app)} style={{background:"#fff0f0",border:"none",borderRadius:6,padding:"4px 10px",color:"#ff4757",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>
+                  {Ic.Trash(11)} Hapus
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{fontSize:11,color:"#aaa",marginTop:8,fontWeight:600}}>
+          * Gunakan ↑↓ untuk mengatur urutan tampilan di form shift
+        </div>
+      </div>
     </div>
   );
 }
@@ -2001,8 +2175,9 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 // ══════════════════════════════════════════════════════════════════════════════
 // SHIFT MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function ShiftModal({ mode, shift, transactions, onOpen, onClose, onCancel }) {
-  const blank=()=>{const m={};SALDO_APPS.forEach(a=>{m[a]="";});return m;};
+function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onCancel }) {
+  const APPS = saldoApps || DEFAULT_SALDO_APPS;
+  const blank=()=>{const m={};APPS.forEach(a=>{m[a]="";});return m;};
   const [namaShift,setNamaShift]=useState("");
   const [cashKemb,setCashKemb]=useState("");
   const [saldoApps,setSaldoApps]=useState(blank());
@@ -2046,7 +2221,7 @@ function ShiftModal({ mode, shift, transactions, onOpen, onClose, onCancel }) {
             <Sh t="📱 Saldo Aplikasi (Catatan)"/>
             <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginBottom:7}}>* Hanya catatan</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
-              {SALDO_APPS.map(app=>(
+              {APPS.map(app=>(
                 <div key={app}><label style={{...lS,color:"#555"}}>Saldo {app}</label><input type="number" value={saldoApps[app]} onChange={e=>setSaldoApps(p=>({...p,[app]:e.target.value}))} placeholder="0" style={iS}/></div>
               ))}
             </div>
@@ -2059,7 +2234,7 @@ function ShiftModal({ mode, shift, transactions, onOpen, onClose, onCancel }) {
             <Sh t="📱 Saldo Aplikasi Akhir (Catatan)"/>
             <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginBottom:7}}>* Hanya catatan</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
-              {SALDO_APPS.map(app=>(
+              {APPS.map(app=>(
                 <div key={app}><label style={{...lS,color:"#555"}}>Saldo {app}</label><input type="number" value={saldoAppsC[app]} onChange={e=>setSaldoAppsC(p=>({...p,[app]:e.target.value}))} placeholder="0" style={iS}/></div>
               ))}
             </div>
@@ -2127,6 +2302,7 @@ export default function App() {
   const [stocks,      setStocksState]   = useState({});
   const [transactions,setTx]            = useState([]);
   const [users,       setUsersState]    = useState({});
+  const [saldoApps,   setSaldoApps]     = useState(DEFAULT_SALDO_APPS);
   const [toast,       setToast]         = useState(null);
   const [loading,     setLoading]       = useState(true);
   const [dbError,     setDbError]       = useState(null);
@@ -2167,16 +2343,18 @@ export default function App() {
   useEffect(()=>{
     const load = async () => {
       try {
-        const [prods, outs, stks, txs, usrs] = await Promise.all([
+        const [prods, outs, stks, txs, usrs, saldoList] = await Promise.all([
           db.getProducts(),
           db.getOutlets(),
           db.getStocks(),
           db.getTransactions(),
           db.getUsers(),
+          dbSaldo.getSaldoApps(),
         ]);
         setProductsState(prods);
         setOutletsState(outs);
         setStocksState(stks);
+        if (Array.isArray(saldoList) && saldoList.length > 0) setSaldoApps(saldoList);
         // Map transaksi ke format lokal
         setTx(txs.map(t=>({
           id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
@@ -2325,10 +2503,23 @@ export default function App() {
       <style>{css}</style>
       <Toast toast={toast}/>
 
+      {/* Portrait warning untuk HP */}
+      <div className="portrait-warn">
+        <div style={{fontSize:48,marginBottom:16}}>🔄</div>
+        <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar HP Kamu</div>
+        <div style={{fontSize:14,opacity:.85,lineHeight:1.6}}>
+          Aplikasi kasir lebih nyaman digunakan dalam mode <b>Landscape</b> (horizontal)
+        </div>
+        <div style={{marginTop:20,background:"rgba(255,255,255,.15)",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:700}}>
+          Putar HP 90° untuk melanjutkan
+        </div>
+      </div>
+
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
-      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTxWithSync} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
+      {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="dashboard" && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
