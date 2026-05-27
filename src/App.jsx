@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { db, dbSaldo } from "./supabase.js";
+import { db, dbSaldo, dbShift } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -1629,11 +1629,38 @@ function LaporanPage({ transactions, outlets, onBack }) {
     return Object.values(prodMap).sort((a,b)=>b.qty-a.qty);
   };
 
-  // Ambil info saldo dari transaksi shift (disimpan di shiftData via localStorage)
+  // Ambil info saldo dari shift_logs Supabase atau localStorage fallback
+  const [shiftLogs, setShiftLogs] = useState({});
+
+  useEffect(()=>{
+    dbShift.getShiftLogs().then(logs=>{
+      const m={};
+      logs.forEach(l=>{
+        m[l.id]={
+          type:"closed",
+          namaShift: l.nama,
+          waktuBuka: l.start_time,
+          waktuTutup: l.end_time,
+          // saldo open
+          saldoApps: l.saldo_open?.saldoApps,
+          cashKembalian: l.saldo_open?.cashKembalian,
+          totalSaldoApps: l.saldo_open?.totalSaldoApps,
+          // saldo close
+          saldoAppsAkhir: l.saldo_close?.saldoAppsAkhir,
+          cashKembClose: l.saldo_close?.cashKembClose,
+          // rekap
+          ...l.rekap,
+        };
+      });
+      setShiftLogs(m);
+    }).catch(()=>{});
+  },[]);
+
   const getShiftSaldo = (shiftId) => {
+    // Prioritas: Supabase shift_logs > localStorage
+    if(shiftLogs[shiftId]) return shiftLogs[shiftId];
     try{
-      const key=`ammar_shift_saldo_${shiftId}`;
-      const s=localStorage.getItem(key);
+      const s=localStorage.getItem(`ammar_shift_saldo_${shiftId}`);
       return s?JSON.parse(s):null;
     }catch{return null;}
   };
@@ -1667,28 +1694,107 @@ function LaporanPage({ transactions, outlets, onBack }) {
             ))}
           </div>
 
-          {/* Saldo catatan */}
+          {/* Saldo & Rekap Shift */}
           {saldo&&(
-            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>📱 Catatan Saldo Shift</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                {saldo.saldoApps&&Object.entries(saldo.saldoApps).filter(([,v])=>v&&+v>0).map(([app,val])=>(
-                  <div key={app} style={{display:"flex",justifyContent:"space-between",background:"#f0faf8",borderRadius:8,padding:"6px 10px"}}>
-                    <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{app}</span>
-                    <span style={{fontSize:12,fontWeight:900,color:"#0d9488"}}>{fmtRp(+val)}</span>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+
+              {/* SALDO AWAL */}
+              <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
+                  🟢 Saldo Awal (Buka Shift)
+                  <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo.waktuBuka||"—"}</div>
+                </div>
+                {saldo.saldoApps&&Object.entries(saldo.saldoApps).map(([app,val])=>(
+                  <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
+                    <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
                   </div>
                 ))}
                 {saldo.cashKembalian>0&&(
-                  <div style={{display:"flex",justifyContent:"space-between",background:"#fff8e1",borderRadius:8,padding:"6px 10px"}}>
-                    <span style={{fontSize:12,fontWeight:700,color:"#b7770d"}}>Cash Kembalian</span>
-                    <span style={{fontSize:12,fontWeight:900,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
+                    <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
+                  </div>
+                )}
+                {saldo.totalSaldoApps>0&&(
+                  <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"7px 10px",display:"flex",justifyContent:"space-between"}}>
+                    <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo Aplikasi</span>
+                    <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
                   </div>
                 )}
               </div>
-              {saldo.totalSaldoApps>0&&(
-                <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
-                  <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>Total Saldo Aplikasi</span>
-                  <span style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
+
+              {/* SALDO AKHIR */}
+              <div style={{background:"#fff",borderRadius:13,border:"2px solid #ffe0e0",padding:"14px 16px"}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#e74c3c",marginBottom:10}}>
+                  🔴 Saldo Akhir (Tutup Shift)
+                  <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo.waktuTutup||"Belum ditutup"}</div>
+                </div>
+                {saldo.type==="closed"?(
+                  <>
+                    {saldo.saldoAppsAkhir&&Object.entries(saldo.saldoAppsAkhir).map(([app,val])=>(
+                      <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
+                        <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                      </div>
+                    ))}
+                    {saldo.cashKembClose>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
+                        <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembClose)}</span>
+                      </div>
+                    )}
+                  </>
+                ):(
+                  <div style={{textAlign:"center",color:"#ccc",padding:20,fontSize:12}}>Shift belum ditutup</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Rekap Kas Akhir Shift */}
+          {saldo?.type==="closed"&&(
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:12}}>💰 Rekap Kas Akhir Shift</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
+                {[
+                  {l:"Setor Tunai Cash",   v:saldo.setorTunai,     c:"#e74c3c"},
+                  {l:"Hutang Pelanggan",   v:saldo.hutang,         c:"#e74c3c"},
+                  {l:"Transaksi Pending",  v:saldo.pending,        c:"#e74c3c"},
+                  {l:"Pengeluaran",        v:saldo.pengeluaran,    c:"#e74c3c"},
+                ].map(r=>(
+                  <div key={r.l} style={{background:"#f8fffe",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
+                    <span style={{color:"#666",fontWeight:600}}>{r.l}</span>
+                    <span style={{fontWeight:800,color:+r.v>0?r.c:"#ccc"}}>{+r.v>0?fmtRp(+r.v):"—"}</span>
+                  </div>
+                ))}
+              </div>
+              {saldo.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginTop:6,fontStyle:"italic"}}>Note: {saldo.noteKlr}</div>}
+              <div style={{marginTop:10,display:"flex",gap:10}}>
+                <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"10px 13px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:700,fontSize:12,color:"#555"}}>Kas Nyata (Sistem)</span>
+                  <span style={{fontWeight:900,fontSize:14,color:"#0d9488"}}>{fmtRp(saldo.kasNyataSystem)}</span>
+                </div>
+                <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"10px 13px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:700,fontSize:12,color:"#555"}}>Kas Nyata (Fisik)</span>
+                  <span style={{fontWeight:900,fontSize:14,color:"#2980b9"}}>{fmtRp(saldo.kasNyataFisik)}</span>
+                </div>
+              </div>
+              <div style={{
+                marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",
+                border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,
+                borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"
+              }}>
+                <span style={{fontWeight:800,fontSize:13}}>
+                  {saldo.selisih===0?"✅ Kas Sesuai":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}
+                </span>
+                <span style={{fontWeight:900,fontSize:20,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
+                  {saldo.selisih>0?"+":""}{fmtRp(saldo.selisih)}
+                </span>
+              </div>
+              {saldo.notes&&(
+                <div style={{marginTop:8,background:"#f8f8f8",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#666",fontStyle:"italic"}}>
+                  📝 Catatan: {saldo.notes}
                 </div>
               )}
             </div>
@@ -1993,7 +2099,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const outlet = outlets.find(o=>o.id===selectedOutlet);
   const outletStock = stocks[selectedOutlet]||{};
 
-  // ── Persist shift & cart ke localStorage agar tidak hilang saat refresh ──
+  // ── Persist shift & cart ke localStorage DAN Supabase ────────────────────
   const shiftKey = `ammar_shift_${selectedOutlet}`;
   const cartKey  = `ammar_cart_${selectedOutlet}`;
 
@@ -2012,7 +2118,22 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const [refundModal, setRefundModal] = useState(null);
   const [refundReason,setRefundReason]= useState("");
 
-  // Wrapper setShift — auto simpan ke localStorage
+  // ── Load shift dari Supabase saat pertama buka (prioritas Supabase > localStorage) ──
+  useEffect(()=>{
+    const loadShift = async () => {
+      try{
+        const s = await dbShift.getActiveShift(selectedOutlet, user.username);
+        if(s){
+          setShiftState(s);
+          // Sync ke localStorage juga
+          try{ localStorage.setItem(shiftKey, JSON.stringify(s)); }catch{}
+        }
+      }catch(e){ console.log("Shift load:", e); }
+    };
+    loadShift();
+  },[selectedOutlet]);
+
+  // Wrapper setShift — simpan ke localStorage + Supabase
   const setShift = (val) => {
     setShiftState(val);
     try{
@@ -2097,12 +2218,41 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const openShift =data=>{
     const s={id:uid(),nama:data.namaShift,start:now(),...data};
     setShift(s);
-    // Simpan data saldo ke localStorage
-    try{ localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({saldoApps:data.saldoApps,cashKembalian:data.cashKembalian,totalSaldoApps:data.totalSaldoApps})); }catch{}
+    // Simpan ke Supabase
+    dbShift.openShift(s, selectedOutlet, user.username).catch(()=>{});
+    // Simpan data saldo AWAL ke localStorage
+    try{
+      localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({
+        type:"open", namaShift:data.namaShift, waktuBuka:now(),
+        saldoApps:data.saldoApps, cashKembalian:data.cashKembalian,
+        totalSaldoApps:data.totalSaldoApps,
+      }));
+    }catch{}
     setShowShift(false);
     notify("Shift dibuka!","ok");
   };
-  const closeShift=data=>{setShift(null);setShowShift(false);notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");};
+
+  const closeShift=data=>{
+    const closeData={...data, waktuTutup:now()};
+    // Simpan ke Supabase shift_logs
+    dbShift.closeShift(shift, selectedOutlet, user.username, closeData).catch(()=>{});
+    // Update localStorage saldo
+    try{
+      const shiftSaldoKey=`ammar_shift_saldo_${shift?.id}`;
+      const existing=JSON.parse(localStorage.getItem(shiftSaldoKey)||"{}");
+      localStorage.setItem(shiftSaldoKey, JSON.stringify({
+        ...existing, type:"closed", waktuTutup:closeData.waktuTutup,
+        saldoAppsAkhir:data.saldoAppsClose, cashKembClose:data.cashKembC,
+        setorTunai:data.setorTunai, hutang:data.hutang, pending:data.pending,
+        pengeluaran:data.pengeluaran, noteKlr:data.noteKlr,
+        kasNyataSystem:data.kasNyataSystem, kasNyataFisik:data.kasNyataFisik,
+        selisih:data.selisih, notes:data.notes,
+      }));
+    }catch{}
+    setShift(null);
+    setShowShift(false);
+    notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");
+  };
 
   const calcOmset=list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
   const txOutlet    = transactions.filter(t=>t.outletId===selectedOutlet);
