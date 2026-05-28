@@ -254,3 +254,73 @@ export const dbShift = {
     return data
   }
 }
+
+// ── BANK TRANSACTIONS ─────────────────────────────────────────────────────────
+export const dbBank = {
+  getTransactions: async () => {
+    const { data, error } = await supabase
+      .from('bank_transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (error) { console.warn('bank_transactions:', error.message); return []; }
+    return data.map(t => ({
+      id: t.id, waktu: t.waktu, tgl: t.tgl,
+      shiftId: t.shift_id, nama: t.nama,
+      jenis: t.jenis, feeType: t.fee_type,
+      fee: t.fee, nominal: t.nominal,
+      netNominal: t.net_nominal,
+      outletId: t.outlet_id,
+    }));
+  },
+  addTransaction: async (t) => {
+    const { error } = await supabase.from('bank_transactions').insert([{
+      id: t.id, waktu: t.waktu, tgl: t.tgl,
+      shift_id: t.shiftId, nama: t.nama,
+      jenis: t.jenis, fee_type: t.feeType,
+      fee: t.fee, nominal: t.nominal,
+      net_nominal: t.netNominal,
+      outlet_id: t.outletId,
+    }]);
+    if (error) throw error;
+  },
+  updateTransaction: async (id, t) => {
+    const { error } = await supabase.from('bank_transactions').update({
+      nama: t.nama, jenis: t.jenis, fee_type: t.feeType,
+      fee: t.fee, nominal: t.nominal, net_nominal: t.netNominal,
+    }).eq('id', id);
+    if (error) throw error;
+  },
+  deleteTransaction: async (id) => {
+    const { error } = await supabase.from('bank_transactions').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // Shift bank
+  getActiveShift: async (outletId, userId) => {
+    const { data, error } = await supabase
+      .from('bank_shifts')
+      .select('*')
+      .eq('outlet_id', outletId)
+      .eq('user_id', userId)
+      .single();
+    if (error) return null;
+    return data ? { id: data.id, nama: data.nama, start: data.start_time, outletId: data.outlet_id, ...data.saldo_data } : null;
+  },
+  openShift: async (shift, outletId, userId) => {
+    await supabase.from('bank_shifts').upsert({
+      id: shift.id, outlet_id: outletId, user_id: userId,
+      nama: shift.nama, start_time: shift.start,
+      saldo_data: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb, totalSaldo: shift.totalSaldo }
+    }, { onConflict: 'id' }).catch(console.error);
+  },
+  closeShift: async (shift, outletId, userId, closeData) => {
+    await supabase.from('bank_shift_logs').insert({
+      id: shift.id, outlet_id: outletId, user_id: userId,
+      nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
+      saldo_open: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb },
+      saldo_close: { saldoAppsC: closeData.saldoAppsC, uangLaci: closeData.uangLaci, uangSistem: closeData.uangSistem, selisih: closeData.selisih, catatan: closeData.catatan },
+    }).catch(console.error);
+    await supabase.from('bank_shifts').delete().eq('id', shift.id).catch(console.error);
+  },
+}
