@@ -3138,58 +3138,354 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
 function BankTrxForm({editData, onSave, onCancel}) {
   const [nama,    setNama]    = useState(editData?.nama||"");
   const [jenis,   setJenis]   = useState(editData?.jenis||"masuk");
-  const [nominal, setNominal] = useState(editData?.nominal?String(editData.nominal):"");
+  const [nomStr,  setNomStr]  = useState(editData?.nominal?fmt(editData.nominal):"");
   const [feeType, setFeeType] = useState(editData?.feeType||"include");
-  const [feeVal,  setFeeVal]  = useState(editData?.fee?String(editData.fee):"");
+  const [feeStr,  setFeeStr]  = useState(editData?.fee?fmt(editData.fee):"");
 
-  const nomNum = +nominal||0; const feeNum = +feeVal||0;
+  // Konversi string dengan titik ke angka
+  const toNum = s => +s.replace(/\./g,"")||0;
+  const nomNum = toNum(nomStr);
+  const feeNum = toNum(feeStr);
+
+  // Format angka dengan titik saat mengetik
+  const handleNom = e => {
+    const raw = e.target.value.replace(/\D/g,"");
+    setNomStr(raw?fmt(+raw):"");
+  };
+  const handleFee = e => {
+    const raw = e.target.value.replace(/\D/g,"");
+    setFeeStr(raw?fmt(+raw):"");
+  };
+  // Nama kapital otomatis
+  const handleNama = e => setNama(e.target.value.toUpperCase());
+
   const calcNet = () => {
     if(jenis==="masuk") return feeType==="fee"?nomNum+feeNum:feeType==="dipotong"?nomNum-feeNum:nomNum;
     return feeType==="fee"?-(nomNum+feeNum):feeType==="dipotong"?-(nomNum-feeNum):-nomNum;
   };
   const net = calcNet();
-  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
+
+  const inp={width:"100%",padding:"10px 13px",borderRadius:10,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
-      <div style={{background:"#fff",borderRadius:18,padding:22,width:400,boxShadow:"0 20px 55px rgba(0,0,0,.25)",fontFamily:"'Nunito',sans-serif"}}>
-        <div style={{fontWeight:900,fontSize:15,color:"#0d9488",marginBottom:14}}>{editData?"✏️ Edit Transaksi":"➕ Catat Transaksi"}</div>
-        <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nama Transaksi *</label>
-        <input value={nama} onChange={e=>setNama(e.target.value)} placeholder="Contoh: Setoran Penjualan Pusat..." style={{...inp,fontSize:14,fontWeight:700}} autoFocus/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-          {["masuk","keluar"].map(j=>(
-            <button key={j} onClick={()=>setJenis(j)} style={{padding:"11px",borderRadius:9,border:`2px solid ${jenis===j?(j==="masuk"?"#0d9488":"#e74c3c"):"#b2ede6"}`,background:jenis===j?(j==="masuk"?"#e0faf5":"#fff0f0"):"#fff",color:jenis===j?(j==="masuk"?"#0d9488":"#e74c3c"):"#aaa",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-              {j==="masuk"?"⬇ Masuk":"⬆ Keluar"}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+      <div style={{background:"#fff",borderRadius:20,padding:24,width:420,boxShadow:"0 24px 60px rgba(0,0,0,.25)",fontFamily:"'Nunito',sans-serif",maxHeight:"92vh",overflowY:"auto"}}>
+
+        {/* Header */}
+        <div style={{fontWeight:900,fontSize:16,color:"#0d9488",marginBottom:18,display:"flex",alignItems:"center",gap:8}}>
+          {editData?"✏️ Edit Transaksi":"➕ Catat Transaksi"}
+        </div>
+
+        {/* Nama — kapital otomatis */}
+        <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NAMA TRANSAKSI *</label>
+        <input value={nama} onChange={handleNama} placeholder="CONTOH: SETORAN PENJUALAN PUSAT"
+          style={{...inp,fontSize:14,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.3px"}} autoFocus/>
+
+        {/* Masuk / Keluar */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          {[{k:"masuk",l:"⬇ MASUK",c:"#0d9488",bg:"#e0faf5"},{k:"keluar",l:"⬆ KELUAR",c:"#e74c3c",bg:"#fff0f0"}].map(j=>(
+            <button key={j.k} onClick={()=>setJenis(j.k)} style={{padding:"13px",borderRadius:11,border:`2px solid ${jenis===j.k?j.c:"#b2ede6"}`,background:jenis===j.k?j.bg:"#fff",color:jenis===j.k?j.c:"#aaa",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+              {j.l}
             </button>
           ))}
         </div>
-        <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nominal *</label>
-        <input type="number" value={nominal} onChange={e=>setNominal(e.target.value)} placeholder="0"
-          style={{...inp,fontSize:22,fontWeight:900,textAlign:"right",border:"2px solid #0d9488"}}/>
-        <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:6}}>Tipe Fee</label>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
-          {[{k:"include",l:"Include",d:"Sudah satu"},{k:"fee",l:"+ Fee",d:"Ditambah"},{k:"dipotong",l:"− Dipotong",d:"Dikurangi"}].map(f=>(
-            <button key={f.k} onClick={()=>setFeeType(f.k)} style={{padding:"8px 4px",borderRadius:8,border:`2px solid ${feeType===f.k?"#0d9488":"#b2ede6"}`,background:feeType===f.k?"#e0faf5":"#fff",color:feeType===f.k?"#0d9488":"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3,textAlign:"center"}}>
-              <div style={{fontWeight:800}}>{f.l}</div><div style={{fontSize:9,opacity:.7}}>{f.d}</div>
+
+        {/* Nominal besar dengan titik */}
+        <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NOMINAL *</label>
+        <div style={{position:"relative",marginBottom:10}}>
+          <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:16,color:"#0d9488"}}>Rp</span>
+          <input value={nomStr} onChange={handleNom} placeholder="0"
+            style={{...inp,fontSize:24,fontWeight:900,textAlign:"right",border:`2px solid ${nomNum>0?"#0d9488":"#b2ede6"}`,paddingLeft:40,marginBottom:0,letterSpacing:"0.5px"}}/>
+        </div>
+
+        {/* Tipe Fee */}
+        <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:7}}>TIPE FEE</label>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
+          {[
+            {k:"include",  l:"INCLUDE",   d:"Nominal & keuntungan sudah menjadi satu", c:"#0d9488"},
+            {k:"fee",      l:"+ FEE",     d:"Fee ditambahkan ke nominal",              c:"#27ae60"},
+            {k:"dipotong", l:"− DIPOTONG",d:"Fee dipotong dari nominal",               c:"#e74c3c"},
+          ].map(f=>(
+            <button key={f.k} onClick={()=>setFeeType(f.k)}
+              style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${feeType===f.k?f.c:"#b2ede6"}`,background:feeType===f.k?`${f.c}12`:"#fff",color:feeType===f.k?f.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",lineHeight:1.4,textAlign:"center",transition:"all .15s"}}>
+              <div style={{fontWeight:900,fontSize:12}}>{f.l}</div>
+              <div style={{fontSize:9,marginTop:3,opacity:.75}}>{f.d}</div>
             </button>
           ))}
         </div>
+
+        {/* Nominal Fee (hanya jika bukan include) */}
         {feeType!=="include"&&(
           <>
-            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nominal Fee</label>
-            <input type="number" value={feeVal} onChange={e=>setFeeVal(e.target.value)} placeholder="0" style={inp}/>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NOMINAL FEE</label>
+            <div style={{position:"relative",marginBottom:10}}>
+              <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:14,color:"#0d9488"}}>Rp</span>
+              <input value={feeStr} onChange={handleFee} placeholder="0"
+                style={{...inp,fontSize:18,fontWeight:800,textAlign:"right",paddingLeft:40,marginBottom:0}}/>
+            </div>
           </>
         )}
-        {nominal&&(
-          <div style={{background:net>=0?"#e0faf5":"#fff0f0",border:`2px solid ${net>=0?"#0d9488":"#e74c3c"}`,borderRadius:10,padding:"10px 13px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:12,color:"#555",fontWeight:600}}>Net Transaksi</span>
-            <span style={{fontWeight:900,fontSize:20,color:net>=0?"#0d9488":"#e74c3c"}}>{net>0?"+":""}{fmtRp(Math.abs(net))}</span>
+
+        {/* Net preview */}
+        {nomNum>0&&(
+          <div style={{background:net>=0?"#e0faf5":"#fff0f0",border:`2px solid ${net>=0?"#0d9488":"#e74c3c"}`,borderRadius:12,padding:"12px 16px",marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#555",fontWeight:700}}>NET TRANSAKSI</span>
+              <span style={{fontWeight:900,fontSize:22,color:net>=0?"#0d9488":"#e74c3c"}}>{net>0?"+":""}{fmtRp(Math.abs(net))}</span>
+            </div>
+            {feeType!=="include"&&feeNum>0&&(
+              <div style={{fontSize:11,color:"#aaa",marginTop:4,textAlign:"right"}}>
+                {feeType==="fee"?`${fmtRp(nomNum)} + fee ${fmtRp(feeNum)}`:`${fmtRp(nomNum)} − fee ${fmtRp(feeNum)}`}
+              </div>
+            )}
           </div>
         )}
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
-          <button onClick={()=>{if(!nama||!nominal) return; onSave({id:editData?.id||"B"+uid(),waktu:editData?.waktu||now(),tgl:editData?.tgl||today(),nama,jenis,feeType,fee:feeNum,nominal:nomNum,netNominal:net});}} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan</button>
+
+        {/* Tombol */}
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:11,padding:13,fontWeight:700,fontSize:13,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+          <button onClick={()=>{
+            if(!nama.trim()||!nomNum) return;
+            onSave({id:editData?.id||"B"+uid(),waktu:editData?.waktu||now(),tgl:editData?.tgl||today(),nama:nama.trim(),jenis,feeType,fee:feeNum,nominal:nomNum,netNominal:net});
+          }} disabled={!nama.trim()||!nomNum}
+            style={{flex:2,background:(!nama.trim()||!nomNum)?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:11,padding:13,color:"#fff",fontWeight:900,fontSize:14,cursor:(!nama.trim()||!nomNum)?"not-allowed":"pointer",fontFamily:"inherit"}}>
+            💾 Simpan
+          </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD OVERALL — Semua lini bisnis (Admin only, warna tosca)
+// ══════════════════════════════════════════════════════════════════════════════
+function DashboardOverallPage({ transactions, outlets, onBack }) {
+  const [activeTab, setActiveTab] = useState("overview");
+  const nowD = new Date();
+  const toInputDate = d => { const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
+  const [dateFrom, setDateFrom] = useState(toInputDate(new Date(nowD.getFullYear(),nowD.getMonth(),1)));
+  const [dateTo,   setDateTo]   = useState(toInputDate(nowD));
+
+  const applyPreset = p => {
+    const n=new Date();
+    if(p==="today") {setDateFrom(toInputDate(n));setDateTo(toInputDate(n));}
+    else if(p==="7d"){const d=new Date(n);d.setDate(n.getDate()-6);setDateFrom(toInputDate(d));setDateTo(toInputDate(n));}
+    else if(p==="30d"){const d=new Date(n);d.setDate(n.getDate()-29);setDateFrom(toInputDate(d));setDateTo(toInputDate(n));}
+    else if(p==="mon"){setDateFrom(toInputDate(new Date(n.getFullYear(),n.getMonth(),1)));setDateTo(toInputDate(n));}
+    else if(p==="yr"){setDateFrom(toInputDate(new Date(n.getFullYear(),0,1)));setDateTo(toInputDate(n));}
+  };
+
+  const calcOmset  = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+  const calcProfit = list=>list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+(i.price-(i.modal||0))*i.qty,0),0);
+  const parseDate  = s=>{try{const[d,m,y]=s.split("/");return new Date(+y,+m-1,+d);}catch{return null;}};
+
+  const todayStr   = today();
+  const todayTrx   = transactions.filter(t=>t.date===todayStr);
+  const omsetHari  = calcOmset(todayTrx);
+  const profitHari = calcProfit(todayTrx);
+
+  const fromD=new Date(dateFrom); const toD=new Date(dateTo); toD.setHours(23,59,59);
+  const filteredTx=transactions.filter(t=>{const td=parseDate(t.date);return td&&td>=fromD&&td<=toD;});
+  const totalOmset =calcOmset(filteredTx);
+  const totalProfit=calcProfit(filteredTx);
+
+  const outletStats=outlets.map(o=>{
+    const list=filteredTx.filter(t=>t.outletId===o.id);
+    return{id:o.id,nama:o.nama,omset:calcOmset(list),profit:calcProfit(list),trx:list.length};
+  }).sort((a,b)=>b.profit-a.profit);
+
+  const salesMap={};
+  filteredTx.forEach(t=>t.items.filter(i=>!i.refunded).forEach(i=>{salesMap[i.name]=(salesMap[i.name]||0)+i.qty;}));
+  const fastMoving=Object.entries(salesMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  const chart6=Array.from({length:6},(_,i)=>{
+    const dt=new Date(nowD.getFullYear(),nowD.getMonth()-5+i,1);
+    const yr=dt.getFullYear(),mo=dt.getMonth();
+    const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo;});
+    return{b:dt.toLocaleDateString("id-ID",{month:"short"}),omset:calcOmset(list),profit:calcProfit(list)};
+  });
+  const maxC=Math.max(...chart6.map(b=>b.omset),1);
+
+  const tabs=[{k:"overview",l:"📊 Overview"},{k:"outlet",l:"🏪 Per Outlet"},{k:"fastmoving",l:"🚀 Fast Moving"},{k:"analisis",l:"🧠 Analisis"}];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.35)"}}>
+        <div style={{padding:"0 20px",display:"flex",alignItems:"center",minHeight:50}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",marginRight:12,fontFamily:"inherit"}}>← Menu</button>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff",marginRight:"auto"}}>🌐 Dashboard Overall — Ammar Cell</div>
+        </div>
+        <div style={{background:"rgba(0,0,0,.12)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"7px 20px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.8)"}}>📅 Rentang:</span>
+          <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{padding:"4px 8px",borderRadius:7,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+          <span style={{fontSize:11,color:"rgba(255,255,255,.5)"}}>s/d</span>
+          <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{padding:"4px 8px",borderRadius:7,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {[{k:"today",l:"Hari Ini"},{k:"7d",l:"7 Hari"},{k:"30d",l:"30 Hari"},{k:"mon",l:"Bulan Ini"},{k:"yr",l:"Tahun Ini"}].map(p=>(
+              <button key={p.k} onClick={()=>applyPreset(p.k)} style={{padding:"3px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,.35)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{p.l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{padding:"0 20px",display:"flex",overflowX:"auto",background:"rgba(0,0,0,.08)"}}>
+          {tabs.map(t=>(
+            <button key={t.k} onClick={()=>setActiveTab(t.k)} style={{padding:"10px 16px",border:"none",borderBottom:`3px solid ${activeTab===t.k?"#fff":"transparent"}`,background:"transparent",color:activeTab===t.k?"#fff":"rgba(255,255,255,.6)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{t.l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"16px 20px",maxWidth:960,margin:"0 auto"}}>
+
+        {activeTab==="overview"&&(<>
+          {/* Hari ini */}
+          <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:14,padding:"16px 20px",marginBottom:14,boxShadow:"0 4px 16px rgba(13,148,136,.25)"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"rgba(255,255,255,.8)",marginBottom:10}}>🌅 Penjualan Hari Ini — {todayStr}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+              {[{l:"Omset Kasir",v:fmtRp(omsetHari),c:"#fff"},{l:"Profit",v:fmtRp(profitHari),c:"#a7f3d0"},{l:"Transaksi",v:todayTrx.length+" trx",c:"#fcd34d"},{l:"Outlet Aktif",v:outlets.filter(o=>todayTrx.some(t=>t.outletId===o.id)).length+" outlet",c:"#fca5a5"}].map(k=>(
+                <div key={k.l} style={{background:"rgba(255,255,255,.12)",borderRadius:10,padding:"10px 13px"}}>
+                  <div style={{fontWeight:900,fontSize:16,color:k.c}}>{k.v}</div>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,.65)",marginTop:2}}>{k.l}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {outlets.map(o=>{
+                const ot=todayTrx.filter(t=>t.outletId===o.id);
+                return <div key={o.id} style={{flex:1,minWidth:120,background:"rgba(255,255,255,.1)",borderRadius:9,padding:"8px 11px"}}>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,.65)",fontWeight:600}}>{o.nama}</div>
+                  <div style={{fontWeight:800,fontSize:14,color:"#fff"}}>{fmtRp(calcOmset(ot))}</div>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,.5)"}}>{ot.length} trx</div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          {/* KPI periode */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+            {[{l:"Total Omset",v:fmtRp(totalOmset),bg:"linear-gradient(135deg,#0d9488,#14b8a6)",tc:"#fff",icon:"💰"},{l:"Total Profit",v:fmtRp(totalProfit),bg:"#e8f8f0",tc:"#27ae60",icon:"📈"},{l:"Total Transaksi",v:filteredTx.length+" trx",bg:"#e8f4fd",tc:"#2980b9",icon:"🧾"}].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:14,padding:"14px 16px",border:k.bg.includes("gradient")?"none":"2px solid #e0f5f1"}}>
+                <div style={{fontSize:20,marginBottom:6}}>{k.icon}</div>
+                <div style={{fontWeight:900,fontSize:20,color:k.tc}}>{k.v}</div>
+                <div style={{fontSize:11,fontWeight:700,color:k.tc,opacity:.8,marginTop:2}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Grafik */}
+          <div style={{background:"#fff",borderRadius:14,padding:"16px 20px",border:"2px solid #e0f5f1",marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>📊 Tren 6 Bulan Terakhir</div>
+              <div style={{display:"flex",gap:12,fontSize:11}}>
+                {[{c:"#0d9488",l:"Omset"},{c:"#27ae60",l:"Profit"}].map(leg=>(
+                  <div key={leg.l} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:10,height:10,borderRadius:2,background:leg.c}}/><span style={{color:"#aaa"}}>{leg.l}</span></div>
+                ))}
+              </div>
+            </div>
+            <svg viewBox="0 0 600 120" style={{width:"100%",display:"block"}}>
+              {chart6.map((b,i)=>{const x=i*(600/6)+10;const bw=22;const oh=(b.omset/maxC)*90;const ph=(b.profit/maxC)*90;return(
+                <g key={b.b}>
+                  <rect x={x} y={95-oh} width={bw} height={Math.max(oh,1)} rx="3" fill="#0d9488" opacity=".8"/>
+                  <rect x={x+25} y={95-ph} width={bw} height={Math.max(ph,1)} rx="3" fill="#27ae60" opacity=".8"/>
+                  <text x={x+22} y={112} textAnchor="middle" fontSize="9" fill="#aaa" fontFamily="Nunito">{b.b}</text>
+                </g>
+              );})}
+            </svg>
+          </div>
+
+          {/* Ranking outlet */}
+          <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #e0f5f1"}}>
+            <div style={{fontWeight:800,fontSize:14,color:"#0d9488",marginBottom:12}}>🏅 Ranking Outlet</div>
+            {outletStats.map((o,i)=>{
+              const pct=Math.round(o.profit/(outletStats[0]?.profit||1)*100);
+              return <div key={o.id} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                  <span style={{fontSize:12,fontWeight:700}}>{["🥇","🥈","🥉"][i]||`#${i+1}`} {o.nama}</span>
+                  <div><span style={{fontSize:12,fontWeight:900,color:"#0d9488"}}>{fmtRp(o.omset)}</span><span style={{fontSize:10,color:"#27ae60",marginLeft:8}}>+{fmtRp(o.profit)}</span></div>
+                </div>
+                <div style={{background:"#e0faf5",borderRadius:20,height:5}}>
+                  <div style={{background:"linear-gradient(90deg,#0d9488,#14b8a6)",height:"100%",width:`${pct}%`,borderRadius:20}}/>
+                </div>
+              </div>;
+            })}
+          </div>
+        </>)}
+
+        {activeTab==="outlet"&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+            {outletStats.map((o,i)=>(
+              <div key={o.id} style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:`2px solid ${i===0?"#0d9488":"#e0f5f1"}`}}>
+                <div style={{fontWeight:800,fontSize:14,color:"#0d9488",marginBottom:10}}>{["🥇","🥈","🥉"][i]||"🏪"} {o.nama}</div>
+                {[{l:"Total Omset",v:fmtRp(o.omset),c:"#0d9488"},{l:"Total Profit",v:fmtRp(o.profit),c:"#27ae60"},{l:"Transaksi",v:o.trx+" trx",c:"#2980b9"},{l:"Avg/Trx",v:fmtRp(o.trx?Math.round(o.omset/o.trx):0),c:"#8e44ad"},{l:"Margin",v:`${o.omset?Math.round(o.profit/o.omset*100):0}%`,c:"#e67e22"}].map(s=>(
+                  <div key={s.l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f0faf8"}}>
+                    <span style={{fontSize:12,color:"#888"}}>{s.l}</span>
+                    <span style={{fontWeight:800,fontSize:12,color:s.c}}>{s.v}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab==="fastmoving"&&(
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:"2px solid #e0f5f1",fontWeight:800,fontSize:14,color:"#0d9488"}}>🚀 Top 10 Produk Fast Moving</div>
+            {fastMoving.length===0?<div style={{textAlign:"center",color:"#ccc",padding:40,fontSize:13}}>Belum ada data</div>:
+            fastMoving.map(([name,qty],i)=>{
+              const pct=Math.round((qty/(fastMoving[0]?.[1]||1))*100);
+              const colors=["#0d9488","#14b8a6","#2dd4bf","#5eead4","#99f6e4","#b2f5ea","#ccfbf1","#e0fdfb","#f0fdfa","#f0faf8"];
+              return <div key={name} style={{padding:"11px 18px",borderTop:i>0?"1px solid #f0faf8":"none"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:22,height:22,borderRadius:"50%",background:colors[i],color:i<5?"#fff":"#0d9488",fontWeight:900,fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                    <span style={{fontSize:13,fontWeight:700}}>{name}</span>
+                  </div>
+                  <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{qty} pcs</span>
+                </div>
+                <div style={{background:"#e0faf5",borderRadius:20,height:4}}>
+                  <div style={{background:"linear-gradient(90deg,#0d9488,#14b8a6)",height:"100%",width:`${pct}%`,borderRadius:20}}/>
+                </div>
+              </div>;
+            })}
+          </div>
+        )}
+
+        {activeTab==="analisis"&&(<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+            {[
+              {icon:"📈",t:"Tren Omset",v:totalOmset>0?"Positif ✓":"Belum ada data",c:"#27ae60",bg:"#e8f8f0",desc:`Total omset ${fmtRp(totalOmset)} dalam periode dipilih`},
+              {icon:"💎",t:"Outlet Terbaik",v:outletStats[0]?.nama||"—",c:"#e67e22",bg:"#fef5e7",desc:`Profit tertinggi: ${fmtRp(outletStats[0]?.profit||0)}`},
+              {icon:"🏆",t:"Produk Terlaris",v:fastMoving[0]?.[0]||"—",c:"#0d9488",bg:"#e0faf5",desc:`Terjual ${fastMoving[0]?.[1]||0} pcs dalam periode ini`},
+              {icon:"📊",t:"Margin Rata-rata",v:`${totalOmset?Math.round(totalProfit/totalOmset*100):0}%`,c:"#8e44ad",bg:"#f5eeff",desc:`Profit ${fmtRp(totalProfit)} dari omset ${fmtRp(totalOmset)}`},
+            ].map(ins=>(
+              <div key={ins.t} style={{background:ins.bg,borderRadius:13,padding:"16px 18px",border:`1px solid ${ins.c}22`}}>
+                <div style={{fontSize:28,marginBottom:8}}>{ins.icon}</div>
+                <div style={{fontWeight:700,fontSize:11,color:ins.c,textTransform:"uppercase",marginBottom:4}}>{ins.t}</div>
+                <div style={{fontWeight:900,fontSize:18,color:"#1a2e2a",marginBottom:5}}>{ins.v}</div>
+                <div style={{fontSize:11,color:"#888",lineHeight:1.5}}>{ins.desc}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #e0f5f1"}}>
+            <div style={{fontWeight:800,fontSize:14,color:"#0d9488",marginBottom:12}}>🧠 Rekomendasi Berdasarkan Data Real</div>
+            {[
+              {icon:"📍",pr:"Tinggi",c:"#e74c3c",j:"Fokus Outlet Terbaik",isi:`${outletStats[0]?.nama||"Outlet"} adalah yang paling profitable. Pertahankan stok dan pelayanan terbaik di sini.`},
+              {icon:"📦",pr:"Tinggi",c:"#e74c3c",j:"Jaga Stok Fast Moving",isi:`${fastMoving.slice(0,3).map(([n])=>n).join(", ")||"Produk terlaris"} — pastikan stok selalu tersedia untuk menghindari kehilangan penjualan.`},
+              {icon:"📈",pr:"Sedang",c:"#f39c12",j:"Tingkatkan Margin",isi:`Margin saat ini ${totalOmset?Math.round(totalProfit/totalOmset*100):0}%. Target 30%+ dengan review harga jual dan negosiasi supplier.`},
+              {icon:"🏪",pr:"Sedang",c:"#f39c12",j:"Optimalkan Outlet Terlemah",isi:`${outletStats[outletStats.length-1]?.nama||"Outlet"} perlu perhatian khusus — cek stok, kasir, dan promosi lokal.`},
+            ].map(r=>(
+              <div key={r.j} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:"#f0faf8",marginBottom:7,border:"1px solid #e0f5f1"}}>
+                <span style={{fontSize:20,flexShrink:0}}>{r.icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:800,fontSize:13}}>{r.j}</span>
+                    <span style={{background:`${r.c}15`,color:r.c,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>Prioritas {r.pr}</span>
+                  </div>
+                  <div style={{fontSize:12,color:"#888",lineHeight:1.5}}>{r.isi}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>)}
       </div>
     </div>
   );
@@ -3540,7 +3836,7 @@ export default function App() {
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="dashboard" && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
-      {page==="overall"   && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
+      {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
       {["produk","outlet","stok","dashboard","overall","laporan","saldo"].includes(page)&&!isAdmin&&(
