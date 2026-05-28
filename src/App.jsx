@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { db, dbSaldo, dbShift, dbBank, supabase } from "./supabase.js";
+import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -1636,39 +1636,60 @@ function LaporanPage({ transactions, outlets, onBack }) {
   const [shiftLogs, setShiftLogs] = useState({});
 
   useEffect(()=>{
-    dbShift.getShiftLogs().then(logs=>{
-      const m={};
-      logs.forEach(l=>{
-        // saldo_open bisa berisi saldoApps atau saldo_apps tergantung versi
-        const so = l.saldo_open || {};
-        const sc = l.saldo_close || {};
-        const rekap = l.rekap || {};
-        m[l.id]={
-          type: sc.selisih !== undefined ? "closed" : "open",
-          namaShift:      l.nama,
-          waktuBuka:      l.start_time,
-          waktuTutup:     l.end_time,
-          // Saldo awal — coba berbagai field name
-          saldoApps:      so.saldoApps || so.saldo_apps || {},
-          cashKembalian:  so.cashKembalian || so.cash_kembalian || 0,
-          totalSaldoApps: so.totalSaldoApps || so.total_saldo_apps || 0,
-          // Saldo akhir
-          saldoAppsAkhir: sc.saldoAppsC || sc.saldoAppsAkhir || sc.saldo_apps_akhir || {},
-          cashKembClose:  sc.cashKembC || sc.cashKembClose || 0,
-          // Rekap kas
-          setorTunai:     rekap.setorTunai || 0,
-          hutang:         rekap.hutang || 0,
-          pending:        rekap.pending || 0,
-          pengeluaran:    rekap.pengeluaran || 0,
-          noteKlr:        rekap.noteKlr || "",
-          kasNyataSystem: rekap.kasNyataSystem || sc.uangSistem || 0,
-          kasNyataFisik:  rekap.kasNyataFisik || sc.uangLaci || 0,
-          selisih:        rekap.selisih ?? sc.selisih ?? 0,
-          notes:          rekap.notes || sc.catatan || "",
-        };
-      });
-      setShiftLogs(m);
-    }).catch(()=>{});
+    const loadLogs = async () => {
+      try {
+        // Load closed shifts dari shift_logs
+        const logs = await dbShift.getShiftLogs();
+        const m={};
+        logs.forEach(l=>{
+          const so = l.saldo_open || {};
+          const sc = l.saldo_close || {};
+          const rekap = l.rekap || {};
+          m[l.id]={
+            type:"closed",
+            namaShift:      l.nama,
+            waktuBuka:      l.start_time,
+            waktuTutup:     l.end_time,
+            saldoApps:      so.saldoApps || so.saldo_apps || {},
+            cashKembalian:  so.cashKembalian || so.cash_kembalian || 0,
+            totalSaldoApps: so.totalSaldoApps || so.total_saldo_apps || 0,
+            saldoAppsAkhir: sc.saldoAppsC || sc.saldoAppsAkhir || sc.saldo_apps_akhir || {},
+            cashKembClose:  sc.cashKembC || sc.cashKembClose || 0,
+            setorTunai:     rekap.setorTunai || 0,
+            hutang:         rekap.hutang || 0,
+            pending:        rekap.pending || 0,
+            pengeluaran:    rekap.pengeluaran || 0,
+            noteKlr:        rekap.noteKlr || "",
+            kasNyataSystem: rekap.kasNyataSystem || sc.uangSistem || 0,
+            kasNyataFisik:  rekap.kasNyataFisik || sc.uangLaci || 0,
+            selisih:        rekap.selisih ?? sc.selisih ?? 0,
+            notes:          rekap.notes || sc.catatan || "",
+          };
+        });
+
+        // Load active shifts (belum ditutup) dari active_shifts
+        const { data: activeShifts } = await supabase
+          .from('active_shifts').select('*').catch(()=>({data:[]}));
+        (activeShifts||[]).forEach(s=>{
+          const sd = s.saldo_data || {};
+          m[s.id] = {
+            type:"open",
+            namaShift:      s.nama,
+            waktuBuka:      s.start_time,
+            waktuTutup:     null,
+            saldoApps:      sd.saldoApps || {},
+            cashKembalian:  sd.cashKembalian || 0,
+            totalSaldoApps: sd.totalSaldoApps || 0,
+          };
+        });
+
+        setShiftLogs(m);
+      } catch(e){ console.error(e); }
+    };
+    loadLogs();
+    // Reload setiap 30 detik untuk catch perubahan shift
+    const iv = setInterval(loadLogs, 30000);
+    return ()=>clearInterval(iv);
   },[]);
 
   const getShiftSaldo = (shiftId) => {
@@ -2584,14 +2605,17 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, title, onBack, notify }) {
     if (list.length===0) return notify("Minimal 1 aplikasi!","err");
     setSaving(true);
     try {
-      await dbSaldo.saveSaldoApps(list);
+      if (title==="Saldo Bank") {
+        await dbSaldoBank.saveSaldoBankApps(list);
+      } else {
+        await dbSaldo.saveSaldoApps(list);
+      }
       setSaldoApps(list);
       notify(`${list.length} saldo aplikasi disimpan ✓`,"ok");
       onBack();
     } catch(e) {
-      // Tetap simpan ke state meski Supabase gagal (tabel belum dibuat)
       setSaldoApps(list);
-      notify("Disimpan lokal (jalankan SQL saldo_apps dulu untuk permanen)","warn");
+      notify("Disimpan lokal","warn");
       onBack();
     }
     setSaving(false);
@@ -3042,7 +3066,8 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
 
 // ── BankShiftModal (komponen terpisah agar hooks aman) ────────────────────────
 function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCancel}) {
-  const blank = ()=>Object.fromEntries(saldoApps.map(a=>[a,""]));
+  const APPS = (saldoApps && saldoApps.length > 0) ? saldoApps : ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay"];
+  const blank = ()=>Object.fromEntries(APPS.map(a=>[a,""]));
   const [namaShift,  setNamaShift]  = useState("");
   const [cashKemb,   setCashKemb]   = useState("");
   const [saldoForm,  setSaldoForm]  = useState(blank());
@@ -3076,7 +3101,7 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
             <input type="number" value={cashKemb} onChange={e=>setCashKemb(e.target.value)} placeholder="0" style={inp}/>
             <SH t="📱 Saldo Aplikasi Awal (Catatan)"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {saldoApps.map(app=>(
+              {APPS.map(app=>(
                 <div key={app}>
                   <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
                   <input type="number" value={saldoForm[app]||""} onChange={e=>setSaldoForm(p=>({...p,[app]:e.target.value}))} placeholder="0" style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
@@ -3109,7 +3134,7 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
             </div>
             <SH t="📱 Saldo Aplikasi Akhir (Catatan)"/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:4}}>
-              {saldoApps.map(app=>(
+              {APPS.map(app=>(
                 <div key={app}>
                   <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
                   <input type="number" value={saldoClose[app]||""} onChange={e=>setSaldoClose(p=>({...p,[app]:e.target.value}))} placeholder="0" style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
@@ -3179,8 +3204,17 @@ function BankTrxForm({editData, onSave, onCancel}) {
   const handleNama = e => setNama(e.target.value.toUpperCase());
 
   const calcNet = () => {
-    if(jenis==="masuk") return feeType==="fee"?nomNum+feeNum:feeType==="dipotong"?nomNum-feeNum:nomNum;
-    return feeType==="fee"?-(nomNum+feeNum):feeType==="dipotong"?-(nomNum-feeNum):-nomNum;
+    // MASUK: fee = tambah pendapatan, dipotong = kurangi pendapatan
+    // KELUAR: fee = tambah pengeluaran, dipotong = kurangi pengeluaran
+    if(jenis==="masuk") {
+      if(feeType==="fee")      return nomNum + feeNum;  // masuk + fee = lebih banyak masuk
+      if(feeType==="dipotong") return nomNum - feeNum;  // masuk - fee = berkurang
+      return nomNum;
+    } else {
+      if(feeType==="fee")      return -(nomNum + feeNum); // keluar + fee = lebih besar keluar
+      if(feeType==="dipotong") return -(nomNum - feeNum); // keluar - fee = lebih kecil keluar
+      return -nomNum;
+    }
   };
   const net = calcNet();
 
@@ -3578,18 +3612,20 @@ export default function App() {
   useEffect(()=>{
     const load = async () => {
       try {
-        const [prods, outs, stks, txs, usrs, saldoList] = await Promise.all([
+        const [prods, outs, stks, txs, usrs, saldoList, saldoBankList] = await Promise.all([
           db.getProducts(),
           db.getOutlets(),
           db.getStocks(),
           db.getTransactions(),
           db.getUsers(),
           dbSaldo.getSaldoApps(),
+          dbSaldoBank.getSaldoBankApps(),
         ]);
         setProductsState(prods);
         setOutletsState(outs);
         setStocksState(stks);
         if (Array.isArray(saldoList) && saldoList.length > 0) setSaldoApps(saldoList);
+        if (Array.isArray(saldoBankList) && saldoBankList.length > 0) setSaldoBank(saldoBankList);
         // Map transaksi ke format lokal
         setTx(txs.map(t=>({
           id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
@@ -3705,6 +3741,20 @@ export default function App() {
       supabase.removeChannel(outletChannel);
       supabase.removeChannel(userChannel);
     };
+  },[]);
+
+  // ── Realtime active_shifts — laporan admin update otomatis ────────────────
+  useEffect(()=>{
+    const ch = supabase.channel('realtime-shifts')
+      .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},()=>{
+        // Trigger reload data
+        reloadData();
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{
+        reloadData();
+      })
+      .subscribe();
+    return ()=>supabase.removeChannel(ch);
   },[]);
 
   // ── Wrapper setProducts: update state + Supabase ─────────────────────────
