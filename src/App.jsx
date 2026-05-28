@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { db, dbSaldo, dbShift, supabase } from "./supabase.js";
+import { db, dbSaldo, dbShift, dbBank, supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -245,6 +245,7 @@ function LoginPage({ users, onLogin }) {
 function MenuUtama({ user, onNavigate, onLogout, stats }) {
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),    label:"Kasir",             desc:"Buka transaksi penjualan",    color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
+    {id:"bank",     icon:Ic.Cash(22), label:"Bank",              desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"produk",   icon:Ic.Produk(),  label:"Manajemen Produk",  desc:"Tambah, edit & hapus produk", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),  label:"Manajemen Outlet",  desc:"Kelola outlet & kasir",       color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
     {id:"saldo",    icon:Ic.Cash(22),  label:"Saldo Aplikasi",    desc:"Kelola list saldo di shift",  color:"#16a085", bg:"#e0faf5", roles:["admin"]},
@@ -2751,6 +2752,436 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
   );
 }
 
+}
+
+// Running text motivasi untuk BankPage
+function BankMotivasi() {
+  const texts = [
+    "🌟 Kejujuran adalah fondasi kepercayaan — jaga setiap transaksi dengan integritas",
+    "💪 Bersama kita tumbuh — setiap rupiah yang tercatat adalah bukti kerja keras kita",
+    "🎯 Transparansi bukan pilihan, tapi komitmen kita untuk bisnis yang sehat",
+    "🤝 Kepercayaan dibangun dari hal kecil — catat dengan jujur, laporkan dengan tepat",
+    "✨ Ammar Cell berkembang karena tim yang solid dan penuh integritas",
+  ];
+  const [idx, setIdx] = useState(0);
+  const [vis, setVis]  = useState(true);
+  useEffect(()=>{
+    const iv=setInterval(()=>{setVis(false);setTimeout(()=>{setIdx(i=>(i+1)%texts.length);setVis(true);},300);},4000);
+    return ()=>clearInterval(iv);
+  },[]);
+  return (
+    <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.85)",textAlign:"center",transition:"opacity .3s",opacity:vis?1:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"4px 0"}}>
+      {texts[idx]}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BANK PAGE — Pencatatan Bank (terintegrasi Supabase Realtime)
+// ══════════════════════════════════════════════════════════════════════════════
+function BankPage({ user, outlets, saldoApps, onBack, notify }) {
+  const selectedOutlet = user.outletId || outlets[0]?.id || "";
+  const outletNama     = outlets.find(o=>o.id===selectedOutlet)?.nama || "Ammar Cell";
+
+  const [trxList,     setTrxList]    = useState([]);
+  const [shift,       setShiftState] = useState(null);
+  const [showShift,   setShowShift]  = useState(false);
+  const [shiftMode,   setShiftMode]  = useState("open");
+  const [showForm,    setShowForm]   = useState(false);
+  const [editTrx,     setEditTrx]    = useState(null);
+  const [filterJenis, setFilterJenis]= useState("semua");
+  const [showBalance, setShowBalance]= useState(false);
+  const [balanceVal,  setBalanceVal] = useState("");
+  const [lastBalance, setLastBalance]= useState(null);
+  const [loading,     setLoading]    = useState(true);
+
+  // ── Load data ─────────────────────────────────────────────────────────────
+  useEffect(()=>{
+    const load = async () => {
+      try {
+        const [trxs, activeShift] = await Promise.all([
+          dbBank.getTransactions(),
+          dbBank.getActiveShift(selectedOutlet, user.username),
+        ]);
+        setTrxList(trxs.filter(t=>t.outletId===selectedOutlet));
+        if(activeShift) setShiftState(activeShift);
+        try{ const b=localStorage.getItem(`bank_balance_${selectedOutlet}`); if(b) setLastBalance(JSON.parse(b)); }catch{}
+        // Load shift dari localStorage juga sebagai fallback
+        try{ const s=localStorage.getItem(`bank_shift_${selectedOutlet}`); if(s&&!activeShift) setShiftState(JSON.parse(s)); }catch{}
+      } catch(e){ console.error(e); }
+      setLoading(false);
+    };
+    load();
+  },[selectedOutlet]);
+
+  // ── Realtime ──────────────────────────────────────────────────────────────
+  useEffect(()=>{
+    const chTrx = supabase.channel(`bank-trx-${selectedOutlet}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
+        const row=payload.new;
+        if(payload.eventType==='INSERT'&&row.outlet_id===selectedOutlet){
+          const t={id:row.id,waktu:row.waktu,tgl:row.tgl,shiftId:row.shift_id,nama:row.nama,jenis:row.jenis,feeType:row.fee_type,fee:row.fee,nominal:row.nominal,netNominal:row.net_nominal,outletId:row.outlet_id};
+          setTrxList(prev=>prev.find(x=>x.id===t.id)?prev:[t,...prev]);
+        } else if(payload.eventType==='UPDATE'){
+          setTrxList(prev=>prev.map(t=>t.id===row.id?{...t,nama:row.nama,jenis:row.jenis,feeType:row.fee_type,fee:row.fee,nominal:row.nominal,netNominal:row.net_nominal}:t));
+        } else if(payload.eventType==='DELETE'){
+          setTrxList(prev=>prev.filter(t=>t.id!==payload.old.id));
+        }
+      }).subscribe();
+    const chShift = supabase.channel(`bank-shift-${selectedOutlet}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},(payload)=>{
+        if(payload.eventType==='DELETE') { setShiftState(null); try{localStorage.removeItem(`bank_shift_${selectedOutlet}`);}catch{} }
+        else if(payload.new?.outlet_id===selectedOutlet){
+          const s=payload.new;
+          const shiftData={id:s.id,nama:s.nama,start:s.start_time,...(s.saldo_data||{})};
+          setShiftState(shiftData);
+          try{localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(shiftData));}catch{}
+        }
+      }).subscribe();
+    return ()=>{ supabase.removeChannel(chTrx); supabase.removeChannel(chShift); };
+  },[selectedOutlet]);
+
+  const uangSistem = trxList.reduce((s,t)=>s+t.netNominal,0);
+  const totalMasuk = trxList.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+  const totalKeluar= trxList.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+  const filtered   = filterJenis==="semua"?trxList:filterJenis==="masuk"?trxList.filter(t=>t.netNominal>0):trxList.filter(t=>t.netNominal<0);
+  const totalSaldo = shift?.saldoApps?Object.values(shift.saldoApps).reduce((s,v)=>s+(+v||0),0):0;
+
+  const setShift = (val) => {
+    setShiftState(val);
+    try{ if(val) localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(val)); else localStorage.removeItem(`bank_shift_${selectedOutlet}`); }catch{}
+  };
+
+  const saveBalance = () => {
+    if(!balanceVal) return;
+    const b={waktu:now(),jam:new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"}),uang:+balanceVal,selisih:+balanceVal-uangSistem};
+    setLastBalance(b);
+    try{localStorage.setItem(`bank_balance_${selectedOutlet}`,JSON.stringify(b));}catch{}
+    setBalanceVal(""); setShowBalance(false);
+    notify(`Balance dicatat: ${fmtRp(+balanceVal)}`,+balanceVal===uangSistem?"ok":"warn");
+  };
+
+  const openShift = async (data) => {
+    const s={id:uid(),nama:data.namaShift,start:now(),outletId:selectedOutlet,...data};
+    setShift(s);
+    await dbBank.openShift(s,selectedOutlet,user.username);
+    setShowShift(false); notify("Shift bank dibuka! ✓","ok");
+  };
+
+  const closeShift = async (data) => {
+    await dbBank.closeShift(shift,selectedOutlet,user.username,{...data,waktuTutup:now()});
+    setShift(null); setShowShift(false);
+    notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");
+  };
+
+  const saveTrx = async (trx) => {
+    const t={...trx,outletId:selectedOutlet,shiftId:shift?.id};
+    if(editTrx){
+      try{ await dbBank.updateTransaction(editTrx.id,t); notify("Diperbarui ✓","ok"); }
+      catch{ notify("Gagal update!","err"); }
+    } else {
+      try{ await dbBank.addTransaction(t); notify("Tersimpan ✓","ok"); }
+      catch{ notify("Gagal simpan!","err"); }
+    }
+    setShowForm(false); setEditTrx(null);
+  };
+
+  const deleteTrx = async (id) => {
+    try{ await dbBank.deleteTransaction(id); notify("Dihapus","warn"); }
+    catch{ notify("Gagal hapus!","err"); }
+  };
+
+  if(loading) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}><div style={{fontSize:14,color:"#0d9488",fontWeight:700}}>⏳ Memuat data bank...</div></div>;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.35)"}}>
+        <div style={{padding:"0 16px",display:"flex",alignItems:"center",minHeight:50}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",marginRight:10,fontFamily:"inherit"}}>← Menu</button>
+          <div style={{marginRight:"auto"}}>
+            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>{outletNama} <span style={{opacity:.7,fontWeight:600,fontSize:12}}>· Bank</span></div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>{user.nama}</div>
+          </div>
+          <div onClick={()=>{setShiftMode(shift?"close":"open");setShowShift(true);}} style={{background:shift?"rgba(255,255,255,.18)":"rgba(255,100,100,.3)",border:`1px solid ${shift?"rgba(255,255,255,.35)":"rgba(255,100,100,.6)"}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",marginRight:8,fontSize:11,fontWeight:800,color:"#fff"}}>
+            {shift?`⏱ ${shift.nama}`:"⚠ Buka Shift"}
+          </div>
+        </div>
+        <div style={{background:"rgba(0,0,0,.12)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"4px 16px"}}>
+          <BankMotivasi/>
+        </div>
+      </div>
+
+      {!shift&&(
+        <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,fontFamily:"'Nunito',sans-serif"}}>
+          <div style={{fontSize:60}}>🔒</div>
+          <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Bank Belum Dibuka</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.8)",textAlign:"center",maxWidth:300,lineHeight:1.7}}>Buka shift terlebih dahulu untuk mulai mencatat transaksi keuangan</div>
+          <button onClick={()=>{setShiftMode("open");setShowShift(true);}} style={{background:"#fff",border:"none",borderRadius:14,padding:"14px 32px",color:"#0d9488",fontWeight:900,fontSize:16,cursor:"pointer",fontFamily:"inherit",marginTop:6,boxShadow:"0 8px 28px rgba(0,0,0,.2)"}}>🟢 Buka Shift Sekarang</button>
+        </div>
+      )}
+
+      <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+          <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:14,padding:"16px 18px",boxShadow:"0 4px 16px rgba(13,148,136,.25)"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.7)",marginBottom:4}}>UANG SISTEM</div>
+            <div style={{fontWeight:900,fontSize:24,color:"#fff"}}>{fmtRp(uangSistem)}</div>
+            <button onClick={()=>setShowBalance(true)} style={{marginTop:9,background:"rgba(255,255,255,.18)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"4px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:5}}>
+              🔄 Cek Balance {lastBalance&&<span style={{opacity:.6}}>{lastBalance.jam}</span>}
+            </button>
+            {lastBalance&&<div style={{fontSize:10,color:"rgba(255,255,255,.65)",marginTop:5}}>Laci: {fmtRp(lastBalance.uang)} · <span style={{color:lastBalance.selisih===0?"#a7f3d0":lastBalance.selisih>0?"#fcd34d":"#fca5a5",fontWeight:700}}>{lastBalance.selisih===0?"✓ Balance":(lastBalance.selisih>0?"+":"")+fmtRp(lastBalance.selisih)}</span></div>}
+            {totalSaldo>0&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:4}}>Saldo Aplikasi: {fmtRp(totalSaldo)}</div>}
+          </div>
+          <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #e0faf5"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#0d9488",marginBottom:4}}>TOTAL MASUK</div>
+            <div style={{fontWeight:900,fontSize:24,color:"#0d9488"}}>{fmtRp(totalMasuk)}</div>
+            <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{trxList.filter(t=>t.netNominal>0).length} transaksi ⬇</div>
+          </div>
+          <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #ffe0e0"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#e74c3c",marginBottom:4}}>TOTAL KELUAR</div>
+            <div style={{fontWeight:900,fontSize:24,color:"#e74c3c"}}>{fmtRp(totalKeluar)}</div>
+            <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{trxList.filter(t=>t.netNominal<0).length} transaksi ⬆</div>
+          </div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"center",marginBottom:16}}>
+          <button onClick={()=>{setEditTrx(null);setShowForm(true);}} style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"13px 40px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
+            ＋ Catat Transaksi
+          </button>
+        </div>
+
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+          <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+            <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📋 Riwayat Transaksi</div>
+            <div style={{display:"flex",gap:6}}>
+              {[{k:"semua",l:"Semua"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"}].map(f=>(
+                <button key={f.k} onClick={()=>setFilterJenis(f.k)} style={{padding:"5px 12px",borderRadius:20,border:"2px solid",borderColor:filterJenis===f.k?"#0d9488":"#b2ede6",background:filterJenis===f.k?"#0d9488":"#fff",color:filterJenis===f.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{f.l}</button>
+              ))}
+            </div>
+          </div>
+          {filtered.length===0?<div style={{textAlign:"center",color:"#ccc",padding:40,fontSize:13}}>Belum ada transaksi</div>:
+          filtered.map((t,i)=>(
+            <div key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe"}}>
+              <div style={{width:38,height:38,borderRadius:11,background:t.netNominal>0?"#e0faf5":"#fff0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{t.netNominal>0?"⬇":"⬆"}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.nama}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:2}}>
+                  {t.waktu}
+                  {t.feeType==="fee"&&<span style={{color:"#0d9488",fontWeight:700,marginLeft:6}}>+fee {fmtRp(t.fee)}</span>}
+                  {t.feeType==="dipotong"&&t.fee>0&&<span style={{color:"#e74c3c",fontWeight:700,marginLeft:6}}>−potong {fmtRp(t.fee)}</span>}
+                </div>
+              </div>
+              <div style={{fontWeight:900,fontSize:15,color:t.netNominal>0?"#0d9488":"#e74c3c",flexShrink:0}}>{t.netNominal>0?"+":""}{fmtRp(Math.abs(t.netNominal))}</div>
+              <div style={{display:"flex",gap:4,flexShrink:0}}>
+                <button onClick={()=>{setEditTrx(t);setShowForm(true);}} style={{background:"#e0faf5",border:"none",borderRadius:7,padding:"5px 10px",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
+                <button onClick={()=>deleteTrx(t.id)} style={{background:"#fff0f0",border:"none",borderRadius:7,padding:"5px 10px",color:"#e74c3c",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {showShift&&<BankShiftModal mode={shiftMode} shift={shift} trxList={trxList} saldoApps={saldoApps} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)}/>}
+      {showForm&&<BankTrxForm editData={editTrx} onSave={saveTrx} onCancel={()=>{setShowForm(false);setEditTrx(null);}}/>}
+
+      {showBalance&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+          <div style={{background:"#fff",borderRadius:18,padding:22,width:340,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#0d9488",marginBottom:4}}>🔄 Cek Balance Laci</div>
+            <div style={{fontSize:12,color:"#aaa",marginBottom:14}}>Hitung fisik uang di laci sekarang:</div>
+            <div style={{background:"#f0faf8",borderRadius:9,padding:"9px 13px",marginBottom:12,display:"flex",justifyContent:"space-between"}}>
+              <span style={{fontSize:12,color:"#555"}}>Uang Sistem</span>
+              <span style={{fontWeight:800,color:"#0d9488"}}>{fmtRp(uangSistem)}</span>
+            </div>
+            <input type="number" value={balanceVal} onChange={e=>setBalanceVal(e.target.value)} placeholder="0" autoFocus
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #0d9488",fontSize:20,fontWeight:900,textAlign:"right",outline:"none",fontFamily:"inherit",marginBottom:10}}/>
+            {balanceVal&&(
+              <div style={{background:+balanceVal===uangSistem?"#e0faf5":+balanceVal>uangSistem?"#fffbe6":"#fff0f0",border:`2px solid ${+balanceVal===uangSistem?"#0d9488":+balanceVal>uangSistem?"#f39c12":"#e74c3c"}`,borderRadius:9,padding:"8px 12px",marginBottom:10,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontSize:12,fontWeight:700}}>Selisih</span>
+                <span style={{fontWeight:900,fontSize:16,color:+balanceVal===uangSistem?"#0d9488":+balanceVal>uangSistem?"#f39c12":"#e74c3c"}}>{+balanceVal===uangSistem?"✓ Balance":(+balanceVal>uangSistem?"+":"")+fmtRp(+balanceVal-uangSistem)}</span>
+              </div>
+            )}
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>🕐 {new Date().toLocaleTimeString("id-ID")}</div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setShowBalance(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:10,fontWeight:700,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+              <button onClick={saveBalance} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:10,color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✓ Simpan Cek</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── BankShiftModal (komponen terpisah agar hooks aman) ────────────────────────
+function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCancel}) {
+  const blank = ()=>Object.fromEntries(saldoApps.map(a=>[a,""]));
+  const [namaShift,  setNamaShift]  = useState("");
+  const [cashKemb,   setCashKemb]   = useState("");
+  const [saldoForm,  setSaldoForm]  = useState(blank());
+  const [saldoClose, setSaldoClose] = useState(blank());
+  const [uangLaci,   setUangLaci]   = useState("");
+  const [catatan,    setCatatan]    = useState("");
+
+  const shiftTrx    = trxList.filter(t=>t.shiftId===shift?.id);
+  const sMasuk      = shiftTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+  const sKeluar     = shiftTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+  const uangSistemS = sMasuk - sKeluar;
+  const uangLaciNum = +uangLaci||0;
+  const selisih     = uangLaciNum - uangSistemS;
+  const totalSaldoF = Object.values(saldoForm).reduce((s,v)=>s+(+v||0),0);
+
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
+  const SH=({t})=><div style={{fontWeight:800,fontSize:11,color:"#0d9488",background:"#e0faf5",borderRadius:7,padding:"4px 10px",margin:"12px 0 7px"}}>{t}</div>;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+      <div style={{background:"#fff",borderRadius:18,padding:22,width:440,boxShadow:"0 20px 55px rgba(0,0,0,.25)",maxHeight:"92vh",overflowY:"auto",fontFamily:"'Nunito',sans-serif"}}>
+        <div style={{fontWeight:900,fontSize:15,color:mode==="open"?"#0d9488":"#e74c3c",marginBottom:14}}>
+          {mode==="open"?"🟢 Buka Shift Bank":"🔴 Tutup Shift Bank"}
+        </div>
+
+        {mode==="open"&&(
+          <>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nama Shift *</label>
+            <input value={namaShift} onChange={e=>setNamaShift(e.target.value)} placeholder="Pagi / Siang / Malam..." style={inp}/>
+            <SH t="💵 Cash Kembalian (Catatan — tidak mempengaruhi perhitungan)"/>
+            <input type="number" value={cashKemb} onChange={e=>setCashKemb(e.target.value)} placeholder="0" style={inp}/>
+            <SH t="📱 Saldo Aplikasi Awal (Catatan)"/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {saldoApps.map(app=>(
+                <div key={app}>
+                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
+                  <input type="number" value={saldoForm[app]||""} onChange={e=>setSaldoForm(p=>({...p,[app]:e.target.value}))} placeholder="0" style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
+                </div>
+              ))}
+            </div>
+            {totalSaldoF>0&&(
+              <div style={{background:"#e0faf5",borderRadius:9,padding:"9px 12px",marginTop:8,display:"flex",justifyContent:"space-between"}}>
+                <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo Aplikasi</span>
+                <span style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
+              </div>
+            )}
+          </>
+        )}
+
+        {mode==="close"&&(
+          <>
+            <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#555"}}>
+              Shift: <b style={{color:"#0d9488"}}>{shift?.nama}</b> · {shift?.start}
+            </div>
+            <SH t="📊 Rekap Transaksi Shift"/>
+            <div style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:10,padding:"11px 14px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:12}}><span style={{color:"#555"}}>Total Masuk</span><span style={{fontWeight:800,color:"#27ae60"}}>{fmtRp(sMasuk)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:12}}><span style={{color:"#555"}}>Total Keluar</span><span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(sKeluar)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",paddingTop:8,borderTop:"2px solid #e0f5f1"}}>
+                <span style={{fontWeight:800,fontSize:13}}>Uang Sistem</span>
+                <span style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(uangSistemS)}</span>
+              </div>
+              <div style={{fontSize:10,color:"#aaa",marginTop:3}}>{shiftTrx.length} transaksi dalam shift ini</div>
+            </div>
+            <SH t="📱 Saldo Aplikasi Akhir (Catatan)"/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:4}}>
+              {saldoApps.map(app=>(
+                <div key={app}>
+                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
+                  <input type="number" value={saldoClose[app]||""} onChange={e=>setSaldoClose(p=>({...p,[app]:e.target.value}))} placeholder="0" style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
+                </div>
+              ))}
+            </div>
+            <SH t="💰 Uang Laci Fisik"/>
+            <input type="number" value={uangLaci} onChange={e=>setUangLaci(e.target.value)} placeholder="0"
+              style={{...inp,border:"2px solid #0d9488",fontWeight:800,fontSize:16,textAlign:"right"}}/>
+            {uangLaci&&(
+              <div style={{background:selisih===0?"#e8f8f4":selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${selisih===0?"#2ecc71":selisih>0?"#f39c12":"#ff4757"}`,borderRadius:11,padding:"11px 14px",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:12}}><span>Uang Sistem</span><span style={{fontWeight:700}}>{fmtRp(uangSistemS)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12}}><span>Uang Laci Fisik</span><span style={{fontWeight:700}}>{fmtRp(uangLaciNum)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:800,fontSize:13}}>{selisih===0?"✅ Balance!":selisih>0?"📈 Lebih":"📉 Kurang"}</span>
+                  <span style={{fontWeight:900,fontSize:20,color:selisih===0?"#2ecc71":selisih>0?"#f39c12":"#ff4757"}}>{selisih!==0?(selisih>0?"+":"")+fmtRp(Math.abs(selisih)):"✓ Sesuai"}</span>
+                </div>
+              </div>
+            )}
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Catatan / Kendala</label>
+            <textarea value={catatan} onChange={e=>setCatatan(e.target.value)} placeholder="Tulis jika ada kendala, selisih, atau catatan penting..."
+              style={{...inp,resize:"vertical",minHeight:65}}/>
+          </>
+        )}
+
+        <div style={{display:"flex",gap:8,marginTop:4}}>
+          <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+          <button onClick={()=>{
+            if(mode==="open"){if(!namaShift.trim()) return; onOpen({namaShift,cashKemb:+cashKemb||0,saldoApps:saldoForm,totalSaldo:totalSaldoF});}
+            else onClose({saldoAppsC:saldoClose,uangLaci:uangLaciNum,uangSistem:uangSistemS,selisih,catatan});
+          }} style={{flex:2,background:`linear-gradient(135deg,${mode==="open"?"#0d9488,#14b8a6":"#e74c3c,#ff6b6b"})`,border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            {mode==="open"?"🟢 Buka Shift":"🔴 Tutup & Simpan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── BankTrxForm (komponen terpisah) ───────────────────────────────────────────
+function BankTrxForm({editData, onSave, onCancel}) {
+  const [nama,    setNama]    = useState(editData?.nama||"");
+  const [jenis,   setJenis]   = useState(editData?.jenis||"masuk");
+  const [nominal, setNominal] = useState(editData?.nominal?String(editData.nominal):"");
+  const [feeType, setFeeType] = useState(editData?.feeType||"include");
+  const [feeVal,  setFeeVal]  = useState(editData?.fee?String(editData.fee):"");
+
+  const nomNum = +nominal||0; const feeNum = +feeVal||0;
+  const calcNet = () => {
+    if(jenis==="masuk") return feeType==="fee"?nomNum+feeNum:feeType==="dipotong"?nomNum-feeNum:nomNum;
+    return feeType==="fee"?-(nomNum+feeNum):feeType==="dipotong"?-(nomNum-feeNum):-nomNum;
+  };
+  const net = calcNet();
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+      <div style={{background:"#fff",borderRadius:18,padding:22,width:400,boxShadow:"0 20px 55px rgba(0,0,0,.25)",fontFamily:"'Nunito',sans-serif"}}>
+        <div style={{fontWeight:900,fontSize:15,color:"#0d9488",marginBottom:14}}>{editData?"✏️ Edit Transaksi":"➕ Catat Transaksi"}</div>
+        <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nama Transaksi *</label>
+        <input value={nama} onChange={e=>setNama(e.target.value)} placeholder="Contoh: Setoran Penjualan Pusat..." style={{...inp,fontSize:14,fontWeight:700}} autoFocus/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+          {["masuk","keluar"].map(j=>(
+            <button key={j} onClick={()=>setJenis(j)} style={{padding:"11px",borderRadius:9,border:`2px solid ${jenis===j?(j==="masuk"?"#0d9488":"#e74c3c"):"#b2ede6"}`,background:jenis===j?(j==="masuk"?"#e0faf5":"#fff0f0"):"#fff",color:jenis===j?(j==="masuk"?"#0d9488":"#e74c3c"):"#aaa",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+              {j==="masuk"?"⬇ Masuk":"⬆ Keluar"}
+            </button>
+          ))}
+        </div>
+        <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nominal *</label>
+        <input type="number" value={nominal} onChange={e=>setNominal(e.target.value)} placeholder="0"
+          style={{...inp,fontSize:22,fontWeight:900,textAlign:"right",border:"2px solid #0d9488"}}/>
+        <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:6}}>Tipe Fee</label>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:10}}>
+          {[{k:"include",l:"Include",d:"Sudah satu"},{k:"fee",l:"+ Fee",d:"Ditambah"},{k:"dipotong",l:"− Dipotong",d:"Dikurangi"}].map(f=>(
+            <button key={f.k} onClick={()=>setFeeType(f.k)} style={{padding:"8px 4px",borderRadius:8,border:`2px solid ${feeType===f.k?"#0d9488":"#b2ede6"}`,background:feeType===f.k?"#e0faf5":"#fff",color:feeType===f.k?"#0d9488":"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3,textAlign:"center"}}>
+              <div style={{fontWeight:800}}>{f.l}</div><div style={{fontSize:9,opacity:.7}}>{f.d}</div>
+            </button>
+          ))}
+        </div>
+        {feeType!=="include"&&(
+          <>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nominal Fee</label>
+            <input type="number" value={feeVal} onChange={e=>setFeeVal(e.target.value)} placeholder="0" style={inp}/>
+          </>
+        )}
+        {nominal&&(
+          <div style={{background:net>=0?"#e0faf5":"#fff0f0",border:`2px solid ${net>=0?"#0d9488":"#e74c3c"}`,borderRadius:10,padding:"10px 13px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:"#555",fontWeight:600}}>Net Transaksi</span>
+            <span style={{fontWeight:900,fontSize:20,color:net>=0?"#0d9488":"#e74c3c"}}>{net>0?"+":""}{fmtRp(Math.abs(net))}</span>
+          </div>
+        )}
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+          <button onClick={()=>{if(!nama||!nominal) return; onSave({id:editData?.id||"B"+uid(),waktu:editData?.waktu||now(),tgl:editData?.tgl||today(),nama,jenis,feeType,fee:feeNum,nominal:nomNum,netNominal:net});}} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ROOT
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3090,6 +3521,7 @@ export default function App() {
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
