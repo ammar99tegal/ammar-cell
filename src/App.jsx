@@ -271,16 +271,42 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
           {Ic.Logout()} Logout
         </button>
       </div>
-      <div style={{padding:"22px",maxWidth:720,margin:"0 auto"}}>
+      <div style={{padding:"22px",maxWidth:900,margin:"0 auto"}}>
         {user.role==="admin"&&(
-          <div style={{display:"flex",gap:10,marginBottom:22}}>
-            {[{label:"Omset Hari Ini",val:fmtRp(stats.omsetHari),color:"#0d9488"},{label:"Transaksi",val:stats.txHari,color:"#2980b9"},{label:"Stok Menipis",val:stats.stokMenipis+" produk",color:"#ff4757"}].map(s=>(
-              <div key={s.label} style={{flex:1,background:"#fff",borderRadius:12,padding:"12px 16px",border:"2px solid #e0f5f1"}}>
-                <div style={{fontWeight:900,fontSize:18,color:s.color}}>{s.val}</div>
-                <div style={{fontSize:11,color:"#aaa",fontWeight:600,marginTop:2}}>{s.label}</div>
+          <>
+            {/* Baris 1: KPI utama */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+              {[
+                {label:"Omset Hari Ini", val:fmtRp(stats.omsetHari),       color:"#0d9488", bg:"linear-gradient(135deg,#0d9488,#14b8a6)", tc:"#fff"},
+                {label:"Transaksi",      val:stats.txHari+" trx",           color:"#2980b9", bg:"#e8f4fd",    tc:"#2980b9"},
+                {label:"Stok Menipis",   val:stats.stokMenipis+" produk",   color:"#ff4757", bg:"#fff0f0",    tc:"#ff4757"},
+                {label:"Produk Aktif",   val:(stats.totalProduk||0)+" item",color:"#8e44ad", bg:"#f5eeff",    tc:"#8e44ad"},
+              ].map(s=>(
+                <div key={s.label} style={{background:s.bg,borderRadius:12,padding:"12px 16px",border:s.bg.includes("gradient")?"none":"2px solid #e0f5f1"}}>
+                  <div style={{fontWeight:900,fontSize:18,color:s.tc}}>{s.val}</div>
+                  <div style={{fontSize:11,fontWeight:600,marginTop:2,color:s.tc,opacity:s.bg.includes("gradient")?0.85:0.7}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+            {/* Baris 2: Cashflow */}
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 18px",marginBottom:18}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>💰 Cashflow Hari Ini</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+                {[
+                  {label:"Uang Masuk Kasir",  val:fmtRp(stats.omsetHari),      color:"#0d9488"},
+                  {label:"Bank Masuk",         val:fmtRp(stats.bankMasukHari||0),color:"#27ae60"},
+                  {label:"Bank Keluar",        val:fmtRp(stats.bankKeluarHari||0),color:"#e74c3c"},
+                  {label:"Fee/Saldo",          val:fmtRp(stats.feeHari||0),     color:"#f39c12"},
+                  {label:"Net Cashflow",       val:fmtRp((stats.omsetHari||0)+(stats.bankMasukHari||0)-(stats.bankKeluarHari||0)), color:"#8e44ad"},
+                ].map(s=>(
+                  <div key={s.label} style={{background:"#f8fffe",borderRadius:9,padding:"9px 11px",border:"1px solid #e0f5f1",textAlign:"center"}}>
+                    <div style={{fontWeight:900,fontSize:14,color:s.color}}>{s.val}</div>
+                    <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:3,lineHeight:1.3}}>{s.label}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          </>
         )}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(195px,1fr))",gap:13}}>
           {accessible.map(m=>(
@@ -928,6 +954,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
   const [bulkRows,       setBulkRows]       = useState([]);
   const [bulkTransferTo, setBulkTransferTo] = useState("");
   const [bulkSaving,     setBulkSaving]     = useState(false);
+  const [sortField,      setSortField]      = useState("nama");
 
   const outletStock = stocks[selectedOutlet]||{};
   const outlet      = outlets.find(o=>o.id===selectedOutlet);
@@ -1043,7 +1070,17 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
     notify(`${successCount} produk berhasil diproses ✓`,"ok");
   };
 
-  const filteredProds = products.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredProds = products
+    .filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>{
+      const qa=outletStock[a.id]??0, qb=outletStock[b.id]??0;
+      if(sortField==="nama")    return a.name.localeCompare(b.name);
+      if(sortField==="kat")     return a.category.localeCompare(b.category);
+      if(sortField==="stok_asc")return qa-qb;
+      if(sortField==="stok_dsc")return qb-qa;
+      if(sortField==="habis")   return (qa===0?-1:1)-(qb===0?-1:1);
+      return a.name.localeCompare(b.name); // default
+    });
   const getStatus = s=>s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss={habis:{bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},over:{bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},aman:{bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"}};
   const typeColor={masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"};
@@ -1142,6 +1179,13 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
         {/* OPNAME TAB */}
         {tab==="opname"&&(
           <>
+            {/* Sort buttons */}
+            <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"#555"}}>Urutkan:</span>
+              {[{k:"nama",l:"A-Z Nama"},{k:"kat",l:"Kategori"},{k:"habis",l:"Habis Dulu"},{k:"stok_asc",l:"Stok ↑"},{k:"stok_dsc",l:"Stok ↓"}].map(s=>(
+                <button key={s.k} onClick={()=>setSortField(s.k)} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${sortField===s.k?"#0d9488":"#b2ede6"}`,background:sortField===s.k?"#0d9488":"#fff",color:sortField===s.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{s.l}</button>
+              ))}
+            </div>
             <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
               <div style={{position:"relative",flex:1}}>
                 <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
@@ -2045,6 +2089,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   const [realStocks,  setRealStocks]  = useState(()=>{ const m={}; products.forEach(p=>{m[p.id]=outletStock[p.id]??0;}); return m; });
   const [opnameSaved, setOpnameSaved] = useState(false);
   const [srch,        setSrch]        = useState("");
+  const [sortK, setSortK] = useState("habis");
 
   const saveOpname = async () => {
     setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
@@ -2052,7 +2097,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
     setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
   };
 
-  const filteredP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase()));
+  const filteredP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase())).sort((a,b)=>{ const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0; if(sortK==="habis") return (qa===0?-1:qa<=2?0:1)-(qb===0?-1:qb<=2?0:1); if(sortK==="nama") return a.name.localeCompare(b.name); if(sortK==="kat") return a.category.localeCompare(b.category); if(sortK==="stok_asc") return qa-qb; return qb-qa; });
   const getStatus = s => s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss = {
     habis:  {bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},
@@ -2065,11 +2110,16 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
     <div style={{padding:"14px 18px",maxWidth:820,margin:"0 auto",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontWeight:800,fontSize:15,color:"#0d9488"}}>📦 Stok Opname — {outletNama}</div>
-        <div style={{display:"flex",gap:7,alignItems:"center"}}>
+        <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
             <input value={srch} onChange={e=>setSrch(e.target.value)} placeholder="Cari produk..."
-              style={{padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",width:150}}/>
+              style={{padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",width:130}}/>
+          </div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {[{k:"habis",l:"Habis↑"},{k:"nama",l:"A-Z"},{k:"kat",l:"Kategori"},{k:"stok_asc",l:"Stok ↑"},{k:"stok_dsc",l:"Stok ↓"}].map(s=>(
+              <button key={s.k} onClick={()=>setSortK(s.k)} style={{padding:"4px 9px",borderRadius:7,border:`1px solid ${sortK===s.k?"#0d9488":"#b2ede6"}`,background:sortK===s.k?"#0d9488":"#fff",color:sortK===s.k?"#fff":"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{s.l}</button>
+            ))}
           </div>
           <button onClick={saveOpname} style={{background:opnameSaved?"#2ecc71":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"8px 14px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             {opnameSaved?"✓ Tersimpan!":"💾 Simpan Opname"}
@@ -2912,9 +2962,13 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
 
   const openShift = async (data) => {
     const s={id:uid(),nama:data.namaShift,start:now(),outletId:selectedOutlet,...data};
+    // Set shift dulu — jangan tunggu Supabase
     setShift(s);
-    await dbBank.openShift(s,selectedOutlet,user.username);
-    setShowShift(false); notify("Shift bank dibuka! ✓","ok");
+    try{ localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(s)); }catch{}
+    setShowShift(false);
+    notify("Shift bank dibuka! ✓","ok");
+    // Simpan ke Supabase di background
+    dbBank.openShift(s,selectedOutlet,user.username).catch(e=>console.warn("Shift Supabase:",e));
   };
 
   const closeShift = async (data) => {
@@ -3108,12 +3162,11 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
                 </div>
               ))}
             </div>
-            {totalSaldoF>0&&(
-              <div style={{background:"#e0faf5",borderRadius:9,padding:"9px 12px",marginTop:8,display:"flex",justifyContent:"space-between"}}>
-                <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo Aplikasi</span>
-                <span style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
-              </div>
-            )}
+            {/* Total saldo otomatis */}
+            <div style={{background:"#e0faf5",borderRadius:9,padding:"10px 13px",marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>💰 Total Saldo Aplikasi</span>
+              <span style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
+            </div>
           </>
         )}
 
@@ -3837,10 +3890,33 @@ export default function App() {
   },[]);
 
   const calcOmset = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+
+  // Ambil data bank hari ini dari Supabase untuk cashflow
+  const [bankStatsHari, setBankStatsHari] = useState({masuk:0,keluar:0,fee:0});
+  useEffect(()=>{
+    const loadBankStats = async () => {
+      try {
+        const allTrx = await dbBank.getTransactions();
+        const todayTrx = allTrx.filter(t=>t.tgl===today());
+        const masuk  = todayTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+        const keluar = todayTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+        const fee    = todayTrx.filter(t=>t.feeType==="fee").reduce((s,t)=>s+t.fee,0);
+        setBankStatsHari({masuk,keluar,fee});
+      } catch{}
+    };
+    loadBankStats();
+    const iv = setInterval(loadBankStats, 60000);
+    return ()=>clearInterval(iv);
+  },[]);
+
   const stats = {
-    omsetHari:   calcOmset(transactions.filter(t=>t.date===today())),
-    txHari:      transactions.filter(t=>t.date===today()).length,
-    stokMenipis: products.filter(p=>outlets.some(o=>(stocks[o.id]?.[p.id]??0)<=2)).length,
+    omsetHari:      calcOmset(transactions.filter(t=>t.date===today())),
+    txHari:         transactions.filter(t=>t.date===today()).length,
+    stokMenipis:    products.filter(p=>outlets.some(o=>(stocks[o.id]?.[p.id]??0)<=2)).length,
+    totalProduk:    products.length,
+    bankMasukHari:  bankStatsHari.masuk,
+    bankKeluarHari: bankStatsHari.keluar,
+    feeHari:        bankStatsHari.fee,
   };
 
   const isAdmin = user?.role==="admin";
