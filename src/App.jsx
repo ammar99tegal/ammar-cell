@@ -2781,6 +2781,18 @@ export default function App() {
 
   const notify = (msg,type="ok")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
 
+  // ── Auto reload saat app kembali ke foreground (tab aktif lagi) ──────────
+  useEffect(()=>{
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        // Reload data terbaru saat user balik ke app
+        reloadData();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  },[]);
+
   // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
   const reloadData = async () => {
     try {
@@ -2857,7 +2869,6 @@ export default function App() {
               return s;
             });
           } else {
-            // INSERT atau UPDATE
             setStocksState(prev => ({
               ...prev,
               [row.outlet_id]: {
@@ -2878,7 +2889,6 @@ export default function App() {
         (payload) => {
           if (payload.eventType === 'INSERT') {
             setProductsState(prev => {
-              // Hindari duplikat
               if (prev.find(p => p.id === payload.new.id)) return prev;
               return [...prev, payload.new];
             });
@@ -2893,10 +2903,47 @@ export default function App() {
       )
       .subscribe();
 
+    // Channel outlets: perubahan outlet otomatis sync
+    const outletChannel = supabase
+      .channel('realtime-outlets')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'outlets' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setOutletsState(prev => {
+              if (prev.find(o => o.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            setOutletsState(prev =>
+              prev.map(o => o.id === payload.new.id ? {...o, ...payload.new} : o)
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setOutletsState(prev => prev.filter(o => o.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    // Channel users: perubahan user/kasir otomatis sync
+    const userChannel = supabase
+      .channel('realtime-users')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
+        async () => {
+          // Reload semua users saat ada perubahan
+          const usrs = await db.getUsers().catch(()=>null);
+          if (usrs) setUsersState(usrs);
+        }
+      )
+      .subscribe();
+
     // Cleanup saat komponen unmount
     return () => {
       supabase.removeChannel(stockChannel);
       supabase.removeChannel(productChannel);
+      supabase.removeChannel(outletChannel);
+      supabase.removeChannel(userChannel);
     };
   },[]);
 
