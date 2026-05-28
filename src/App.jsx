@@ -244,14 +244,15 @@ function LoginPage({ users, onLogin }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function MenuUtama({ user, onNavigate, onLogout, stats }) {
   const menus = [
-    {id:"kasir",    icon:Ic.Cart(),    label:"Kasir",             desc:"Buka transaksi penjualan",    color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
-    {id:"bank",     icon:Ic.Cash(22), label:"Bank",              desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
-    {id:"produk",   icon:Ic.Produk(),  label:"Manajemen Produk",  desc:"Tambah, edit & hapus produk", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
-    {id:"outlet",   icon:Ic.Outlet(),  label:"Manajemen Outlet",  desc:"Kelola outlet & kasir",       color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
-    {id:"saldo",    icon:Ic.Cash(22),  label:"Saldo Aplikasi",    desc:"Kelola list saldo di shift",  color:"#16a085", bg:"#e0faf5", roles:["admin"]},
-    {id:"stok",     icon:Ic.Stock(),   label:"Stok",              desc:"Stok masuk, keluar & transfer",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
-    {id:"dashboard",icon:Ic.Dashboard(),label:"Dashboard",        desc:"Pantau omset & performa",     color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
-    {id:"laporan",  icon:Ic.Laporan(), label:"Laporan",           desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
+    {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
+    {id:"bank",     icon:Ic.Cash(22),   label:"Bank",               desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
+    {id:"produk",   icon:Ic.Produk(),   label:"Manajemen Produk",   desc:"Tambah, edit & hapus produk",  color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
+    {id:"outlet",   icon:Ic.Outlet(),   label:"Manajemen Outlet",   desc:"Kelola outlet & kasir",        color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
+    {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Aplikasi",     desc:"Kelola list saldo di shift",   color:"#16a085", bg:"#e0faf5", roles:["admin"]},
+    {id:"stok",     icon:Ic.Stock(),    label:"Stok",               desc:"Stok masuk, keluar & transfer",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
+    {id:"dashboard",icon:Ic.Dashboard(),label:"Dashboard",          desc:"Pantau omset & performa",      color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
+    {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
+    {id:"laporan",  icon:Ic.Laporan(),  label:"Laporan",            desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
   ];
   const accessible = menus.filter(m=>m.roles.includes(user.role));
 
@@ -1637,20 +1638,32 @@ function LaporanPage({ transactions, outlets, onBack }) {
     dbShift.getShiftLogs().then(logs=>{
       const m={};
       logs.forEach(l=>{
+        // saldo_open bisa berisi saldoApps atau saldo_apps tergantung versi
+        const so = l.saldo_open || {};
+        const sc = l.saldo_close || {};
+        const rekap = l.rekap || {};
         m[l.id]={
-          type:"closed",
-          namaShift: l.nama,
-          waktuBuka: l.start_time,
-          waktuTutup: l.end_time,
-          // saldo open
-          saldoApps: l.saldo_open?.saldoApps,
-          cashKembalian: l.saldo_open?.cashKembalian,
-          totalSaldoApps: l.saldo_open?.totalSaldoApps,
-          // saldo close
-          saldoAppsAkhir: l.saldo_close?.saldoAppsAkhir,
-          cashKembClose: l.saldo_close?.cashKembClose,
-          // rekap
-          ...l.rekap,
+          type: sc.selisih !== undefined ? "closed" : "open",
+          namaShift:      l.nama,
+          waktuBuka:      l.start_time,
+          waktuTutup:     l.end_time,
+          // Saldo awal — coba berbagai field name
+          saldoApps:      so.saldoApps || so.saldo_apps || {},
+          cashKembalian:  so.cashKembalian || so.cash_kembalian || 0,
+          totalSaldoApps: so.totalSaldoApps || so.total_saldo_apps || 0,
+          // Saldo akhir
+          saldoAppsAkhir: sc.saldoAppsC || sc.saldoAppsAkhir || sc.saldo_apps_akhir || {},
+          cashKembClose:  sc.cashKembC || sc.cashKembClose || 0,
+          // Rekap kas
+          setorTunai:     rekap.setorTunai || 0,
+          hutang:         rekap.hutang || 0,
+          pending:        rekap.pending || 0,
+          pengeluaran:    rekap.pengeluaran || 0,
+          noteKlr:        rekap.noteKlr || "",
+          kasNyataSystem: rekap.kasNyataSystem || sc.uangSistem || 0,
+          kasNyataFisik:  rekap.kasNyataFisik || sc.uangLaci || 0,
+          selisih:        rekap.selisih ?? sc.selisih ?? 0,
+          notes:          rekap.notes || sc.catatan || "",
         };
       });
       setShiftLogs(m);
@@ -1658,12 +1671,14 @@ function LaporanPage({ transactions, outlets, onBack }) {
   },[]);
 
   const getShiftSaldo = (shiftId) => {
-    // Prioritas: Supabase shift_logs > localStorage
+    // Coba Supabase shift_logs dulu
     if(shiftLogs[shiftId]) return shiftLogs[shiftId];
+    // Fallback ke localStorage (shift yang belum ditutup atau data lama)
     try{
-      const s=localStorage.getItem(`ammar_shift_saldo_${shiftId}`);
-      return s?JSON.parse(s):null;
-    }catch{return null;}
+      const s = localStorage.getItem(`ammar_shift_saldo_${shiftId}`);
+      if(s) return JSON.parse(s);
+    }catch{}
+    return null;
   };
 
   // ── Modal detail shift ────────────────────────────────────────────────────
@@ -2752,8 +2767,6 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
   );
 }
 
-}
-
 // Running text motivasi untuk BankPage
 function BankMotivasi() {
   const texts = [
@@ -3527,9 +3540,10 @@ export default function App() {
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="dashboard" && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
+      {page==="overall"   && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
-      {["produk","outlet","stok","dashboard","laporan"].includes(page)&&!isAdmin&&(
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo"].includes(page)&&!isAdmin&&(
         <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0faf8",flexDirection:"column",gap:12,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:48}}>🔒</div>
           <div style={{fontWeight:900,fontSize:18,color:"#ff4757"}}>Akses Ditolak</div>
