@@ -248,7 +248,8 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"bank",     icon:Ic.Cash(22),   label:"Bank",               desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"produk",   icon:Ic.Produk(),   label:"Manajemen Produk",   desc:"Tambah, edit & hapus produk",  color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),   label:"Manajemen Outlet",   desc:"Kelola outlet & kasir",        color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
-    {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Aplikasi",     desc:"Kelola list saldo di shift",   color:"#16a085", bg:"#e0faf5", roles:["admin"]},
+    {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Kasir",        desc:"Kelola list saldo di shift kasir",color:"#16a085",bg:"#e0faf5",roles:["admin"]},
+    {id:"saldobank",icon:Ic.Cash(22),   label:"Saldo Bank",         desc:"Kelola list saldo di shift bank",color:"#0d9488",bg:"#e0faf5", roles:["admin"]},
     {id:"stok",     icon:Ic.Stock(),    label:"Stok",               desc:"Stok masuk, keluar & transfer",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"dashboard",icon:Ic.Dashboard(),label:"Dashboard",          desc:"Pantau omset & performa",      color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
     {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
@@ -1688,6 +1689,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const gOmset=calcOmset(group.items);
     const gItems=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
     const saldo=getShiftSaldo(group.key);
+    const isClosed = saldo?.type==="closed" || !!saldo?.waktuTutup;
+    const isActive = !isClosed;
 
     return (
       <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
@@ -1695,6 +1698,15 @@ function LaporanPage({ transactions, outlets, onBack }) {
           badge={group.outletNama}
         />
         <div style={{padding:"14px 18px",maxWidth:800,margin:"0 auto"}}>
+
+          {/* Status shift */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{background:isActive?"#e8f8f4":"#f0f0f0",border:`2px solid ${isActive?"#2ecc71":"#aaa"}`,borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:800,color:isActive?"#2ecc71":"#888",display:"flex",alignItems:"center",gap:5}}>
+              {isActive?"🟢 SHIFT MASIH AKTIF":"⚫ SHIFT SUDAH DITUTUP"}
+            </div>
+            {saldo?.waktuBuka&&<span style={{fontSize:11,color:"#aaa"}}>Buka: {saldo.waktuBuka}</span>}
+            {saldo?.waktuTutup&&<span style={{fontSize:11,color:"#aaa"}}>Tutup: {saldo.waktuTutup}</span>}
+          </div>
 
           {/* Ringkasan shift */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
@@ -1710,109 +1722,102 @@ function LaporanPage({ transactions, outlets, onBack }) {
             ))}
           </div>
 
-          {/* Saldo & Rekap Shift */}
-          {saldo&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-
-              {/* SALDO AWAL */}
-              <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
-                <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
-                  🟢 Saldo Awal (Buka Shift)
-                  <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo.waktuBuka||"—"}</div>
-                </div>
-                {saldo.saldoApps&&Object.entries(saldo.saldoApps).map(([app,val])=>(
-                  <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                    <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
-                    <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
-                  </div>
-                ))}
-                {saldo.cashKembalian>0&&(
-                  <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                    <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
-                    <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
-                  </div>
-                )}
-                {saldo.totalSaldoApps>0&&(
-                  <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"7px 10px",display:"flex",justifyContent:"space-between"}}>
-                    <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo Aplikasi</span>
-                    <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
-                  </div>
-                )}
+          {/* Saldo & Rekap — selalu tampil walau data kosong */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+            {/* SALDO AWAL */}
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
+                🟢 Saldo Awal (Buka Shift)
+                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"—"}</div>
               </div>
-
-              {/* SALDO AKHIR */}
-              <div style={{background:"#fff",borderRadius:13,border:"2px solid #ffe0e0",padding:"14px 16px"}}>
-                <div style={{fontWeight:800,fontSize:13,color:"#e74c3c",marginBottom:10}}>
-                  🔴 Saldo Akhir (Tutup Shift)
-                  <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo.waktuTutup||"Belum ditutup"}</div>
-                </div>
-                {saldo.type==="closed"?(
-                  <>
-                    {saldo.saldoAppsAkhir&&Object.entries(saldo.saldoAppsAkhir).map(([app,val])=>(
-                      <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                        <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
-                        <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
-                      </div>
-                    ))}
-                    {saldo.cashKembClose>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                        <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
-                        <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembClose)}</span>
-                      </div>
-                    )}
-                  </>
-                ):(
-                  <div style={{textAlign:"center",color:"#ccc",padding:20,fontSize:12}}>Shift belum ditutup</div>
-                )}
-              </div>
+              {saldo?.saldoApps && Object.keys(saldo.saldoApps).length>0 ? (
+                <>
+                  {Object.entries(saldo.saldoApps).map(([app,val])=>(
+                    <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
+                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                    </div>
+                  ))}
+                  {saldo.cashKembalian>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
+                      <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
+                    </div>
+                  )}
+                  {(saldo.totalSaldoApps>0)&&(
+                    <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"7px 10px",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo</span>
+                      <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
+                    </div>
+                  )}
+                </>
+              ):(
+                <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>Tidak ada catatan saldo awal</div>
+              )}
             </div>
-          )}
+
+            {/* SALDO AKHIR */}
+            <div style={{background:"#fff",borderRadius:13,border:`2px solid ${isClosed?"#ffe0e0":"#e0faf5"}`,padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:isClosed?"#e74c3c":"#aaa",marginBottom:10}}>
+                {isClosed?"🔴 Saldo Akhir (Tutup Shift)":"⏳ Shift Belum Ditutup"}
+                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuTutup||"—"}</div>
+              </div>
+              {isClosed&&saldo?.saldoAppsAkhir&&Object.keys(saldo.saldoAppsAkhir).length>0?(
+                <>
+                  {Object.entries(saldo.saldoAppsAkhir).map(([app,val])=>(
+                    <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
+                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                    </div>
+                  ))}
+                  {saldo.cashKembClose>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
+                      <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembClose)}</span>
+                    </div>
+                  )}
+                </>
+              ):(
+                <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>{isClosed?"Tidak ada catatan saldo akhir":"Shift masih berjalan"}</div>
+              )}
+            </div>
+          </div>
 
           {/* Rekap Kas Akhir Shift */}
-          {saldo?.type==="closed"&&(
+          {isClosed&&(
             <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
               <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:12}}>💰 Rekap Kas Akhir Shift</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
                 {[
-                  {l:"Setor Tunai Cash",   v:saldo.setorTunai,     c:"#e74c3c"},
-                  {l:"Hutang Pelanggan",   v:saldo.hutang,         c:"#e74c3c"},
-                  {l:"Transaksi Pending",  v:saldo.pending,        c:"#e74c3c"},
-                  {l:"Pengeluaran",        v:saldo.pengeluaran,    c:"#e74c3c"},
-                ].map(r=>(
+                  {l:"Setor Tunai Cash",  v:saldo?.setorTunai},
+                  {l:"Hutang Pelanggan",  v:saldo?.hutang},
+                  {l:"Transaksi Pending", v:saldo?.pending},
+                  {l:"Pengeluaran",       v:saldo?.pengeluaran},
+                ].filter(r=>r.v>0).map(r=>(
                   <div key={r.l} style={{background:"#f8fffe",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
                     <span style={{color:"#666",fontWeight:600}}>{r.l}</span>
-                    <span style={{fontWeight:800,color:+r.v>0?r.c:"#ccc"}}>{+r.v>0?fmtRp(+r.v):"—"}</span>
+                    <span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(r.v)}</span>
                   </div>
                 ))}
               </div>
-              {saldo.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginTop:6,fontStyle:"italic"}}>Note: {saldo.noteKlr}</div>}
-              <div style={{marginTop:10,display:"flex",gap:10}}>
-                <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"10px 13px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:700,fontSize:12,color:"#555"}}>Kas Nyata (Sistem)</span>
-                  <span style={{fontWeight:900,fontSize:14,color:"#0d9488"}}>{fmtRp(saldo.kasNyataSystem)}</span>
-                </div>
-                <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"10px 13px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:700,fontSize:12,color:"#555"}}>Kas Nyata (Fisik)</span>
-                  <span style={{fontWeight:900,fontSize:14,color:"#2980b9"}}>{fmtRp(saldo.kasNyataFisik)}</span>
-                </div>
-              </div>
-              <div style={{
-                marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",
-                border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,
-                borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"
-              }}>
-                <span style={{fontWeight:800,fontSize:13}}>
-                  {saldo.selisih===0?"✅ Kas Sesuai":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}
-                </span>
-                <span style={{fontWeight:900,fontSize:20,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
-                  {saldo.selisih>0?"+":""}{fmtRp(saldo.selisih)}
-                </span>
-              </div>
-              {saldo.notes&&(
-                <div style={{marginTop:8,background:"#f8f8f8",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#666",fontStyle:"italic"}}>
-                  📝 Catatan: {saldo.notes}
+              {saldo?.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginTop:6}}>Note: {saldo.noteKlr}</div>}
+              {(saldo?.kasNyataSystem>0||saldo?.kasNyataFisik>0)&&(
+                <div style={{marginTop:10,display:"flex",gap:8}}>
+                  {[{l:"Kas Sistem",v:saldo.kasNyataSystem,c:"#0d9488"},{l:"Kas Fisik",v:saldo.kasNyataFisik,c:"#2980b9"}].map(r=>(
+                    <div key={r.l} style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"9px 12px",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{r.l}</span>
+                      <span style={{fontWeight:900,fontSize:14,color:r.c}}>{fmtRp(r.v)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
+              {saldo?.selisih!==undefined&&(
+                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:800,fontSize:13}}>{saldo.selisih===0?"✅ Kas Sesuai":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}</span>
+                  <span style={{fontWeight:900,fontSize:20,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>{saldo.selisih>0?"+":""}{fmtRp(saldo.selisih)}</span>
+                </div>
+              )}
+              {saldo?.notes&&<div style={{marginTop:8,background:"#f8f8f8",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#666",fontStyle:"italic"}}>📝 {saldo.notes}</div>}
             </div>
           )}
 
@@ -2234,14 +2239,20 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const openShift =data=>{
     const s={id:uid(),nama:data.namaShift,start:now(),...data};
     setShift(s);
-    // Simpan ke Supabase
-    dbShift.openShift(s, selectedOutlet, user.username).catch(()=>{});
-    // Simpan data saldo AWAL ke localStorage
+    // Simpan ke Supabase dengan data saldo lengkap
+    const saldoData = {
+      saldoApps: data.saldoApps||{},
+      cashKembalian: data.cashKembalian||0,
+      totalSaldoApps: data.totalSaldoApps||0,
+      waktuBuka: now(),
+    };
+    dbShift.openShift({...s, saldo_data: saldoData}, selectedOutlet, user.username).catch(()=>{});
+    // Juga simpan ke localStorage sebagai backup
     try{
       localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({
         type:"open", namaShift:data.namaShift, waktuBuka:now(),
-        saldoApps:data.saldoApps, cashKembalian:data.cashKembalian,
-        totalSaldoApps:data.totalSaldoApps,
+        saldoApps:data.saldoApps||{}, cashKembalian:data.cashKembalian||0,
+        totalSaldoApps:data.totalSaldoApps||0,
       }));
     }catch{}
     setShowShift(false);
@@ -2250,21 +2261,22 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const closeShift=data=>{
     const closeData={...data, waktuTutup:now()};
-    // Simpan ke Supabase shift_logs
-    dbShift.closeShift(shift, selectedOutlet, user.username, closeData).catch(()=>{});
     // Update localStorage saldo
     try{
       const shiftSaldoKey=`ammar_shift_saldo_${shift?.id}`;
       const existing=JSON.parse(localStorage.getItem(shiftSaldoKey)||"{}");
       localStorage.setItem(shiftSaldoKey, JSON.stringify({
         ...existing, type:"closed", waktuTutup:closeData.waktuTutup,
-        saldoAppsAkhir:data.saldoAppsClose, cashKembClose:data.cashKembC,
-        setorTunai:data.setorTunai, hutang:data.hutang, pending:data.pending,
-        pengeluaran:data.pengeluaran, noteKlr:data.noteKlr,
-        kasNyataSystem:data.kasNyataSystem, kasNyataFisik:data.kasNyataFisik,
-        selisih:data.selisih, notes:data.notes,
+        saldoAppsAkhir:data.saldoAppsClose||{}, cashKembClose:data.cashKembC||0,
+        setorTunai:data.setorTunai||0, hutang:data.hutang||0,
+        pending:data.pending||0, pengeluaran:data.pengeluaran||0,
+        noteKlr:data.noteKlr||"",
+        kasNyataSystem:data.kasNyataSystem||0, kasNyataFisik:data.kasNyataFisik||0,
+        selisih:data.selisih||0, notes:data.notes||"",
       }));
     }catch{}
+    // Simpan ke Supabase shift_logs dengan data lengkap
+    dbShift.closeShift(shift, selectedOutlet, user.username, closeData).catch(()=>{});
     setShift(null);
     setShowShift(false);
     notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");
@@ -2551,7 +2563,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 // ══════════════════════════════════════════════════════════════════════════════
 // SALDO APPS PAGE — kelola list saldo aplikasi (Admin only)
 // ══════════════════════════════════════════════════════════════════════════════
-function SaldoAppsPage({ saldoApps, setSaldoApps, onBack, notify }) {
+function SaldoAppsPage({ saldoApps, setSaldoApps, title, onBack, notify }) {
   const [list,    setList]    = useState([...saldoApps]);
   const [newName, setNewName] = useState("");
   const [saving,  setSaving]  = useState(false);
@@ -2587,7 +2599,7 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, onBack, notify }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <SubHeader title="📱 Kelola Saldo Aplikasi" onBack={onBack}
+      <SubHeader title={`📱 Kelola ${title||"Saldo Aplikasi"}`} onBack={onBack}
         right={
           <button onClick={save} disabled={saving} style={{background:saving?"#ccc":"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"7px 16px",color:"#0d9488",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             {saving?"⏳ Menyimpan...":"💾 Simpan & Terapkan"}
@@ -2882,9 +2894,12 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   };
 
   const closeShift = async (data) => {
-    await dbBank.closeShift(shift,selectedOutlet,user.username,{...data,waktuTutup:now()});
+    try{
+      await dbBank.closeShift(shift,selectedOutlet,user.username,{...data,waktuTutup:now()});
+    }catch(e){ console.error("closeShift error:",e); }
+    // Selalu tutup shift walau Supabase error
     setShift(null); setShowShift(false);
-    notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");
+    notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih||0)}`,data.selisih===0?"ok":"warn");
   };
 
   const saveTrx = async (trx) => {
@@ -3123,8 +3138,12 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
         <div style={{display:"flex",gap:8,marginTop:4}}>
           <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
           <button onClick={()=>{
-            if(mode==="open"){if(!namaShift.trim()) return; onOpen({namaShift,cashKemb:+cashKemb||0,saldoApps:saldoForm,totalSaldo:totalSaldoF});}
-            else onClose({saldoAppsC:saldoClose,uangLaci:uangLaciNum,uangSistem:uangSistemS,selisih,catatan});
+            if(mode==="open"){
+              if(!namaShift.trim()) return;
+              onOpen({namaShift,cashKemb:+cashKemb||0,saldoApps:saldoForm,totalSaldo:totalSaldoF});
+            } else {
+              onClose({saldoAppsC:saldoClose,uangLaci:uangLaciNum,uangSistem:uangSistemS,selisih,catatan,totalMasuk:sMasuk,totalKeluar:sKeluar});
+            }
           }} style={{flex:2,background:`linear-gradient(135deg,${mode==="open"?"#0d9488,#14b8a6":"#e74c3c,#ff6b6b"})`,border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             {mode==="open"?"🟢 Buka Shift":"🔴 Tutup & Simpan"}
           </button>
@@ -3506,6 +3525,7 @@ export default function App() {
   const [transactions,setTx]            = useState([]);
   const [users,       setUsersState]    = useState({});
   const [saldoApps,   setSaldoApps]     = useState(DEFAULT_SALDO_APPS);
+  const [saldoBank,   setSaldoBank]     = useState(DEFAULT_SALDO_APPS);
   const [toast,       setToast]         = useState(null);
   const [loading,     setLoading]       = useState(true);
   const [dbError,     setDbError]       = useState(null);
@@ -3830,16 +3850,17 @@ export default function App() {
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
-      {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="saldo"     && isAdmin && <SaldoAppsPage title="Saldo Kasir" saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="saldobank" && isAdmin && <SaldoAppsPage title="Saldo Bank" saldoApps={saldoBank} setSaldoApps={setSaldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="dashboard" && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
       {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
-      {["produk","outlet","stok","dashboard","overall","laporan","saldo"].includes(page)&&!isAdmin&&(
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank"].includes(page)&&!isAdmin&&(
         <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0faf8",flexDirection:"column",gap:12,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:48}}>🔒</div>
           <div style={{fontWeight:900,fontSize:18,color:"#ff4757"}}>Akses Ditolak</div>
