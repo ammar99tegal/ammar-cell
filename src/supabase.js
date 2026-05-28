@@ -5,7 +5,6 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://acxqzupnlkqvmsitolzj.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHF6dXBubGtxdm1zaXRvbHpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODA4OTAsImV4cCI6MjA5NTM1Njg5MH0.qRZ3HkhMYmFOUk1y6sh0aJujSBNJ-Ov1G8Q5s_h6_qU'
 
-
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ── PRODUCTS ──────────────────────────────────────────────────────────────────
@@ -323,4 +322,25 @@ export const dbBank = {
     }).catch(console.error);
     await supabase.from('bank_shifts').delete().eq('id', shift.id).catch(console.error);
   },
+}
+
+// ── SALDO BANK APPS (terpisah dari kasir) ────────────────────────────────────
+export const dbSaldoBank = {
+  getSaldoBankApps: async () => {
+    const { data, error } = await supabase
+      .from('saldo_bank_apps')
+      .select('*')
+      .order('urutan')
+    if (error) {
+      console.warn('saldo_bank_apps not found, using defaults');
+      return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay"];
+    }
+    return data.map(d => d.nama)
+  },
+  saveSaldoBankApps: async (list) => {
+    await supabase.from('saldo_bank_apps').delete().neq('id', 0)
+    const rows = list.map((nama, i) => ({ nama, urutan: i }))
+    const { error } = await supabase.from('saldo_bank_apps').insert(rows)
+    if (error) throw error
+  }
 }
