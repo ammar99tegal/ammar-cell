@@ -4429,7 +4429,7 @@ export default function App() {
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
 
   const [user,        setUserState]   = useState(savedUser);
-  const [page,        setPage]        = useState("menu");
+  const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":"menu");
   const [products,    setProductsState] = useState([]);
   const [outlets,     setOutletsState]  = useState([]);
   const [stocks,      setStocksState]   = useState({});
@@ -4510,22 +4510,29 @@ export default function App() {
   // ── Load semua data dari Supabase saat pertama buka ──────────────────────
   useEffect(()=>{
     const load = async () => {
+      // Timeout 15 detik — jika lebih dari itu tampilkan error
+      const timeout = setTimeout(()=>{
+        setDbError("Koneksi terlalu lambat. Cek internet dan coba lagi.");
+        setLoading(false);
+      }, 15000);
+
       try {
-        const [prods, outs, stks, txs, usrs, saldoList, saldoBankList] = await Promise.all([
-          db.getProducts(),
-          db.getOutlets(),
-          db.getStocks(),
-          db.getTransactions(),
-          db.getUsers(),
-          dbSaldo.getSaldoApps(),
-          dbSaldoBank.getSaldoBankApps(),
-        ]);
+        // Load satu per satu dengan fallback — satu gagal tidak crash semua
+        const prods        = await db.getProducts().catch(()=>[]);
+        const outs         = await db.getOutlets().catch(()=>[]);
+        const stks         = await db.getStocks().catch(()=>({}));
+        const txs          = await db.getTransactions().catch(()=>[]);
+        const usrs         = await db.getUsers().catch(()=>({}));
+        const saldoList    = await dbSaldo.getSaldoApps().catch(()=>[]);
+        const saldoBankList= await dbSaldoBank.getSaldoBankApps().catch(()=>[]);
+
+        clearTimeout(timeout);
+
         setProductsState(prods);
         setOutletsState(outs);
         setStocksState(stks);
         if (Array.isArray(saldoList) && saldoList.length > 0) setSaldoApps(saldoList);
         if (Array.isArray(saldoBankList) && saldoBankList.length > 0) setSaldoBank(saldoBankList);
-        // Map transaksi ke format lokal
         setTx(txs.map(t=>({
           id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
           shiftNama:t.shift_nama, kasir:t.kasir,
@@ -4536,8 +4543,9 @@ export default function App() {
         setUsersState(usrs);
         setLoading(false);
       } catch(e) {
-        console.error(e);
-        setDbError("Tidak bisa terhubung ke database. Cek koneksi internet atau konfigurasi Supabase.");
+        clearTimeout(timeout);
+        console.error('Load error:', e);
+        setDbError("Tidak bisa terhubung ke database. Cek koneksi internet.");
         setLoading(false);
       }
     };
