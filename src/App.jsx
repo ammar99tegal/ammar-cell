@@ -3046,6 +3046,12 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   const [shiftMode,   setShiftMode]  = useState("open");
   const [showForm,    setShowForm]   = useState(false);
   const [editTrx,     setEditTrx]    = useState(null);
+  const [showSetor,   setShowSetor]  = useState(false);
+  const [showPinjam,  setShowPinjam] = useState(false);
+  const [setorNom,    setSetorNom]   = useState("");
+  const [setorNama,   setSetorNama]  = useState("SETOR TUNAI");
+  const [pinjamNom,   setPinjamNom]  = useState("");
+  const [pinjamNama,  setPinjamNama] = useState("BANK PINJAM VOUCHER");
   const [filterJenis, setFilterJenis]= useState("semua");
   const [showBalance, setShowBalance]= useState(false);
   const [balanceVal,  setBalanceVal] = useState("");
@@ -3212,9 +3218,19 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           </div>
         </div>
 
-        <div style={{display:"flex",justifyContent:"center",marginBottom:16}}>
-          <button onClick={()=>{setEditTrx(null);setShowForm(true);}} style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"13px 40px",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
+        {/* Tombol aksi — 3 sejajar di tengah */}
+        <div style={{display:"flex",justifyContent:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+          <button onClick={()=>setShowSetor(true)}
+            style={{background:"#fff",border:"2px solid #e74c3c",borderRadius:12,padding:"11px 20px",color:"#e74c3c",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+            ⬆ Setor Tunai
+          </button>
+          <button onClick={()=>{setEditTrx(null);setShowForm(true);}}
+            style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"11px 32px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(13,148,136,.3)",display:"flex",alignItems:"center",gap:6}}>
             ＋ Catat Transaksi
+          </button>
+          <button onClick={()=>setShowPinjam(true)}
+            style={{background:"#fff",border:"2px solid #0d9488",borderRadius:12,padding:"11px 20px",color:"#0d9488",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+            ⬇ Bank Pinjam Voucher
           </button>
         </div>
 
@@ -3254,6 +3270,68 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
 
       {showShift&&<BankShiftModal mode={shiftMode} shift={shift} trxList={trxList} saldoApps={saldoApps} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)}/>}
       {showForm&&<BankTrxForm editData={editTrx} onSave={saveTrx} onCancel={()=>{setShowForm(false);setEditTrx(null);}}/>}
+
+      {/* Modal Setor Tunai */}
+      {showSetor&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+          <div style={{background:"#fff",borderRadius:18,padding:22,width:360,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#e74c3c",marginBottom:3}}>⬆ Setor Tunai</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Uang keluar dari laci — disetor ke pusat/bank</div>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>KETERANGAN</label>
+            <input value={setorNama} onChange={e=>setSetorNama(e.target.value.toUpperCase())}
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>NOMINAL</label>
+            <div style={{position:"relative",marginBottom:14}}>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:16,color:"#e74c3c"}}>Rp</span>
+              <input type="number" value={setorNom} onChange={e=>setSetorNom(e.target.value)} placeholder="0" autoFocus
+                style={{width:"100%",padding:"9px 12px 9px 42px",borderRadius:9,border:`2px solid ${setorNom?"#e74c3c":"#b2ede6"}`,fontSize:22,fontWeight:900,textAlign:"right",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setShowSetor(false);setSetorNom("");setSetorNama("SETOR TUNAI");}}
+                style={{width:44,height:44,borderRadius:9,border:"2px solid #b2ede6",background:"#fff",color:"#aaa",fontSize:18,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+              <button onClick={async()=>{
+                if(!setorNom) return;
+                const t={id:"S"+uid(),waktu:now(),tgl:today(),nama:setorNama,jenis:"keluar",feeType:"include",fee:0,nominal:+setorNom,netNominal:-(+setorNom),outletId:selectedOutlet,shiftId:shift?.id};
+                await saveTrx(t);
+                setShowSetor(false);setSetorNom("");setSetorNama("SETOR TUNAI");
+              }} style={{flex:1,background:"linear-gradient(135deg,#e74c3c,#ff6b6b)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                💾 Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Bank Pinjam Voucher */}
+      {showPinjam&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+          <div style={{background:"#fff",borderRadius:18,padding:22,width:360,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#0d9488",marginBottom:3}}>⬇ Bank Pinjam Voucher</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Uang masuk ke laci — bank pinjamkan modal/voucher</div>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>KETERANGAN</label>
+            <input value={pinjamNama} onChange={e=>setPinjamNama(e.target.value.toUpperCase())}
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>NOMINAL</label>
+            <div style={{position:"relative",marginBottom:14}}>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:16,color:"#0d9488"}}>Rp</span>
+              <input type="number" value={pinjamNom} onChange={e=>setPinjamNom(e.target.value)} placeholder="0" autoFocus
+                style={{width:"100%",padding:"9px 12px 9px 42px",borderRadius:9,border:`2px solid ${pinjamNom?"#0d9488":"#b2ede6"}`,fontSize:22,fontWeight:900,textAlign:"right",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setShowPinjam(false);setPinjamNom("");setPinjamNama("BANK PINJAM VOUCHER");}}
+                style={{width:44,height:44,borderRadius:9,border:"2px solid #b2ede6",background:"#fff",color:"#aaa",fontSize:18,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
+              <button onClick={async()=>{
+                if(!pinjamNom) return;
+                const t={id:"P"+uid(),waktu:now(),tgl:today(),nama:pinjamNama,jenis:"masuk",feeType:"include",fee:0,nominal:+pinjamNom,netNominal:+pinjamNom,outletId:selectedOutlet,shiftId:shift?.id};
+                await saveTrx(t);
+                setShowPinjam(false);setPinjamNom("");setPinjamNama("BANK PINJAM VOUCHER");
+              }} style={{flex:1,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                💾 Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBalance&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
@@ -3530,122 +3608,130 @@ function BankTrxForm({editData, onSave, onCancel}) {
   const [feeType, setFeeType] = useState(editData?.feeType||"include");
   const [feeStr,  setFeeStr]  = useState(editData?.fee?fmt(editData.fee):"");
 
-  // Konversi string dengan titik ke angka
-  const toNum = s => +s.replace(/\./g,"")||0;
+  const toNum = s => +String(s).replace(/\./g,"")||0;
   const nomNum = toNum(nomStr);
   const feeNum = toNum(feeStr);
 
-  // Format angka dengan titik saat mengetik
-  const handleNom = e => {
-    const raw = e.target.value.replace(/\D/g,"");
-    setNomStr(raw?fmt(+raw):"");
-  };
-  const handleFee = e => {
-    const raw = e.target.value.replace(/\D/g,"");
-    setFeeStr(raw?fmt(+raw):"");
-  };
-  // Nama kapital otomatis
+  const handleNom  = e => { const r=e.target.value.replace(/\D/g,""); setNomStr(r?fmt(+r):""); };
+  const handleFee  = e => { const r=e.target.value.replace(/\D/g,""); setFeeStr(r?fmt(+r):""); };
   const handleNama = e => setNama(e.target.value.toUpperCase());
 
   const calcNet = () => {
-    // MASUK: fee = tambah pendapatan, dipotong = kurangi pendapatan
-    // KELUAR: fee = tambah pengeluaran, dipotong = kurangi pengeluaran
+    if(feeType==="tarik") return { main:-nomNum, fee:feeNum }; // 2 rows
     if(jenis==="masuk") {
-      if(feeType==="fee")      return nomNum + feeNum;  // masuk + fee = lebih banyak masuk
-      if(feeType==="dipotong") return nomNum - feeNum;  // masuk - fee = berkurang
+      if(feeType==="fee")      return nomNum+feeNum;
+      if(feeType==="dipotong") return nomNum-feeNum;
       return nomNum;
     } else {
-      if(feeType==="fee")      return -(nomNum + feeNum); // keluar + fee = lebih besar keluar
-      if(feeType==="dipotong") return -(nomNum - feeNum); // keluar - fee = lebih kecil keluar
+      if(feeType==="fee")      return -(nomNum+feeNum);
+      if(feeType==="dipotong") return -(nomNum-feeNum);
       return -nomNum;
     }
   };
-  const net = calcNet();
 
-  const inp={width:"100%",padding:"10px 13px",borderRadius:10,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
+  const FEE_TYPES = [
+    {k:"include",  l:"INCLUDE",    d:"Sudah all-in",             c:"#0d9488", showFee:false},
+    {k:"fee",      l:"+ FEE",      d:"Fee ditambah ke nominal",  c:"#27ae60", showFee:true},
+    {k:"dipotong", l:"− DIPOTONG", d:"Fee dipotong dari nominal",c:"#e74c3c", showFee:true},
+    {k:"tarik",    l:"💸 TARIK",   d:"Keluar laci, fee masuk",   c:"#8e44ad", showFee:true},
+  ];
+  const QUICK_FEE = [2000,3000,5000,8000,10000];
+  const activeType = FEE_TYPES.find(f=>f.k===feeType);
+
+  const handleSave = () => {
+    if(!nama.trim()||!nomNum) return;
+    if(feeType==="tarik"&&feeNum>0){
+      // Simpan 2 transaksi terpisah
+      onSave({nama:nama+" (TARIK)",    jenis:"keluar",feeType:"tarik",fee:0,nominal:nomNum,netNominal:-nomNum});
+      onSave({nama:nama+" (FEE TARIK)",jenis:"masuk", feeType:"tarik",fee:0,nominal:feeNum,netNominal:feeNum});
+    } else {
+      const net = calcNet();
+      onSave({nama,jenis,feeType,fee:feeNum,nominal:nomNum,netNominal:net});
+    }
+  };
+
+  const inp={width:"100%",padding:"10px 13px",borderRadius:10,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10,boxSizing:"border-box"};
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
       <div style={{background:"#fff",borderRadius:20,padding:24,width:420,boxShadow:"0 24px 60px rgba(0,0,0,.25)",fontFamily:"'Nunito',sans-serif",maxHeight:"92vh",overflowY:"auto"}}>
 
-        {/* Header */}
-        <div style={{fontWeight:900,fontSize:16,color:"#0d9488",marginBottom:18,display:"flex",alignItems:"center",gap:8}}>
+        <div style={{fontWeight:900,fontSize:16,color:"#0d9488",marginBottom:18}}>
           {editData?"✏️ Edit Transaksi":"➕ Catat Transaksi"}
         </div>
 
-        {/* Nama — kapital otomatis */}
+        {/* Nama */}
         <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NAMA TRANSAKSI *</label>
         <input value={nama} onChange={handleNama} placeholder="CONTOH: SETORAN PENJUALAN PUSAT"
-          style={{...inp,fontSize:14,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.3px"}} autoFocus/>
+          style={{...inp,fontSize:14,fontWeight:700}} autoFocus/>
 
         {/* Masuk / Keluar */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
           {[{k:"masuk",l:"⬇ MASUK",c:"#0d9488",bg:"#e0faf5"},{k:"keluar",l:"⬆ KELUAR",c:"#e74c3c",bg:"#fff0f0"}].map(j=>(
-            <button key={j.k} onClick={()=>setJenis(j.k)} style={{padding:"13px",borderRadius:11,border:`2px solid ${jenis===j.k?j.c:"#b2ede6"}`,background:jenis===j.k?j.bg:"#fff",color:jenis===j.k?j.c:"#aaa",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+            <button key={j.k} onClick={()=>{setJenis(j.k);if(feeType==="tarik"&&j.k==="masuk")setFeeType("include");}}
+              style={{padding:13,borderRadius:11,border:`2px solid ${jenis===j.k?j.c:"#b2ede6"}`,background:jenis===j.k?j.bg:"#fff",color:jenis===j.k?j.c:"#aaa",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>
               {j.l}
             </button>
           ))}
         </div>
 
-        {/* Nominal besar dengan titik */}
+        {/* Nominal */}
         <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NOMINAL *</label>
         <div style={{position:"relative",marginBottom:10}}>
           <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:16,color:"#0d9488"}}>Rp</span>
           <input value={nomStr} onChange={handleNom} placeholder="0"
-            style={{...inp,fontSize:24,fontWeight:900,textAlign:"right",border:`2px solid ${nomNum>0?"#0d9488":"#b2ede6"}`,paddingLeft:40,marginBottom:0,letterSpacing:"0.5px"}}/>
+            style={{...inp,fontSize:24,fontWeight:900,textAlign:"right",border:`2px solid ${nomNum>0?"#0d9488":"#b2ede6"}`,paddingLeft:40,marginBottom:0}}/>
         </div>
 
-        {/* Tipe Fee */}
-        <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:7}}>TIPE FEE</label>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
-          {[
-            {k:"include",  l:"INCLUDE",   d:"Nominal & keuntungan sudah menjadi satu", c:"#0d9488"},
-            {k:"fee",      l:"+ FEE",     d:"Fee ditambahkan ke nominal",              c:"#27ae60"},
-            {k:"dipotong", l:"− DIPOTONG",d:"Fee dipotong dari nominal",               c:"#e74c3c"},
-          ].map(f=>(
+        {/* Tipe Fee — 4 pilihan saat KELUAR, 3 saat MASUK */}
+        <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:7,marginTop:10}}>TIPE FEE</label>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${jenis==="keluar"?4:3},1fr)`,gap:7,marginBottom:12}}>
+          {FEE_TYPES.map(f=>(
+            (f.k==="tarik"&&jenis==="masuk") ? null :
             <button key={f.k} onClick={()=>setFeeType(f.k)}
-              style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${feeType===f.k?f.c:"#b2ede6"}`,background:feeType===f.k?`${f.c}12`:"#fff",color:feeType===f.k?f.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",lineHeight:1.4,textAlign:"center",transition:"all .15s"}}>
-              <div style={{fontWeight:900,fontSize:12}}>{f.l}</div>
-              <div style={{fontSize:9,marginTop:3,opacity:.75}}>{f.d}</div>
+              style={{padding:"9px 4px",borderRadius:10,border:`2px solid ${feeType===f.k?f.c:"#b2ede6"}`,background:feeType===f.k?`${f.c}12`:"#fff",color:feeType===f.k?f.c:"#aaa",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",lineHeight:1.4,textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:11}}>{f.l}</div>
+              <div style={{fontSize:9,marginTop:2,opacity:.75}}>{f.d}</div>
             </button>
           ))}
         </div>
 
-        {/* Nominal Fee (hanya jika bukan include) */}
-        {feeType!=="include"&&(
-          <>
-            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>NOMINAL FEE</label>
-            <div style={{position:"relative",marginBottom:10}}>
-              <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:14,color:"#0d9488"}}>Rp</span>
-              <input value={feeStr} onChange={handleFee} placeholder="0"
-                style={{...inp,fontSize:18,fontWeight:800,textAlign:"right",paddingLeft:40,marginBottom:0}}/>
-            </div>
-          </>
-        )}
-
-        {/* Net preview */}
-        {nomNum>0&&(
-          <div style={{background:net>=0?"#e0faf5":"#fff0f0",border:`2px solid ${net>=0?"#0d9488":"#e74c3c"}`,borderRadius:12,padding:"12px 16px",marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:12,color:"#555",fontWeight:700}}>NET TRANSAKSI</span>
-              <span style={{fontWeight:900,fontSize:22,color:net>=0?"#0d9488":"#e74c3c"}}>{net>0?"+":""}{fmtRp(Math.abs(net))}</span>
-            </div>
-            {feeType!=="include"&&feeNum>0&&(
-              <div style={{fontSize:11,color:"#aaa",marginTop:4,textAlign:"right"}}>
-                {feeType==="fee"?`${fmtRp(nomNum)} + fee ${fmtRp(feeNum)}`:`${fmtRp(nomNum)} − fee ${fmtRp(feeNum)}`}
-              </div>
-            )}
+        {/* Info TARIK */}
+        {feeType==="tarik"&&(
+          <div style={{background:"#f5eeff",border:"1px solid #8e44ad33",borderRadius:9,padding:"8px 12px",marginBottom:10,fontSize:11,color:"#8e44ad",lineHeight:1.6}}>
+            💸 Uang <b>keluar laci</b> = nominal. Fee dari pelanggan <b>masuk ke laci</b>.<br/>
+            Di riwayat muncul <b>2 baris terpisah</b>: nominal tarik & fee masuk.
           </div>
         )}
 
-        {/* Tombol */}
-        <div style={{display:"flex",gap:10}}>
-          <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:11,padding:13,fontWeight:700,fontSize:13,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
-          <button onClick={()=>{
-            if(!nama.trim()||!nomNum) return;
-            onSave({id:editData?.id||"B"+uid(),waktu:editData?.waktu||now(),tgl:editData?.tgl||today(),nama:nama.trim(),jenis,feeType,fee:feeNum,nominal:nomNum,netNominal:net});
-          }} disabled={!nama.trim()||!nomNum}
-            style={{flex:2,background:(!nama.trim()||!nomNum)?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:11,padding:13,color:"#fff",fontWeight:900,fontSize:14,cursor:(!nama.trim()||!nomNum)?"not-allowed":"pointer",fontFamily:"inherit"}}>
+        {/* Input fee + quick buttons */}
+        {activeType?.showFee&&(
+          <div style={{marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:6}}>NOMINAL FEE</label>
+            <div style={{display:"flex",gap:5,marginBottom:7,flexWrap:"wrap"}}>
+              {QUICK_FEE.map(v=>(
+                <button key={v} onClick={()=>setFeeStr(fmt(v))}
+                  style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${toNum(feeStr)===v?activeType.c:"#b2ede6"}`,background:toNum(feeStr)===v?`${activeType.c}15`:"#fff",color:toNum(feeStr)===v?activeType.c:"#555",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                  {fmt(v)}
+                </button>
+              ))}
+            </div>
+            <div style={{position:"relative"}}>
+              <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",fontWeight:700,fontSize:14,color:activeType.c}}>Rp</span>
+              <input value={feeStr} onChange={handleFee} placeholder="0"
+                style={{...inp,fontSize:16,fontWeight:800,textAlign:"right",paddingLeft:40,marginBottom:0,border:`2px solid ${feeNum>0?activeType.c:"#b2ede6"}`}}/>
+            </div>
+          </div>
+        )}
+
+        {/* Tombol — X kecil + Simpan */}
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <button onClick={onCancel}
+            style={{width:44,height:44,borderRadius:10,border:"2px solid #b2ede6",background:"#fff",color:"#aaa",fontSize:18,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            ✕
+          </button>
+          <button onClick={handleSave} disabled={!nama.trim()||!nomNum}
+            style={{flex:1,background:!nama.trim()||!nomNum?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:12,color:"#fff",fontWeight:900,fontSize:14,cursor:!nama.trim()||!nomNum?"not-allowed":"pointer",fontFamily:"inherit"}}>
             💾 Simpan
           </button>
         </div>
@@ -3653,10 +3739,6 @@ function BankTrxForm({editData, onSave, onCancel}) {
     </div>
   );
 }
-
-// ══════════════════════════════════════════════════════════════════════════════
-// DASHBOARD OVERALL — Semua lini bisnis (Admin only, warna tosca)
-// ══════════════════════════════════════════════════════════════════════════════
 function DashboardOverallPage({ transactions, outlets, onBack }) {
   const [activeTab, setActiveTab] = useState("overview");
   const nowD = new Date();
