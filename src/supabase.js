@@ -344,3 +344,124 @@ export const dbSaldoBank = {
     if (error) throw error
   }
 }
+
+// ── PRODUCT ORDER ─────────────────────────────────────────────────────────────
+export const dbOrder = {
+  getOrder: async (key) => {
+    const { data, error } = await supabase
+      .from('app_orders')
+      .select('order_data')
+      .eq('order_key', key)
+      .single()
+    if (error) return null
+    return data?.order_data || null
+  },
+  saveOrder: async (key, orderData) => {
+    const { error } = await supabase
+      .from('app_orders')
+      .upsert({ order_key: key, order_data: orderData, updated_at: new Date().toISOString() },
+               { onConflict: 'order_key' })
+    if (error) throw error
+  }
+}
+
+// ── CASHFLOW ENTRIES ──────────────────────────────────────────────────────────
+export const dbCashflow = {
+  getEntries: async () => {
+    const { data, error } = await supabase
+      .from('cashflow_entries')
+      .select('*')
+      .order('tgl', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (error) { console.warn('cashflow_entries:', error.message); return { pemasukan: [], pengeluaran: [] } }
+    return {
+      pemasukan:   data.filter(d => d.tipe === 'masuk'),
+      pengeluaran: data.filter(d => d.tipe === 'keluar'),
+    }
+  },
+  addEntry: async (entry) => {
+    const { error } = await supabase.from('cashflow_entries').insert([{
+      id: entry.id, tgl: entry.tgl, tipe: entry.tipe,
+      nama: entry.nama, nominal: entry.nominal,
+      sumber: entry.sumber || null, kategori: entry.kategori || null,
+    }])
+    if (error) throw error
+  },
+  deleteEntry: async (id) => {
+    const { error } = await supabase.from('cashflow_entries').delete().eq('id', id)
+    if (error) throw error
+  },
+}
+
+// ── PRODUCT ORDER (urutan drag produk) ───────────────────────────────────────
+export const dbProductOrder = {
+  getOrder: async () => {
+    const { data, error } = await supabase
+      .from('product_order')
+      .select('*')
+      .order('urutan')
+    if (error) { console.warn('product_order:', error.message); return []; }
+    return data.map(d => ({ productId: d.product_id, urutan: d.urutan }));
+  },
+  saveOrder: async (productIds) => {
+    // Upsert semua sekaligus
+    const rows = productIds.map((id, i) => ({ product_id: id, urutan: i }));
+    const { error } = await supabase
+      .from('product_order')
+      .upsert(rows, { onConflict: 'product_id' });
+    if (error) console.error('saveOrder error:', error.message);
+  },
+}
+
+// ── STOK ORDER (urutan drag opname per outlet) ────────────────────────────────
+export const dbStokOrder = {
+  getOrder: async (outletId) => {
+    const { data, error } = await supabase
+      .from('stok_order')
+      .select('*')
+      .eq('outlet_id', outletId)
+      .order('urutan')
+    if (error) { console.warn('stok_order:', error.message); return []; }
+    return data.map(d => ({ productId: d.product_id, urutan: d.urutan }));
+  },
+  saveOrder: async (outletId, productIds) => {
+    const rows = productIds.map((id, i) => ({ outlet_id: outletId, product_id: id, urutan: i }));
+    const { error } = await supabase
+      .from('stok_order')
+      .upsert(rows, { onConflict: 'outlet_id,product_id' });
+    if (error) console.error('saveStokOrder error:', error.message);
+  },
+}
+
+// ── CASHFLOW ENTRIES ──────────────────────────────────────────────────────────
+export const dbCashflow = {
+  getEntries: async () => {
+    const { data, error } = await supabase
+      .from('cashflow_entries')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (error) { console.warn('cashflow_entries:', error.message); return []; }
+    return data.map(d => ({
+      id: d.id, tgl: d.tgl, nama: d.nama,
+      jenis: d.jenis, // 'masuk' | 'keluar'
+      nominal: d.nominal,
+      sumber: d.sumber || '',
+      kategori: d.kategori || '',
+      createdAt: d.created_at,
+    }));
+  },
+  addEntry: async (entry) => {
+    const { error } = await supabase.from('cashflow_entries').insert([{
+      id: entry.id, tgl: entry.tgl, nama: entry.nama,
+      jenis: entry.jenis, nominal: entry.nominal,
+      sumber: entry.sumber || '', kategori: entry.kategori || '',
+    }]);
+    if (error) throw error;
+  },
+  deleteEntry: async (id) => {
+    const { error } = await supabase.from('cashflow_entries').delete().eq('id', id);
+    if (error) throw error;
+  },
+}
