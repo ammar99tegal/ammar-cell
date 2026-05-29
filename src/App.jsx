@@ -3066,10 +3066,12 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     return ()=>{ supabase.removeChannel(chTrx); supabase.removeChannel(chShift); };
   },[selectedOutlet]);
 
-  const uangSistem = trxList.reduce((s,t)=>s+t.netNominal,0);
-  const totalMasuk = trxList.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
-  const totalKeluar= trxList.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-  const filtered   = filterJenis==="semua"?trxList:filterJenis==="masuk"?trxList.filter(t=>t.netNominal>0):trxList.filter(t=>t.netNominal<0);
+  const uangSistem  = trxList.filter(t=>t.shiftId===shift?.id).reduce((s,t)=>s+t.netNominal,0);
+  const totalMasuk  = trxList.filter(t=>t.shiftId===shift?.id&&t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+  const totalKeluar = trxList.filter(t=>t.shiftId===shift?.id&&t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+  // Tampilkan hanya transaksi shift aktif saat ini
+  const shiftTrxList = shift ? trxList.filter(t=>t.shiftId===shift.id) : [];
+  const filtered = filterJenis==="semua"?shiftTrxList:filterJenis==="masuk"?shiftTrxList.filter(t=>t.netNominal>0):shiftTrxList.filter(t=>t.netNominal<0);
   const totalSaldo = shift?.saldoApps?Object.values(shift.saldoApps).reduce((s,v)=>s+(+v||0),0):0;
 
   const setShift = (val) => {
@@ -3166,12 +3168,12 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #e0faf5"}}>
             <div style={{fontSize:11,fontWeight:700,color:"#0d9488",marginBottom:4}}>TOTAL MASUK</div>
             <div style={{fontWeight:900,fontSize:24,color:"#0d9488"}}>{fmtRp(totalMasuk)}</div>
-            <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{trxList.filter(t=>t.netNominal>0).length} transaksi ⬇</div>
+            <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{shiftTrxList.filter(t=>t.netNominal>0).length} transaksi ⬇</div>
           </div>
           <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #ffe0e0"}}>
             <div style={{fontSize:11,fontWeight:700,color:"#e74c3c",marginBottom:4}}>TOTAL KELUAR</div>
             <div style={{fontWeight:900,fontSize:24,color:"#e74c3c"}}>{fmtRp(totalKeluar)}</div>
-            <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{trxList.filter(t=>t.netNominal<0).length} transaksi ⬆</div>
+            <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{shiftTrxList.filter(t=>t.netNominal<0).length} transaksi ⬆</div>
           </div>
         </div>
 
@@ -3183,7 +3185,10 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
 
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
           <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-            <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📋 Riwayat Transaksi</div>
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📋 Transaksi Shift Ini</div>
+              {shift&&<div style={{fontSize:10,color:"#aaa",marginTop:2}}>Shift: {shift.nama} · {shiftTrxList.length} transaksi</div>}
+            </div>
             <div style={{display:"flex",gap:6}}>
               {[{k:"semua",l:"Semua"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"}].map(f=>(
                 <button key={f.k} onClick={()=>setFilterJenis(f.k)} style={{padding:"5px 12px",borderRadius:20,border:"2px solid",borderColor:filterJenis===f.k?"#0d9488":"#b2ede6",background:filterJenis===f.k?"#0d9488":"#fff",color:filterJenis===f.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{f.l}</button>
@@ -4480,8 +4485,16 @@ export default function App() {
       if(document.visibilityState==='visible') reloadData();
     }, 60000);
 
+    // ── Online/offline detection — tablet sering putus wifi ────────────────
+    const onOnline = () => {
+      console.log('🟢 Koneksi kembali — reload data...');
+      setTimeout(()=>reloadData(), 1000); // delay 1 detik biar koneksi stabil dulu
+    };
+    window.addEventListener('online', onOnline);
+
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
       clearInterval(iv);
     };
   },[]);
