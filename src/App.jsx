@@ -4452,6 +4452,20 @@ export default function App() {
 
   const notify = (msg,type="ok")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
 
+  // ── Auto cleanup shift expired (> 24 jam = lupa tutup) ───────────────────
+  useEffect(()=>{
+    const cleanup = () => {
+      const cutoff = new Date(Date.now() - 24*60*60*1000).toISOString();
+      supabase.from('active_shifts').delete().lt('created_at', cutoff).catch(()=>{});
+      supabase.from('bank_shifts').delete().lt('created_at', cutoff).catch(()=>{});
+    };
+    // Jalankan saat app pertama load
+    cleanup();
+    // Jalankan lagi tiap 1 jam
+    const iv = setInterval(cleanup, 60*60*1000);
+    return ()=>clearInterval(iv);
+  },[]);
+
   // ── Auto reload saat app kembali ke foreground (tab aktif lagi) ──────────
   useEffect(()=>{
     const onVisible = () => {
