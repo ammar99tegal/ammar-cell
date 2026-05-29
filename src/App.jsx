@@ -3098,7 +3098,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     return ()=>{ supabase.removeChannel(chTrx); supabase.removeChannel(chShift); };
   },[selectedOutlet]);
 
-  const uangSistem  = trxList.filter(t=>t.shiftId===shift?.id).reduce((s,t)=>s+t.netNominal,0);
+  // Uang sistem = cash kembalian awal + transaksi shift (saldo aplikasi tidak dihitung)
+  const cashKembShift = shift?.cashKemb||0;
+  const uangSistem  = cashKembShift + trxList.filter(t=>t.shiftId===shift?.id).reduce((s,t)=>s+t.netNominal,0);
   const totalMasuk  = trxList.filter(t=>t.shiftId===shift?.id&&t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
   const totalKeluar = trxList.filter(t=>t.shiftId===shift?.id&&t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
   // Tampilkan hanya transaksi shift aktif saat ini
@@ -3189,8 +3191,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
       <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
           <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:14,padding:"16px 18px",boxShadow:"0 4px 16px rgba(13,148,136,.25)"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.7)",marginBottom:4}}>UANG SISTEM</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.7)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>UANG SISTEM</div>
             <div style={{fontWeight:900,fontSize:24,color:"#fff"}}>{fmtRp(uangSistem)}</div>
+            {cashKembShift>0&&<div style={{fontSize:10,color:"rgba(255,255,255,.65)",marginTop:2}}>Termasuk cash kembalian {fmtRp(cashKembShift)}</div>}
             <button onClick={()=>setShowBalance(true)} style={{marginTop:9,background:"rgba(255,255,255,.18)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"4px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:5}}>
               🔄 Cek Balance {lastBalance&&<span style={{opacity:.6}}>{lastBalance.jam}</span>}
             </button>
@@ -3316,7 +3319,7 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
   const shiftTrx    = trxList.filter(t=>t.shiftId===shift?.id);
   const sMasuk      = shiftTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
   const sKeluar     = shiftTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-  // REVISI: uang sistem = cash kembalian awal + transaksi shift
+  // Uang sistem = cash kembalian + transaksi shift (saldo aplikasi TIDAK ikut)
   const cashKembAwal  = shift?.cashKemb||0;
   const uangSistemS   = cashKembAwal + sMasuk - sKeluar;
   const uangLaciNum   = +uangLaci||0;
@@ -3324,7 +3327,8 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
   const totalSaldoF   = Object.values(saldoForm).reduce((s,v)=>s+(+v||0),0);
   const totalSaldoC   = Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0);
   const cashKembNum   = +cashKemb||0;
-  const totalSistemBuka = cashKembNum + totalSaldoF;
+  // Uang sistem awal = cash kembalian SAJA (saldo aplikasi hanya catatan)
+  const totalSistemBuka = cashKembNum;
 
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
   const lbl = {fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4};
@@ -3364,7 +3368,10 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
                 style={{...inp,paddingLeft:38,fontSize:18,fontWeight:900,textAlign:"right",border:`2px solid ${cashKembNum>0?"#0d9488":"#b2ede6"}`,marginBottom:0}}/>
             </div>
 
-            <SH t="📱 Saldo Aplikasi Awal (Catatan)"/>
+            <SH t="📱 Saldo Aplikasi Awal (Catatan — tidak masuk uang sistem)"/>
+            <div style={{background:"#fffbe6",border:"1px solid #f39c1222",borderRadius:9,padding:"8px 12px",marginBottom:8,fontSize:11,color:"#b7770d",lineHeight:1.5}}>
+              📌 Saldo aplikasi hanya untuk <b>pengecekan Anda</b> — tidak mempengaruhi uang sistem.
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
               {APPS.map(app=>(
                 <div key={app}>
@@ -3375,33 +3382,23 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
               ))}
             </div>
 
-            {/* Total saldo SELALU tampil */}
-            <div style={{background:"#e0faf5",borderRadius:10,padding:"11px 14px",border:"2px solid #0d948833"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:totalSaldoF>0||cashKembNum>0?8:0}}>
-                <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>💰 Total Saldo Aplikasi</span>
+            {/* Total saldo aplikasi — TERPISAH dari uang sistem */}
+            <div style={{background:"#e0faf5",borderRadius:10,padding:"11px 14px",border:"2px solid #0d948833",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>📱 Total Saldo Aplikasi</span>
                 <span style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
               </div>
-              {(cashKembNum>0||totalSaldoF>0)&&(
-                <div style={{borderTop:"1px dashed #0d948833",paddingTop:8}}>
-                  {cashKembNum>0&&(
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                      <span style={{color:"#555"}}>Cash Kembalian</span>
-                      <span style={{fontWeight:700,color:"#0d9488"}}>{fmtRp(cashKembNum)}</span>
-                    </div>
-                  )}
-                  {totalSaldoF>0&&(
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                      <span style={{color:"#555"}}>+ Saldo Aplikasi</span>
-                      <span style={{fontWeight:700,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
-                    </div>
-                  )}
-                  <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:"1px dashed #0d948833"}}>
-                    <span style={{fontWeight:800,fontSize:13}}>= Total Awal Sistem</span>
-                    <span style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(totalSistemBuka)}</span>
-                  </div>
-                </div>
-              )}
+              <div style={{fontSize:10,color:"#aaa",marginTop:4}}>* Hanya catatan — tidak masuk perhitungan uang sistem</div>
             </div>
+
+            {/* Uang sistem awal = cash kembalian saja */}
+            {cashKembNum>0&&(
+              <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:10,padding:"11px 14px"}}>
+                <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.75)",marginBottom:4}}>💵 UANG SISTEM AWAL</div>
+                <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(totalSistemBuka)}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:3}}>= Cash Kembalian saja · Saldo aplikasi tidak dihitung</div>
+              </div>
+            )}
           </>
         )}
 
