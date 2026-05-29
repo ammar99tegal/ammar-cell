@@ -1,38 +1,31 @@
 import { createClient } from '@supabase/supabase-js'
 
-// ⚠️ GANTI dengan URL dan KEY dari project Supabase kamu
-// Cara dapat: Supabase Dashboard → Settings → API
 const SUPABASE_URL = 'https://acxqzupnlkqvmsitolzj.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHF6dXBubGtxdm1zaXRvbHpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODA4OTAsImV4cCI6MjA5NTM1Njg5MH0.qRZ3HkhMYmFOUk1y6sh0aJujSBNJ-Ov1G8Q5s_h6_qU'
 
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// ── PRODUCTS ──────────────────────────────────────────────────────────────────
+// ── PRODUCTS & CORE ───────────────────────────────────────────────────────────
 export const db = {
-  // Ambil semua produk
   getProducts: async () => {
     const { data, error } = await supabase.from('products').select('*').order('id')
     if (error) throw error
     return data
   },
-  // Tambah produk
   addProduct: async (p) => {
     const { data, error } = await supabase.from('products').insert([p]).select().single()
     if (error) throw error
     return data
   },
-  // Update produk
   updateProduct: async (id, p) => {
     const { error } = await supabase.from('products').update(p).eq('id', id)
     if (error) throw error
   },
-  // Hapus produk
   deleteProduct: async (id) => {
     const { error } = await supabase.from('products').delete().eq('id', id)
     if (error) throw error
   },
-
-  // ── OUTLETS ────────────────────────────────────────────────────────────────
   getOutlets: async () => {
     const { data, error } = await supabase.from('outlets').select('*').order('id')
     if (error) throw error
@@ -51,12 +44,9 @@ export const db = {
     const { error } = await supabase.from('outlets').delete().eq('id', id)
     if (error) throw error
   },
-
-  // ── STOCKS ─────────────────────────────────────────────────────────────────
   getStocks: async () => {
     const { data, error } = await supabase.from('stocks').select('*')
     if (error) throw error
-    // Konversi ke format { outletId: { productId: qty } }
     const result = {}
     data.forEach(row => {
       if (!result[row.outlet_id]) result[row.outlet_id] = {}
@@ -65,12 +55,12 @@ export const db = {
     return result
   },
   upsertStock: async (outletId, productId, qty) => {
-    const { error } = await supabase.from('stocks').upsert({
-      outlet_id: outletId, product_id: productId, qty
-    }, { onConflict: 'outlet_id,product_id' })
+    const { error } = await supabase.from('stocks').upsert(
+      { outlet_id: outletId, product_id: productId, qty },
+      { onConflict: 'outlet_id,product_id' }
+    )
     if (error) throw error
   },
-  // Update banyak stok sekaligus (untuk opname/transaksi)
   upsertStocks: async (outletId, stockMap) => {
     const rows = Object.entries(stockMap).map(([pid, qty]) => ({
       outlet_id: outletId, product_id: +pid, qty
@@ -78,12 +68,9 @@ export const db = {
     const { error } = await supabase.from('stocks').upsert(rows, { onConflict: 'outlet_id,product_id' })
     if (error) throw error
   },
-
-  // ── USERS ──────────────────────────────────────────────────────────────────
   getUsers: async () => {
     const { data, error } = await supabase.from('users').select('*')
     if (error) throw error
-    // Konversi ke format { username: { pass, nama, role, outletId } }
     const result = {}
     data.forEach(u => {
       result[u.username] = { pass: u.pass, nama: u.nama, role: u.role, outletId: u.outlet_id }
@@ -91,17 +78,16 @@ export const db = {
     return result
   },
   upsertUser: async (username, u) => {
-    const { error } = await supabase.from('users').upsert({
-      username, pass: u.pass, nama: u.nama, role: u.role, outlet_id: u.outletId || null
-    }, { onConflict: 'username' })
+    const { error } = await supabase.from('users').upsert(
+      { username, pass: u.pass, nama: u.nama, role: u.role, outlet_id: u.outletId || null },
+      { onConflict: 'username' }
+    )
     if (error) throw error
   },
   deleteUser: async (username) => {
     const { error } = await supabase.from('users').delete().eq('username', username)
     if (error) throw error
   },
-
-  // ── TRANSACTIONS ───────────────────────────────────────────────────────────
   getTransactions: async () => {
     const { data, error } = await supabase.from('transactions')
       .select('*').order('created_at', { ascending: false }).limit(1000)
@@ -118,13 +104,10 @@ export const db = {
     }])
     if (error) throw error
   },
-  // Update items (untuk refund)
   updateTransactionItems: async (id, items) => {
     const { error } = await supabase.from('transactions').update({ items }).eq('id', id)
     if (error) throw error
   },
-
-  // ── STOCK LOGS ─────────────────────────────────────────────────────────────
   getStockLogs: async () => {
     const { data, error } = await supabase.from('stock_logs')
       .select('*').order('created_at', { ascending: false }).limit(500)
@@ -149,102 +132,63 @@ export const db = {
   },
 }
 
-// ── SALDO APPS CONFIG ─────────────────────────────────────────────────────────
+// ── SALDO APPS KASIR ──────────────────────────────────────────────────────────
 export const dbSaldo = {
   getSaldoApps: async () => {
     const { data, error } = await supabase.from('saldo_apps').select('*').order('urutan')
-    if (error) {
-      console.warn('saldo_apps table not found, using defaults');
-      return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
-    }
+    if (error) { console.warn('saldo_apps:', error.message); return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"]; }
     return data.map(d => d.nama)
   },
   saveSaldoApps: async (list) => {
     await supabase.from('saldo_apps').delete().neq('id', 0)
-    const rows = list.map((nama, i) => ({ nama, urutan: i }))
-    const { error } = await supabase.from('saldo_apps').insert(rows)
+    const { error } = await supabase.from('saldo_apps').insert(list.map((nama, i) => ({ nama, urutan: i })))
     if (error) throw error
   }
 }
 
-// ── ACTIVE SHIFTS ─────────────────────────────────────────────────────────────
-export const dbShift = {
-  // Ambil shift aktif untuk outlet + user tertentu
-  getActiveShift: async (outletId, userId) => {
-    const { data, error } = await supabase
-      .from('active_shifts')
-      .select('*')
-      .eq('outlet_id', outletId)
-      .eq('user_id', userId)
-      .single()
-    if (error) return null
-    return data ? {
-      id: data.id,
-      nama: data.nama,
-      start: data.start_time,
-      outletId: data.outlet_id,
-      ...data.saldo_data
-    } : null
+// ── SALDO BANK APPS ───────────────────────────────────────────────────────────
+export const dbSaldoBank = {
+  getSaldoBankApps: async () => {
+    const { data, error } = await supabase.from('saldo_bank_apps').select('*').order('urutan')
+    if (error) { console.warn('saldo_bank_apps:', error.message); return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay"]; }
+    return data.map(d => d.nama)
   },
+  saveSaldoBankApps: async (list) => {
+    await supabase.from('saldo_bank_apps').delete().neq('id', 0)
+    const { error } = await supabase.from('saldo_bank_apps').insert(list.map((nama, i) => ({ nama, urutan: i })))
+    if (error) throw error
+  }
+}
 
-  // Simpan shift baru (buka shift)
+// ── SHIFT KASIR ───────────────────────────────────────────────────────────────
+export const dbShift = {
+  getActiveShift: async (outletId, userId) => {
+    const { data, error } = await supabase.from('active_shifts').select('*')
+      .eq('outlet_id', outletId).eq('user_id', userId).single()
+    if (error) return null
+    return data ? { id: data.id, nama: data.nama, start: data.start_time, outletId: data.outlet_id, ...data.saldo_data } : null
+  },
   openShift: async (shift, outletId, userId) => {
     const { error } = await supabase.from('active_shifts').upsert({
-      id: shift.id,
-      outlet_id: outletId,
-      user_id: userId,
-      nama: shift.nama,
-      start_time: shift.start,
-      saldo_data: {
-        saldoApps: shift.saldoApps,
-        cashKembalian: shift.cashKembalian,
-        totalSaldoApps: shift.totalSaldoApps,
-        waktuBuka: shift.start,
-      }
+      id: shift.id, outlet_id: outletId, user_id: userId,
+      nama: shift.nama, start_time: shift.start,
+      saldo_data: { saldoApps: shift.saldoApps, cashKembalian: shift.cashKembalian, totalSaldoApps: shift.totalSaldoApps, waktuBuka: shift.start }
     }, { onConflict: 'id' })
-    if (error) console.error('Gagal simpan shift:', error)
+    if (error) console.error('openShift error:', error.message)
   },
-
-  // Tutup shift: hapus dari active_shifts, simpan ke shift_logs
   closeShift: async (shift, outletId, userId, closeData) => {
-    // Simpan ke shift_logs
     await supabase.from('shift_logs').insert({
-      id: shift.id,
-      outlet_id: outletId,
-      user_id: userId,
-      nama: shift.nama,
-      start_time: shift.start,
-      end_time: closeData.waktuTutup,
-      saldo_open: {
-        saldoApps: shift.saldoApps,
-        cashKembalian: shift.cashKembalian,
-        totalSaldoApps: shift.totalSaldoApps,
-        waktuBuka: shift.start,
-      },
-      saldo_close: {
-        saldoAppsAkhir: closeData.saldoAppsClose,
-        cashKembClose: closeData.cashKembC,
-        waktuTutup: closeData.waktuTutup,
-      },
-      rekap: {
-        setorTunai: closeData.setorTunai,
-        hutang: closeData.hutang,
-        pending: closeData.pending,
-        pengeluaran: closeData.pengeluaran,
-        noteKlr: closeData.noteKlr,
-        kasNyataSystem: closeData.kasNyataSystem,
-        kasNyataFisik: closeData.kasNyataFisik,
-        selisih: closeData.selisih,
-        notes: closeData.notes,
-      }
-    }).catch(e => console.error('Gagal simpan shift_log:', e))
-
-    // Hapus dari active_shifts
-    await supabase.from('active_shifts').delete().eq('id', shift.id)
-      .catch(e => console.error('Gagal hapus active_shift:', e))
+      id: shift.id, outlet_id: outletId, user_id: userId,
+      nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
+      saldo_open: { saldoApps: shift.saldoApps, cashKembalian: shift.cashKembalian, totalSaldoApps: shift.totalSaldoApps },
+      saldo_close: { saldoAppsAkhir: closeData.saldoAppsClose, cashKembClose: closeData.cashKembC, waktuTutup: closeData.waktuTutup },
+      rekap: { setorTunai: closeData.setorTunai, hutang: closeData.hutang, pending: closeData.pending,
+               pengeluaran: closeData.pengeluaran, noteKlr: closeData.noteKlr,
+               kasNyataSystem: closeData.kasNyataSystem, kasNyataFisik: closeData.kasNyataFisik,
+               selisih: closeData.selisih, notes: closeData.notes }
+    }).catch(e => console.error('closeShift log error:', e.message))
+    await supabase.from('active_shifts').delete().eq('id', shift.id).catch(console.error)
   },
-
-  // Ambil semua riwayat shift (untuk laporan admin)
   getShiftLogs: async (outletId = null) => {
     let q = supabase.from('shift_logs').select('*').order('created_at', { ascending: false }).limit(200)
     if (outletId) q = q.eq('outlet_id', outletId)
@@ -254,64 +198,49 @@ export const dbShift = {
   }
 }
 
-// ── BANK TRANSACTIONS ─────────────────────────────────────────────────────────
+// ── BANK ──────────────────────────────────────────────────────────────────────
 export const dbBank = {
   getTransactions: async () => {
-    const { data, error } = await supabase
-      .from('bank_transactions')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500)
+    const { data, error } = await supabase.from('bank_transactions').select('*')
+      .order('created_at', { ascending: false }).limit(500)
     if (error) { console.warn('bank_transactions:', error.message); return []; }
     return data.map(t => ({
-      id: t.id, waktu: t.waktu, tgl: t.tgl,
-      shiftId: t.shift_id, nama: t.nama,
-      jenis: t.jenis, feeType: t.fee_type,
-      fee: t.fee, nominal: t.nominal,
-      netNominal: t.net_nominal,
-      outletId: t.outlet_id,
-    }));
+      id: t.id, waktu: t.waktu, tgl: t.tgl, shiftId: t.shift_id, nama: t.nama,
+      jenis: t.jenis, feeType: t.fee_type, fee: t.fee, nominal: t.nominal,
+      netNominal: t.net_nominal, outletId: t.outlet_id,
+    }))
   },
   addTransaction: async (t) => {
     const { error } = await supabase.from('bank_transactions').insert([{
-      id: t.id, waktu: t.waktu, tgl: t.tgl,
-      shift_id: t.shiftId, nama: t.nama,
-      jenis: t.jenis, fee_type: t.feeType,
-      fee: t.fee, nominal: t.nominal,
-      net_nominal: t.netNominal,
-      outlet_id: t.outletId,
-    }]);
-    if (error) throw error;
+      id: t.id, waktu: t.waktu, tgl: t.tgl, shift_id: t.shiftId, nama: t.nama,
+      jenis: t.jenis, fee_type: t.feeType, fee: t.fee, nominal: t.nominal,
+      net_nominal: t.netNominal, outlet_id: t.outletId,
+    }])
+    if (error) throw error
   },
   updateTransaction: async (id, t) => {
     const { error } = await supabase.from('bank_transactions').update({
-      nama: t.nama, jenis: t.jenis, fee_type: t.feeType,
-      fee: t.fee, nominal: t.nominal, net_nominal: t.netNominal,
-    }).eq('id', id);
-    if (error) throw error;
+      nama: t.nama, jenis: t.jenis, fee_type: t.feeType, fee: t.fee,
+      nominal: t.nominal, net_nominal: t.netNominal,
+    }).eq('id', id)
+    if (error) throw error
   },
   deleteTransaction: async (id) => {
-    const { error } = await supabase.from('bank_transactions').delete().eq('id', id);
-    if (error) throw error;
+    const { error } = await supabase.from('bank_transactions').delete().eq('id', id)
+    if (error) throw error
   },
-
-  // Shift bank
   getActiveShift: async (outletId, userId) => {
-    const { data, error } = await supabase
-      .from('bank_shifts')
-      .select('*')
-      .eq('outlet_id', outletId)
-      .eq('user_id', userId)
-      .single();
-    if (error) return null;
-    return data ? { id: data.id, nama: data.nama, start: data.start_time, outletId: data.outlet_id, ...data.saldo_data } : null;
+    const { data, error } = await supabase.from('bank_shifts').select('*')
+      .eq('outlet_id', outletId).eq('user_id', userId).single()
+    if (error) return null
+    return data ? { id: data.id, nama: data.nama, start: data.start_time, outletId: data.outlet_id, ...data.saldo_data } : null
   },
   openShift: async (shift, outletId, userId) => {
     await supabase.from('bank_shifts').upsert({
       id: shift.id, outlet_id: outletId, user_id: userId,
       nama: shift.nama, start_time: shift.start,
       saldo_data: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb, totalSaldo: shift.totalSaldo }
-    }, { onConflict: 'id' }).catch(console.error);
+    }, { onConflict: 'id' }).catch(console.error)
   },
   closeShift: async (shift, outletId, userId, closeData) => {
     await supabase.from('bank_shift_logs').insert({
@@ -319,149 +248,61 @@ export const dbBank = {
       nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
       saldo_open: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb },
       saldo_close: { saldoAppsC: closeData.saldoAppsC, uangLaci: closeData.uangLaci, uangSistem: closeData.uangSistem, selisih: closeData.selisih, catatan: closeData.catatan },
-    }).catch(console.error);
-    await supabase.from('bank_shifts').delete().eq('id', shift.id).catch(console.error);
+    }).catch(console.error)
+    await supabase.from('bank_shifts').delete().eq('id', shift.id).catch(console.error)
   },
 }
 
-// ── SALDO BANK APPS (terpisah dari kasir) ────────────────────────────────────
-export const dbSaldoBank = {
-  getSaldoBankApps: async () => {
-    const { data, error } = await supabase
-      .from('saldo_bank_apps')
-      .select('*')
-      .order('urutan')
-    if (error) {
-      console.warn('saldo_bank_apps not found, using defaults');
-      return ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay"];
-    }
-    return data.map(d => d.nama)
+// ── PRODUCT ORDER (drag urutan produk) ───────────────────────────────────────
+export const dbProductOrder = {
+  getOrder: async () => {
+    const { data, error } = await supabase.from('product_order').select('*').order('urutan')
+    if (error) { console.warn('product_order:', error.message); return []; }
+    return data.map(d => ({ productId: d.product_id, urutan: d.urutan }))
   },
-  saveSaldoBankApps: async (list) => {
-    await supabase.from('saldo_bank_apps').delete().neq('id', 0)
-    const rows = list.map((nama, i) => ({ nama, urutan: i }))
-    const { error } = await supabase.from('saldo_bank_apps').insert(rows)
-    if (error) throw error
-  }
+  saveOrder: async (productIds) => {
+    const rows = productIds.map((id, i) => ({ product_id: id, urutan: i }))
+    const { error } = await supabase.from('product_order').upsert(rows, { onConflict: 'product_id' })
+    if (error) console.error('saveProductOrder error:', error.message)
+  },
 }
 
-// ── PRODUCT ORDER ─────────────────────────────────────────────────────────────
-export const dbOrder = {
-  getOrder: async (key) => {
-    const { data, error } = await supabase
-      .from('app_orders')
-      .select('order_data')
-      .eq('order_key', key)
-      .single()
-    if (error) return null
-    return data?.order_data || null
+// ── STOK ORDER (drag urutan opname per outlet) ────────────────────────────────
+export const dbStokOrder = {
+  getOrder: async (outletId) => {
+    const { data, error } = await supabase.from('stok_order').select('*')
+      .eq('outlet_id', outletId).order('urutan')
+    if (error) { console.warn('stok_order:', error.message); return []; }
+    return data.map(d => ({ productId: d.product_id, urutan: d.urutan }))
   },
-  saveOrder: async (key, orderData) => {
-    const { error } = await supabase
-      .from('app_orders')
-      .upsert({ order_key: key, order_data: orderData, updated_at: new Date().toISOString() },
-               { onConflict: 'order_key' })
-    if (error) throw error
-  }
+  saveOrder: async (outletId, productIds) => {
+    const rows = productIds.map((id, i) => ({ outlet_id: outletId, product_id: id, urutan: i }))
+    const { error } = await supabase.from('stok_order').upsert(rows, { onConflict: 'outlet_id,product_id' })
+    if (error) console.error('saveStokOrder error:', error.message)
+  },
 }
 
 // ── CASHFLOW ENTRIES ──────────────────────────────────────────────────────────
 export const dbCashflow = {
   getEntries: async () => {
-    const { data, error } = await supabase
-      .from('cashflow_entries')
-      .select('*')
-      .order('tgl', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(500)
-    if (error) { console.warn('cashflow_entries:', error.message); return { pemasukan: [], pengeluaran: [] } }
-    return {
-      pemasukan:   data.filter(d => d.tipe === 'masuk'),
-      pengeluaran: data.filter(d => d.tipe === 'keluar'),
-    }
+    const { data, error } = await supabase.from('cashflow_entries').select('*')
+      .order('created_at', { ascending: false }).limit(1000)
+    if (error) { console.warn('cashflow_entries:', error.message); return []; }
+    return data.map(d => ({
+      id: d.id, tgl: d.tgl, nama: d.nama, jenis: d.jenis,
+      nominal: d.nominal, sumber: d.sumber || '', kategori: d.kategori || '',
+      createdAt: d.created_at,
+    }))
   },
   addEntry: async (entry) => {
     const { error } = await supabase.from('cashflow_entries').insert([{
-      id: entry.id, tgl: entry.tgl, tipe: entry.tipe,
-      nama: entry.nama, nominal: entry.nominal,
-      sumber: entry.sumber || null, kategori: entry.kategori || null,
+      id: entry.id, tgl: entry.tgl, nama: entry.nama, jenis: entry.jenis,
+      nominal: entry.nominal, sumber: entry.sumber || '', kategori: entry.kategori || '',
     }])
     if (error) throw error
   },
   deleteEntry: async (id) => {
     const { error } = await supabase.from('cashflow_entries').delete().eq('id', id)
     if (error) throw error
-  },
-}
-
-// ── PRODUCT ORDER (urutan drag produk) ───────────────────────────────────────
-export const dbProductOrder = {
-  getOrder: async () => {
-    const { data, error } = await supabase
-      .from('product_order')
-      .select('*')
-      .order('urutan')
-    if (error) { console.warn('product_order:', error.message); return []; }
-    return data.map(d => ({ productId: d.product_id, urutan: d.urutan }));
-  },
-  saveOrder: async (productIds) => {
-    // Upsert semua sekaligus
-    const rows = productIds.map((id, i) => ({ product_id: id, urutan: i }));
-    const { error } = await supabase
-      .from('product_order')
-      .upsert(rows, { onConflict: 'product_id' });
-    if (error) console.error('saveOrder error:', error.message);
-  },
-}
-
-// ── STOK ORDER (urutan drag opname per outlet) ────────────────────────────────
-export const dbStokOrder = {
-  getOrder: async (outletId) => {
-    const { data, error } = await supabase
-      .from('stok_order')
-      .select('*')
-      .eq('outlet_id', outletId)
-      .order('urutan')
-    if (error) { console.warn('stok_order:', error.message); return []; }
-    return data.map(d => ({ productId: d.product_id, urutan: d.urutan }));
-  },
-  saveOrder: async (outletId, productIds) => {
-    const rows = productIds.map((id, i) => ({ outlet_id: outletId, product_id: id, urutan: i }));
-    const { error } = await supabase
-      .from('stok_order')
-      .upsert(rows, { onConflict: 'outlet_id,product_id' });
-    if (error) console.error('saveStokOrder error:', error.message);
-  },
-}
-
-// ── CASHFLOW ENTRIES ──────────────────────────────────────────────────────────
-export const dbCashflow = {
-  getEntries: async () => {
-    const { data, error } = await supabase
-      .from('cashflow_entries')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1000);
-    if (error) { console.warn('cashflow_entries:', error.message); return []; }
-    return data.map(d => ({
-      id: d.id, tgl: d.tgl, nama: d.nama,
-      jenis: d.jenis, // 'masuk' | 'keluar'
-      nominal: d.nominal,
-      sumber: d.sumber || '',
-      kategori: d.kategori || '',
-      createdAt: d.created_at,
-    }));
-  },
-  addEntry: async (entry) => {
-    const { error } = await supabase.from('cashflow_entries').insert([{
-      id: entry.id, tgl: entry.tgl, nama: entry.nama,
-      jenis: entry.jenis, nominal: entry.nominal,
-      sumber: entry.sumber || '', kategori: entry.kategori || '',
-    }]);
-    if (error) throw error;
-  },
-  deleteEntry: async (id) => {
-    const { error } = await supabase.from('cashflow_entries').delete().eq('id', id);
-    if (error) throw error;
   },
 }
