@@ -342,7 +342,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   const [editUser,      setEditUser]      = useState(null);
   const [confirmDel,    setConfirmDel]    = useState(null);
   const [oForm, setOForm] = useState({nama:"",alamat:""});
-  const [uForm, setUForm] = useState({username:"",pass:"",nama:"",outletId:"",role:"karyawan"});
+  const [uForm, setUForm] = useState({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"});
 
   const openAddOutlet = ()=>{ setEditOutlet(null); setOForm({nama:"",alamat:""}); setShowOutletForm(true); };
   const openEditOutlet= o=>{ setEditOutlet(o); setOForm({nama:o.nama,alamat:o.alamat}); setShowOutletForm(true); };
@@ -383,12 +383,12 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
     } catch(e) { notify("Gagal hapus outlet!","err"); }
   };
 
-  const openAddUser  = ()=>{ setEditUser(null); setUForm({username:"",pass:"",nama:"",outletId:"",role:"karyawan"}); setShowUserForm(true); };
-  const openEditUser = (u,k)=>{ setEditUser(k); setUForm({username:k,pass:u.pass,nama:u.nama,outletId:u.outletId||"",role:u.role}); setShowUserForm(true); };
+  const openAddUser  = ()=>{ setEditUser(null); setUForm({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"}); setShowUserForm(true); };
+  const openEditUser = (u,k)=>{ setEditUser(k); setUForm({username:k,pass:u.pass,nama:u.nama,outletId:u.outletId||"",outletIds:u.outletIds||[],role:u.role}); setShowUserForm(true); };
   const saveUser = async ()=>{
     if (!uForm.username.trim()||!uForm.pass||!uForm.nama) return notify("Isi semua field!","err");
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
-    const userData = {pass:uForm.pass,nama:uForm.nama.trim(),role:uForm.role,outletId:uForm.outletId||null};
+    const userData = {pass:uForm.pass,nama:uForm.nama.trim(),role:uForm.role,outletId:uForm.outletId||null,outletIds:uForm.outletIds||[]};
     try {
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
@@ -482,8 +482,8 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                     <tr key={key} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
                       <td style={{padding:"10px 13px",fontWeight:700}}>{u.nama}</td>
-                      <td style={{padding:"10px 13px"}}><span style={{background:u.role==="admin"?"#f5eeff":"#e0faf5",color:u.role==="admin"?"#8e44ad":"#0d9488",fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{u.role==="admin"?"👑 Admin":"👷 Karyawan"}</span></td>
-                      <td style={{padding:"10px 13px",color:"#555",fontSize:12}}>{outletNama}</td>
+                      <td style={{padding:"10px 13px"}}><span style={{background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":"#e0faf5",color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":"#0d9488",fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":"👷 Karyawan"}</span></td>
+                      <td style={{padding:"10px 13px",color:"#555",fontSize:12}}>{u.role==="monitor"?(u.outletIds?.map(id=>outlets.find(o=>o.id===id)?.nama).filter(Boolean).join(", ")||"Semua Outlet"):outletNama}</td>
                       <td style={{padding:"10px 13px"}}>
                         <div style={{display:"flex",gap:5}}>
                           <button onClick={()=>openEditUser(u,key)} style={{background:"#e0faf5",border:"none",borderRadius:7,padding:"5px 10px",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",gap:3,fontFamily:"inherit"}}>{Ic.Edit()} Edit</button>
@@ -528,11 +528,41 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
             </select>
           </div>
           <div style={{marginBottom:14}}>
-            <label style={{...lbl}}>Outlet Tugasan {uForm.role==="admin"&&<span style={{color:"#aaa",fontWeight:500}}>(opsional untuk admin)</span>}</label>
-            <select value={uForm.outletId} onChange={e=>setUForm(p=>({...p,outletId:e.target.value}))} style={{...inp}}>
-              <option value="">— Tidak ada / Admin —</option>
-              {outlets.map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
-            </select>
+            <label style={{...lbl}}>
+              Outlet Tugasan 
+              {uForm.role==="admin"&&<span style={{color:"#aaa",fontWeight:500}}> (opsional untuk admin)</span>}
+              {uForm.role==="monitor"&&<span style={{color:"#d97706",fontWeight:700}}> — pilih outlet yang dipantau</span>}
+            </label>
+            {uForm.role==="monitor" ? (
+              /* Multi-checklist untuk monitor */
+              <div style={{border:"2px solid #b2ede6",borderRadius:9,padding:"8px 12px",background:"#fafffe"}}>
+                {outlets.map(o=>(
+                  <label key={o.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 4px",cursor:"pointer",borderRadius:7}}>
+                    <input type="checkbox"
+                      checked={(uForm.outletIds||[]).includes(o.id)}
+                      onChange={e=>{
+                        const ids = uForm.outletIds||[];
+                        setUForm(p=>({...p,
+                          outletIds: e.target.checked ? [...ids,o.id] : ids.filter(id=>id!==o.id),
+                          outletId: "" // clear single outletId
+                        }));
+                      }}
+                      style={{width:16,height:16,accentColor:"#0d9488",cursor:"pointer"}}
+                    />
+                    <span style={{fontSize:13,fontWeight:600,color:"#1a2e2a"}}>{o.nama}</span>
+                  </label>
+                ))}
+                {(uForm.outletIds||[]).length===0&&(
+                  <div style={{fontSize:11,color:"#aaa",marginTop:4}}>* Kosong = pantau semua outlet</div>
+                )}
+              </div>
+            ) : (
+              /* Single dropdown untuk karyawan & admin */
+              <select value={uForm.outletId} onChange={e=>setUForm(p=>({...p,outletId:e.target.value}))} style={{...inp}}>
+                <option value="">— Tidak ada / Admin —</option>
+                {outlets.map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
+              </select>
+            )}
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setShowUserForm(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
@@ -4045,6 +4075,12 @@ function PulseDotM({color="#27ae60",size=8}){
 
 function MonitorPage({ user, outlets, transactions, onBack, notify }) {
   const isMonitorRole = user?.role==="monitor";
+  // Outlet yang dipantau monitor (kosong = semua)
+  const monitorOutletIds = user?.outletIds||[];
+  const visibleOutlets = isMonitorRole && monitorOutletIds.length>0
+    ? outlets.filter(o=>monitorOutletIds.includes(o.id))
+    : outlets;
+
   const [clock,       setClock]      = useState(now());
   const [kasirShifts, setKasirShifts]= useState([]);
   const [bankTrxList, setBankTrxList]= useState([]);
@@ -4052,36 +4088,30 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
   const [filterBank,  setFilterBank] = useState("semua");
   const [loading,     setLoading]    = useState(true);
 
-  // Clock
   useEffect(()=>{ const iv=setInterval(()=>setClock(now()),1000); return()=>clearInterval(iv); },[]);
 
-  // Load data
   useEffect(()=>{
     const load = async () => {
       try {
-        // Load active shifts semua outlet
-        const {data:shifts} = await supabase.from('active_shifts').select('*').catch(()=>({data:[]}));
-        setKasirShifts(shifts||[]);
-        // Load bank transactions hari ini
+        // Load active shifts — ambil semua, filter di frontend
+        const {data:shifts,error} = await supabase.from('active_shifts').select('*');
+        if(!error) setKasirShifts(shifts||[]);
         const allBankTrx = await dbBank.getTransactions();
         setBankTrxList(allBankTrx);
-      } catch(e){ console.error(e); }
+      } catch(e){ console.error('MonitorPage load error:',e); }
       setLoading(false);
     };
     load();
 
-    // Realtime active_shifts
     const chShift = supabase.channel('monitor-shifts')
       .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},async()=>{
         const {data} = await supabase.from('active_shifts').select('*').catch(()=>({data:[]}));
         setKasirShifts(data||[]);
       }).subscribe();
 
-    // Realtime transaksi kasir baru
     const chTrx = supabase.channel('monitor-trx')
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'transactions'},(payload)=>{
-        // Trigger reload kasir shifts untuk update omset
-        supabase.from('active_shifts').select('*').then(({data})=>setKasirShifts(data||[]));
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'transactions'},()=>{
+        supabase.from('active_shifts').select('*').then(({data})=>{ if(data) setKasirShifts(data); });
       }).subscribe();
 
     // Realtime bank transactions
@@ -4117,22 +4147,20 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
 
   // Transaksi kasir hari ini terurut terbaru
   const todayTrx = transactions.filter(t=>t.date===today())
-    .sort((a,b)=>b.id?.localeCompare(a.id)||0)
+    .sort((a,b)=>(b.time||"").localeCompare(a.time||""))
     .slice(0,50);
 
-  const filteredTrx = filterOutlet==="semua" ? todayTrx : todayTrx.filter(t=>t.outletId===filterOutlet);
-  const filteredBank = filterBank==="semua" ? bankTrxList : bankTrxList.filter(t=>t.outletId===filterBank);
+  const filteredTrx  = filterOutlet==="semua" ? todayTrx  : todayTrx.filter(t=>String(t.outletId)===String(filterOutlet));
+  const filteredBank = filterBank==="semua"   ? bankTrxList : bankTrxList.filter(t=>String(t.outletId)===String(filterBank));
 
-  // Grand totals
-  const totalCashLaci  = kasirShifts.reduce((s,sh)=>s+calcOmsetShift(sh.id),0);
-  const totalBankSistem= outlets.reduce((s,o)=>s+getBankStats(o.id).uangSistem,0);
-  const totalOmset     = calcOmsetShift ? transactions.filter(t=>t.date===today()).reduce((s,t)=>{ const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0) : 0;
+  // Grand totals — dari visibleOutlets saja
+  const totalOmset      = todayTrx.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
+  const totalBankSistem = visibleOutlets.reduce((s,o)=>s+getBankStats(o.id).uangSistem,0);
 
-  // Warna per outlet
   const outletColor = (id) => {
-    const colors={"0":"#0d9488","1":"#2980b9","2":"#8e44ad","3":"#27ae60","4":"#e67e22"};
-    const idx = outlets.findIndex(o=>o.id===id);
-    return colors[String(idx)]||"#0d9488";
+    const colors={};
+    outlets.forEach((o,i)=>{ colors[String(o.id)]=["#0d9488","#2980b9","#8e44ad","#27ae60","#e67e22"][i]||"#0d9488"; });
+    return colors[String(id)]||"#0d9488";
   };
 
   if(loading) return(
@@ -4172,7 +4200,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
         {/* KPI bar */}
         <div style={{background:"rgba(0,0,0,.12)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"7px 20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
           {[
-            {l:"Kasir Aktif",      v:`${kasirShifts.length} shift`,    c:"#a7f3d0"},
+            {l:"Kasir Aktif",        v:`${kasirShifts.filter(s=>visibleOutlets.some(o=>String(o.id)===String(s.outlet_id))).length} shift`,    c:"#a7f3d0"},
             {l:"Omset Kasir Hari Ini", v:fmtRp(totalOmset),           c:"#fcd34d"},
             {l:"Transaksi Hari Ini",   v:`${todayTrx.length} trx`,    c:"#fff"},
             {l:"Uang Sistem Bank",     v:fmtRp(totalBankSistem),       c:"#bfdbfe"},
@@ -4194,8 +4222,9 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
           <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>Kasir & Bank Aktif — Semua Outlet</div>
         </div>
 
-        {outlets.map((outlet,oi)=>{
-          const shifts = kasirShifts.filter(s=>s.outlet_id===outlet.id);
+        {visibleOutlets.map((outlet,oi)=>{
+          // Bandingkan sebagai string agar tidak gagal karena type mismatch int vs string
+          const shifts = kasirShifts.filter(s=>String(s.outlet_id)===String(outlet.id));
           const bank   = getBankStats(outlet.id);
           const oc     = outletColor(outlet.id);
           if(shifts.length===0&&bank.trx===0) return null;
@@ -4298,7 +4327,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                 <span style={{background:"#e0faf5",color:"#0d9488",fontWeight:800,fontSize:11,padding:"1px 8px",borderRadius:20}}>{filteredTrx.length}</span>
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {[{k:"semua",l:"Semua"},...outlets.map(o=>({k:o.id,l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
+                {[{k:"semua",l:"Semua"},...visibleOutlets.map(o=>({k:o.id,l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
                   <button key={f.k} onClick={()=>setFilterOutlet(f.k)}
                     style={{padding:"3px 10px",borderRadius:20,border:`2px solid ${filterOutlet===f.k?"#0d9488":"#b2ede6"}`,background:filterOutlet===f.k?"#0d9488":"transparent",color:filterOutlet===f.k?"#fff":"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
                     {f.l}
@@ -4345,7 +4374,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                 <span style={{background:"#f0f0f0",color:"#555",fontWeight:800,fontSize:11,padding:"1px 8px",borderRadius:20}}>{filteredBank.length}</span>
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {[{k:"semua",l:"Semua"},...outlets.map(o=>({k:o.id,l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
+                {[{k:"semua",l:"Semua"},...visibleOutlets.map(o=>({k:o.id,l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
                   <button key={f.k} onClick={()=>setFilterBank(f.k)}
                     style={{padding:"3px 10px",borderRadius:20,border:`2px solid ${filterBank===f.k?"#1a2e2a":"#b2ede6"}`,background:filterBank===f.k?"#1a2e2a":"transparent",color:filterBank===f.k?"#fff":"#555",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
                     {f.l}
