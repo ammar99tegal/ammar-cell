@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, supabase } from "./supabase.js";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -246,6 +246,7 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"bank",     icon:Ic.Cash(22),   label:"Bank",               desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
+    {id:"cashflow", icon:Ic.Dashboard(), label:"Cashflow Manager",  desc:"Pantau arus kas & saran bisnis",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"produk",   icon:Ic.Produk(),   label:"Manajemen Produk",   desc:"Tambah, edit & hapus produk",  color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),   label:"Manajemen Outlet",   desc:"Kelola outlet & kasir",        color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
     {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Kasir",        desc:"Kelola list saldo di shift kasir",color:"#16a085",bg:"#e0faf5",roles:["admin"]},
@@ -584,10 +585,46 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
   const [importText,  setImportText]  = useState("");
   const [importError, setImportError] = useState("");
   const [saving,      setSaving]      = useState(false);
+  const [prodOrder,   setProdOrder]   = useState(null); // null = urutan default
+  const dragProdIdx = useRef(null);
+  const saveOrderTimer = useRef(null);
+
+  // Load urutan produk dari Supabase + realtime
+  useEffect(()=>{
+    dbProductOrder.getOrder().then(ord=>{
+      if(ord && ord.length>0){
+        setProdOrder(ord.map(x=>x.productId));
+      }
+    }).catch(()=>{});
+    // Realtime listener product_order
+    const ch = supabase.channel('product-order-rt')
+      .on('postgres_changes',{event:'*',schema:'public',table:'product_order'},()=>{
+        // Reload urutan saat ada perubahan dari device lain
+        dbProductOrder.getOrder().then(ord=>{
+          if(ord && ord.length>0) setProdOrder(ord.map(x=>x.productId));
+        }).catch(()=>{});
+      }).subscribe();
+    return ()=>supabase.removeChannel(ch);
+  },[]);
+
+  // Simpan urutan ke Supabase (debounced 800ms agar tidak terlalu sering)
+  const saveProdOrder = (newOrder) => {
+    setProdOrder(newOrder);
+    if(saveOrderTimer.current) clearTimeout(saveOrderTimer.current);
+    saveOrderTimer.current = setTimeout(()=>{
+      dbProductOrder.saveOrder(newOrder).catch(e=>console.warn('saveProdOrder:',e));
+    }, 800);
+  };
 
   const allCats    = ["Semua",...Array.from(new Set(products.map(p=>p.category)))];
   const uniqueCats = Array.from(new Set(products.map(p=>p.category)));
-  const fp = products.filter(p=>(catFilter==="Semua"||p.category===catFilter)&&(p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search)));
+
+  // Urutan produk: jika ada prodOrder, pakai itu; sisanya append di belakang
+  const orderedProducts = prodOrder
+    ? [...prodOrder.map(id=>products.find(p=>p.id===id)).filter(Boolean),
+       ...products.filter(p=>!prodOrder.includes(p.id))]
+    : products;
+  const fp = orderedProducts.filter(p=>(catFilter==="Semua"||p.category===catFilter)&&(p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search)));
 
   const openAdd  = ()=>{ setEditTarget(null); setForm({name:"",barcode:"",category:"",price:"",modal:""}); setShowModal(true); };
   const openEdit = p=>{ setEditTarget(p); setForm({name:p.name,barcode:p.barcode||"",category:p.category,price:String(p.price),modal:String(p.modal)}); setShowModal(true); };
@@ -814,16 +851,31 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr style={{background:"#e0faf5"}}>
-              {["#","Nama","Barcode","Kategori","Harga Modal","Harga Jual","Aksi"].map(h=>(
+              {["#","","Nama","Barcode","Kategori","Harga Modal","Harga Jual","Aksi"].map(h=>(
                 <th key={h} style={{padding:"9px 12px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {fp.map((p,i)=>(
-                <tr key={p.id} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}
+                <tr key={p.id}
+                  draggable
+                  onDragStart={()=>{dragProdIdx.current=i;}}
+                  onDragOver={e=>{
+                    e.preventDefault();
+                    if(dragProdIdx.current===null||dragProdIdx.current===i) return;
+                    const next=[...fp];
+                    const [moved]=next.splice(dragProdIdx.current,1);
+                    next.splice(i,0,moved);
+                    dragProdIdx.current=i;
+                    // Update urutan — simpan ID order
+                    saveProdOrder(next.map(p=>p.id));
+                  }}
+                  onDragEnd={()=>{dragProdIdx.current=null;}}
+                  style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}
                   onMouseEnter={e=>e.currentTarget.style.background="#f0fdfb"}
                   onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#fafffe"}>
                   <td style={{padding:"9px 12px",color:"#ccc",fontWeight:600}}>{i+1}</td>
+                  <td style={{padding:"9px 6px",color:"#b2ede6",fontSize:16,cursor:"grab",userSelect:"none",textAlign:"center"}}>⠿</td>
                   <td style={{padding:"9px 12px",fontWeight:800}}>{p.name}</td>
                   <td style={{padding:"9px 12px",color:"#888",fontFamily:"monospace",fontSize:11}}>{p.barcode||"—"}</td>
                   <td style={{padding:"9px 12px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 8px",borderRadius:6}}>{p.category}</span></td>
@@ -2089,7 +2141,33 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   const [realStocks,  setRealStocks]  = useState(()=>{ const m={}; products.forEach(p=>{m[p.id]=outletStock[p.id]??0;}); return m; });
   const [opnameSaved, setOpnameSaved] = useState(false);
   const [srch,        setSrch]        = useState("");
-  const [sortK, setSortK] = useState("habis");
+  const [sortK,       setSortK]       = useState("habis");
+  const [stokOrder,   setStokOrder]   = useState(null);
+  const dragStokIdx  = useRef(null);
+  const saveOrderTmr = useRef(null);
+
+  // Load urutan stok dari Supabase + realtime
+  useEffect(()=>{
+    if(!selectedOutlet) return;
+    dbStokOrder.getOrder(selectedOutlet).then(ord=>{
+      if(ord && ord.length>0) setStokOrder(ord.map(x=>x.productId));
+    }).catch(()=>{});
+    const ch = supabase.channel(`stok-order-${selectedOutlet}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'stok_order',filter:`outlet_id=eq.${selectedOutlet}`},()=>{
+        dbStokOrder.getOrder(selectedOutlet).then(ord=>{
+          if(ord && ord.length>0) setStokOrder(ord.map(x=>x.productId));
+        }).catch(()=>{});
+      }).subscribe();
+    return ()=>supabase.removeChannel(ch);
+  },[selectedOutlet]);
+
+  const saveStokOrder = (newOrder) => {
+    setStokOrder(newOrder);
+    if(saveOrderTmr.current) clearTimeout(saveOrderTmr.current);
+    saveOrderTmr.current = setTimeout(()=>{
+      dbStokOrder.saveOrder(selectedOutlet, newOrder).catch(e=>console.warn('saveStokOrder:',e));
+    }, 800);
+  };
 
   const saveOpname = async () => {
     setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
@@ -2097,7 +2175,8 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
     setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
   };
 
-  const filteredP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase())).sort((a,b)=>{ const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0; if(sortK==="habis") return (qa===0?-1:qa<=2?0:1)-(qb===0?-1:qb<=2?0:1); if(sortK==="nama") return a.name.localeCompare(b.name); if(sortK==="kat") return a.category.localeCompare(b.category); if(sortK==="stok_asc") return qa-qb; return qb-qa; });
+  const baseFP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase())).sort((a,b)=>{ const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0; if(sortK==="habis") return (qa===0?-1:qa<=2?0:1)-(qb===0?-1:qb<=2?0:1); if(sortK==="nama") return a.name.localeCompare(b.name); if(sortK==="kat") return a.category.localeCompare(b.category); if(sortK==="stok_asc") return qa-qb; return qb-qa; });
+  const filteredP = stokOrder ? [...stokOrder.map(id=>baseFP.find(p=>p.id===id)).filter(Boolean),...baseFP.filter(p=>!stokOrder.includes(p.id))] : baseFP;
   const getStatus = s => s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss = {
     habis:  {bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},
@@ -2145,7 +2224,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
       <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr style={{background:"#e0faf5"}}>
-            {["#","Produk","Kategori","Status","Stok Sistem","Stok Nyata","Selisih"].map(h=>(
+            {["#","⠿","Produk","Kategori","Status","Stok Sistem","Stok Nyata","Selisih"].map(h=>(
               <th key={h} style={{padding:"9px 11px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
             ))}
           </tr></thead>
@@ -2156,8 +2235,22 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
               const diff    = realQty - sysQty;
               const st      = getStatus(realQty);
               return (
-                <tr key={p.id} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
+                <tr key={p.id}
+                  draggable
+                  onDragStart={()=>{ dragStokIdx.current=i; }}
+                  onDragOver={e=>{
+                    e.preventDefault();
+                    if(dragStokIdx.current===null||dragStokIdx.current===i) return;
+                    const ord=filteredP.map(x=>x.id);
+                    const [mv]=ord.splice(dragStokIdx.current,1);
+                    ord.splice(i,0,mv);
+                    dragStokIdx.current=i;
+                    saveStokOrder(ord);
+                  }}
+                  onDragEnd={()=>{ dragStokIdx.current=null; }}
+                  style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}>
                   <td style={{padding:"7px 11px",color:"#ccc"}}>{i+1}</td>
+                  <td style={{padding:"7px 6px",color:"#b2ede6",fontSize:16,userSelect:"none",textAlign:"center"}}>⠿</td>
                   <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
                   <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{p.category}</span></td>
                   <td style={{padding:"7px 11px"}}><span style={{background:ss[st].bg,color:ss[st].c,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{ss[st].l}</span></td>
@@ -2165,6 +2258,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
                   <td style={{padding:"7px 11px"}}>
                     <input type="number" min="0" value={realQty}
                       onChange={e=>setRealStocks(prev=>({...prev,[p.id]:Number(e.target.value)}))}
+                      onClick={e=>e.stopPropagation()}
                       style={{width:64,padding:"4px 7px",borderRadius:7,border:"2px solid #b2ede6",fontWeight:700,fontSize:13,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
                   </td>
                   <td style={{padding:"7px 11px",fontWeight:800,fontSize:13,color:diff===0?"#2ecc71":diff>0?"#f39c12":"#ff4757"}}>
@@ -3597,6 +3691,343 @@ function DashboardOverallPage({ transactions, outlets, onBack }) {
   );
 }
 
+// ── Drag & Drop sort hook ─────────────────────────────────────────────────────
+function useDragSort(initialItems, onReorder) {
+  const [items, setItems] = useState(initialItems);
+  const dragIdx = useRef(null);
+  useEffect(()=>{ setItems(initialItems); },[initialItems.length]);
+  const onDragStart = (i) => { dragIdx.current = i; };
+  const onDragOver  = (e, i) => {
+    e.preventDefault();
+    if(dragIdx.current===null||dragIdx.current===i) return;
+    const next=[...items];
+    const [moved]=next.splice(dragIdx.current,1);
+    next.splice(i,0,moved);
+    dragIdx.current=i;
+    setItems(next);
+  };
+  const onDrop = () => { onReorder(items); dragIdx.current=null; };
+  return { items, onDragStart, onDragOver, onDrop };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CASHFLOW PAGE
+// ══════════════════════════════════════════════════════════════════════════════
+function CashflowPage({ transactions, outlets, onBack, notify }) {
+  const todayStr  = today();
+  const nowD      = new Date();
+  const [activeTab,      setActiveTab]      = useState("hari_ini");
+  const [pemasukanList,  setPemasukanList]  = useState([]);
+  const [pengeluaranList,setPengeluaranList]= useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [showFormIn,     setShowFormIn]     = useState(false);
+  const [showFormOut,    setShowFormOut]    = useState(false);
+  const [formIn,  setFormIn]  = useState({nama:"",nominal:"",sumber:"",tgl:todayStr});
+  const [formOut, setFormOut] = useState({nama:"",nominal:"",kategori:"",tgl:todayStr});
+
+  // ── Load dari Supabase ──────────────────────────────────────────────────────
+  useEffect(()=>{
+    dbCashflow.getEntries().then(entries=>{
+      setPemasukanList(entries.filter(e=>e.jenis==='masuk'));
+      setPengeluaranList(entries.filter(e=>e.jenis==='keluar'));
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+
+    // ── Realtime listener ───────────────────────────────────────────────────
+    const ch = supabase.channel('cashflow-rt')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'cashflow_entries'},(payload)=>{
+        const r=payload.new; if(!r) return;
+        const entry={id:r.id,tgl:r.tgl,nama:r.nama,jenis:r.jenis,nominal:r.nominal,sumber:r.sumber||'',kategori:r.kategori||''};
+        if(r.jenis==='masuk')  setPemasukanList(prev=>prev.find(x=>x.id===r.id)?prev:[entry,...prev]);
+        else                   setPengeluaranList(prev=>prev.find(x=>x.id===r.id)?prev:[entry,...prev]);
+      })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'cashflow_entries'},(payload)=>{
+        const id=payload.old?.id; if(!id) return;
+        setPemasukanList(prev=>prev.filter(x=>x.id!==id));
+        setPengeluaranList(prev=>prev.filter(x=>x.id!==id));
+      })
+      .subscribe();
+    return ()=>supabase.removeChannel(ch);
+  },[]);
+
+  // ── Add pemasukan ───────────────────────────────────────────────────────────
+  const addPemasukan = async () => {
+    if(!formIn.nama||!formIn.nominal) return notify("Isi nama & nominal!","err");
+    const entry={id:uid(),tgl:formIn.tgl||todayStr,jenis:'masuk',nama:formIn.nama.toUpperCase(),sumber:formIn.sumber||'',kategori:'',nominal:+formIn.nominal||0};
+    setPemasukanList(prev=>[entry,...prev]); // optimistic
+    setFormIn({nama:"",nominal:"",sumber:"",tgl:todayStr});
+    setShowFormIn(false);
+    try{
+      await dbCashflow.addEntry(entry);
+      notify("Pemasukan dicatat ✓","ok");
+    }catch{
+      setPemasukanList(prev=>prev.filter(x=>x.id!==entry.id));
+      notify("Gagal simpan, coba lagi!","err");
+    }
+  };
+
+  // ── Add pengeluaran ─────────────────────────────────────────────────────────
+  const addPengeluaran = async () => {
+    if(!formOut.nama||!formOut.nominal) return notify("Isi nama & nominal!","err");
+    const entry={id:uid(),tgl:formOut.tgl||todayStr,jenis:'keluar',nama:formOut.nama.toUpperCase(),kategori:formOut.kategori||'',sumber:'',nominal:+formOut.nominal||0};
+    setPengeluaranList(prev=>[entry,...prev]);
+    setFormOut({nama:"",nominal:"",kategori:"",tgl:todayStr});
+    setShowFormOut(false);
+    try{
+      await dbCashflow.addEntry(entry);
+      notify("Pengeluaran dicatat ✓","ok");
+    }catch{
+      setPengeluaranList(prev=>prev.filter(x=>x.id!==entry.id));
+      notify("Gagal simpan, coba lagi!","err");
+    }
+  };
+
+  // ── Delete ──────────────────────────────────────────────────────────────────
+  const delPemasukan = async (id) => {
+    setPemasukanList(prev=>prev.filter(x=>x.id!==id));
+    try{ await dbCashflow.deleteEntry(id); }
+    catch{ notify("Gagal hapus!","err"); }
+  };
+  const delPengeluaran = async (id) => {
+    setPengeluaranList(prev=>prev.filter(x=>x.id!==id));
+    try{ await dbCashflow.deleteEntry(id); }
+    catch{ notify("Gagal hapus!","err"); }
+  };
+
+  const parseDate = s=>{try{const[d,m,y]=s.split("/");return new Date(+y,+m-1,+d);}catch{return null;}};
+  const calcOmset = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+
+  const getDateRange = tab => {
+    const n=new Date(); n.setHours(0,0,0,0);
+    if(tab==="hari_ini") return [new Date(n),new Date(n)];
+    if(tab==="kemarin")  { const d=new Date(n);d.setDate(d.getDate()-1);return [d,d]; }
+    if(tab==="minggu")   { const d=new Date(n);d.setDate(d.getDate()-6);return [d,new Date(n)]; }
+    if(tab==="bulan")    return [new Date(n.getFullYear(),n.getMonth(),1),new Date(n)];
+    return [new Date(n),new Date(n)];
+  };
+
+  const [fromD,toD]=getDateRange(activeTab);
+  const toD2=new Date(toD); toD2.setHours(23,59,59);
+
+  const txPeriod   = transactions.filter(t=>{const td=parseDate(t.date);return td&&td>=fromD&&td<=toD2;});
+  const omsetKasir = calcOmset(txPeriod);
+  const inPeriod   = pemasukanList.filter(x=>{const d=new Date(x.tgl);return d>=fromD&&d<=toD2;});
+  const outPeriod  = pengeluaranList.filter(x=>{const d=new Date(x.tgl);return d>=fromD&&d<=toD2;});
+  const totalMasuk = omsetKasir+inPeriod.reduce((s,x)=>s+x.nominal,0);
+  const totalKeluar= outPeriod.reduce((s,x)=>s+x.nominal,0);
+  const netCF      = totalMasuk-totalKeluar;
+  const ratio      = totalMasuk>0?Math.round(totalKeluar/totalMasuk*100):0;
+  const status     = netCF>0?"sehat":netCF===0?"impas":"defisit";
+  const statusColor= {sehat:"#27ae60",impas:"#f39c12",defisit:"#e74c3c"}[status];
+
+  const getAnalisis = () => {
+    const saran=[];
+    if(netCF<0) saran.push({icon:"🚨",level:"Kritis",c:"#e74c3c",j:"Cashflow Defisit!",isi:`Pengeluaran melebihi pemasukan ${fmtRp(Math.abs(netCF))}. Segera kurangi pengeluaran tidak produktif dan cari tambahan pemasukan.`});
+    if(ratio>70) saran.push({icon:"⚠️",level:"Waspada",c:"#f39c12",j:"Rasio Pengeluaran Tinggi",isi:`${ratio}% pemasukan habis untuk pengeluaran. Ideal ≤60%. Audit biaya: gaji, stok, operasional.`});
+    if(ratio<=40&&netCF>0) saran.push({icon:"✅",level:"Sehat",c:"#27ae60",j:"Cashflow Sangat Sehat",isi:`Hanya ${ratio}% untuk pengeluaran. Sisihkan 20% untuk dana darurat & 10% investasi ekspansi.`});
+    const katMap={};
+    outPeriod.forEach(x=>{katMap[x.kategori||"Lainnya"]=(katMap[x.kategori||"Lainnya"]||0)+x.nominal;});
+    const topKat=Object.entries(katMap).sort((a,b)=>b[1]-a[1])[0];
+    if(topKat) saran.push({icon:"📊",level:"Info",c:"#2980b9",j:`Pengeluaran Terbesar: ${topKat[0]}`,isi:`${fmtRp(topKat[1])} (${Math.round(topKat[1]/totalKeluar*100)}% dari total keluar). Evaluasi apakah bisa dioptimalkan.`});
+    const outletStats=outlets.map(o=>({nama:o.nama,omset:calcOmset(txPeriod.filter(t=>t.outletId===o.id))})).sort((a,b)=>b.omset-a.omset);
+    if(outletStats.length>1&&outletStats[0].omset>outletStats[outletStats.length-1].omset*2) {
+      saran.push({icon:"📍",level:"Aksi",c:"#8e44ad",j:"Kesenjangan Outlet",isi:`${outletStats[0].nama} (${fmtRp(outletStats[0].omset)}) vs ${outletStats[outletStats.length-1].nama} (${fmtRp(outletStats[outletStats.length-1].omset)}). Pelajari strategi outlet terbaik.`});
+    }
+    const hariD=Math.max(1,Math.round((toD2-fromD)/(1000*60*60*24)));
+    const omsetPerHari=omsetKasir/hariD;
+    saran.push({icon:"🔮",level:"Proyeksi",c:"#0d9488",j:"Proyeksi Bulan Ini",isi:`Rata-rata ${fmtRp(Math.round(omsetPerHari))}/hari → estimasi bulan: ${fmtRp(Math.round(omsetPerHari*30))}. Target +10% = ${fmtRp(Math.round(omsetPerHari*33))}.`});
+    const smallExp=outPeriod.filter(x=>x.nominal<50000);
+    if(smallExp.length>=3) saran.push({icon:"🔍",level:"Bocor?",c:"#e67e22",j:"Pengeluaran Kecil Menumpuk",isi:`${smallExp.length} pengeluaran <Rp50rb = total ${fmtRp(smallExp.reduce((s,x)=>s+x.nominal,0))}. Sering tidak terasa tapi menumpuk — audit!`});
+    if(netCF>0) saran.push({icon:"💡",level:"Langkah",c:"#27ae60",j:"Langkah Konkrit Berikutnya",isi:`Ada surplus ${fmtRp(netCF)}. Alokasi ideal: 50% modal/stok → 30% operasional → 20% tabungan bisnis. Jangan habiskan surplus tanpa rencana!`});
+    return saran;
+  };
+
+  const tabs=[{k:"hari_ini",l:"Hari Ini"},{k:"kemarin",l:"Kemarin"},{k:"minggu",l:"7 Hari"},{k:"bulan",l:"Bulan Ini"}];
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:8};
+  const kategoris=["Beli Stok","Gaji Karyawan","Sewa Tempat","Listrik/Air","Transportasi","Marketing","Peralatan","Lainnya"];
+  const sumbers=["Kasir Pusat","Kasir Cabang 1","Kasir Cabang 2","Transfer Bank","Pinjaman","Lainnya"];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#27ae60,#2ecc71)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(39,174,96,.35)"}}>
+        <div style={{padding:"0 20px",display:"flex",alignItems:"center",minHeight:50}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",marginRight:12,fontFamily:"inherit"}}>← Menu</button>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff",marginRight:"auto"}}>💰 Cashflow Manager</div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>setShowFormIn(true)} style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.4)",borderRadius:9,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ + Pemasukan</button>
+            <button onClick={()=>setShowFormOut(true)} style={{background:"rgba(220,38,38,.3)",border:"1px solid rgba(255,100,100,.4)",borderRadius:9,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬆ + Pengeluaran</button>
+          </div>
+        </div>
+        <div style={{padding:"0 20px",display:"flex",background:"rgba(0,0,0,.1)"}}>
+          {tabs.map(t=>(
+            <button key={t.k} onClick={()=>setActiveTab(t.k)} style={{padding:"9px 16px",border:"none",borderBottom:`3px solid ${activeTab===t.k?"#fff":"transparent"}`,background:"transparent",color:activeTab===t.k?"#fff":"rgba(255,255,255,.6)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{t.l}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"16px 20px",maxWidth:960,margin:"0 auto"}}>
+        {/* Status */}
+        <div style={{background:"#fff",borderRadius:14,padding:"16px 20px",marginBottom:14,border:`3px solid ${statusColor}22`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:statusColor,textTransform:"uppercase"}}>{tabs.find(t=>t.k===activeTab)?.l}</div>
+              <div style={{fontWeight:900,fontSize:20,color:statusColor,marginTop:3}}>{status==="sehat"?"✅ Cashflow Sehat":status==="impas"?"⚖️ Impas":"🚨 Cashflow Defisit"}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontWeight:900,fontSize:28,color:netCF>=0?"#27ae60":"#e74c3c"}}>{netCF>=0?"+":""}{fmtRp(netCF)}</div>
+              <div style={{fontSize:11,color:"#aaa",fontWeight:600}}>Net Cashflow</div>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
+            {[
+              {l:"Omset Kasir",    v:fmtRp(omsetKasir), c:"#0d9488",bg:"#e0faf5"},
+              {l:"Pemasukan Lain", v:fmtRp(inPeriod.reduce((s,x)=>s+x.nominal,0)), c:"#27ae60",bg:"#e8f8f0"},
+              {l:"Total Keluar",   v:fmtRp(totalKeluar),c:"#e74c3c",bg:"#fff0f0"},
+              {l:"Rasio Keluar",   v:`${ratio}%`,        c:ratio>70?"#e74c3c":ratio>50?"#f39c12":"#27ae60",bg:ratio>70?"#fff0f0":ratio>50?"#fffbe6":"#e8f8f0"},
+            ].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:10,padding:"10px 13px"}}>
+                <div style={{fontWeight:900,fontSize:16,color:k.c}}>{k.v}</div>
+                <div style={{fontSize:10,fontWeight:700,color:k.c,opacity:.8,marginTop:2}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#aaa",marginBottom:3}}>
+              <span>Pemasukan total: {fmtRp(totalMasuk)}</span>
+              <span>Pengeluaran: {fmtRp(totalKeluar)} ({ratio}%)</span>
+            </div>
+            <div style={{background:"#e0faf5",borderRadius:20,height:8,overflow:"hidden"}}>
+              <div style={{background:`linear-gradient(90deg,${ratio>70?"#e74c3c":ratio>50?"#f39c12":"#27ae60"},${ratio>70?"#ff6b6b":ratio>50?"#ffd43b":"#2ecc71"})`,height:"100%",width:`${Math.min(ratio,100)}%`,borderRadius:20}}/>
+            </div>
+          </div>
+        </div>
+
+        {/* Pemasukan & Pengeluaran */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e8f8f0",overflow:"hidden"}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #e8f8f0",display:"flex",justifyContent:"space-between"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#27ae60"}}>⬇ Pemasukan</div>
+              <div style={{fontWeight:900,fontSize:14,color:"#27ae60"}}>{fmtRp(totalMasuk)}</div>
+            </div>
+            {outlets.map(o=>{const om=calcOmset(txPeriod.filter(t=>t.outletId===o.id));return om>0?(
+              <div key={o.id} style={{padding:"8px 16px",borderBottom:"1px solid #f0faf8",display:"flex",justifyContent:"space-between",background:"#f8fffe"}}>
+                <span style={{fontSize:12,color:"#555",fontWeight:600}}>🏪 {o.nama}</span>
+                <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>{fmtRp(om)}</span>
+              </div>
+            ):null;})}
+            {inPeriod.map(x=>(
+              <div key={x.id} style={{padding:"8px 16px",borderBottom:"1px solid #f0faf8",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div><div style={{fontSize:12,fontWeight:700}}>{x.nama}</div><div style={{fontSize:10,color:"#aaa"}}>{x.sumber||"—"} · {x.tgl}</div></div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontWeight:800,fontSize:12,color:"#27ae60"}}>{fmtRp(x.nominal)}</span>
+                  <button onClick={()=>delPemasukan(x.id)} style={{background:"#fff0f0",border:"none",borderRadius:6,padding:"3px 7px",color:"#e74c3c",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+                </div>
+              </div>
+            ))}
+            {inPeriod.length===0&&omsetKasir===0&&<div style={{textAlign:"center",color:"#ccc",padding:20,fontSize:12}}>Belum ada pemasukan</div>}
+            <div onClick={()=>setShowFormIn(true)} style={{padding:"9px 16px",cursor:"pointer",color:"#27ae60",fontWeight:700,fontSize:12,textAlign:"center",borderTop:"1px solid #e8f8f0"}}>+ Tambah Manual</div>
+          </div>
+
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #fff0f0",overflow:"hidden"}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #fff0f0",display:"flex",justifyContent:"space-between"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#e74c3c"}}>⬆ Pengeluaran</div>
+              <div style={{fontWeight:900,fontSize:14,color:"#e74c3c"}}>{fmtRp(totalKeluar)}</div>
+            </div>
+            {outPeriod.map(x=>(
+              <div key={x.id} style={{padding:"8px 16px",borderBottom:"1px solid #fff5f5",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div><div style={{fontSize:12,fontWeight:700}}>{x.nama}</div><div style={{fontSize:10,color:"#aaa"}}>{x.kategori||"Lainnya"} · {x.tgl}</div></div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontWeight:800,fontSize:12,color:"#e74c3c"}}>{fmtRp(x.nominal)}</span>
+                  <button onClick={()=>delPengeluaran(x.id)} style={{background:"#fff0f0",border:"none",borderRadius:6,padding:"3px 7px",color:"#e74c3c",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+                </div>
+              </div>
+            ))}
+            {outPeriod.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:20,fontSize:12}}>Belum ada pengeluaran</div>}
+            <div onClick={()=>setShowFormOut(true)} style={{padding:"9px 16px",cursor:"pointer",color:"#e74c3c",fontWeight:700,fontSize:12,textAlign:"center",borderTop:"1px solid #fff0f0"}}>+ Tambah Pengeluaran</div>
+          </div>
+        </div>
+
+        {/* Analisis & Saran */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px 18px"}}>
+          <div style={{fontWeight:800,fontSize:14,color:"#0d9488",marginBottom:14}}>🧠 Analisis Cashflow & Saran Konkrit</div>
+          {getAnalisis().map((s,i)=>(
+            <div key={i} style={{display:"flex",gap:12,padding:"11px 13px",borderRadius:11,background:s.level==="Kritis"?"#fff5f5":s.level==="Waspada"?"#fffbe6":"#f8fffe",marginBottom:8,border:`1px solid ${s.c}22`}}>
+              <div style={{fontSize:22,flexShrink:0}}>{s.icon}</div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:800,fontSize:13}}>{s.j}</span>
+                  <span style={{background:`${s.c}18`,color:s.c,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>{s.level}</span>
+                </div>
+                <div style={{fontSize:12,color:"#666",lineHeight:1.6}}>{s.isi}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Modal Pemasukan */}
+      {showFormIn&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+          <div style={{background:"#fff",borderRadius:18,padding:22,width:380,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#27ae60",marginBottom:14}}>⬇ Tambah Pemasukan</div>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nama / Keterangan *</label>
+            <input value={formIn.nama} onChange={e=>setFormIn(p=>({...p,nama:e.target.value.toUpperCase()}))} placeholder="SETORAN KASIR PUSAT..." style={{...inp,fontWeight:700}} autoFocus/>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nominal *</label>
+            <input type="number" value={formIn.nominal} onChange={e=>setFormIn(p=>({...p,nominal:e.target.value}))} placeholder="0" style={{...inp,fontSize:18,fontWeight:800,textAlign:"right"}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Sumber</label>
+                <select value={formIn.sumber} onChange={e=>setFormIn(p=>({...p,sumber:e.target.value}))} style={{...inp,marginBottom:0}}>
+                  <option value="">— Pilih —</option>
+                  {sumbers.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Tanggal</label>
+                <input type="date" value={formIn.tgl} onChange={e=>setFormIn(p=>({...p,tgl:e.target.value}))} style={{...inp,marginBottom:0}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>setShowFormIn(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+              <button onClick={addPemasukan} style={{flex:2,background:"linear-gradient(135deg,#27ae60,#2ecc71)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Pengeluaran */}
+      {showFormOut&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+          <div style={{background:"#fff",borderRadius:18,padding:22,width:380,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#e74c3c",marginBottom:14}}>⬆ Tambah Pengeluaran</div>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nama / Keterangan *</label>
+            <input value={formOut.nama} onChange={e=>setFormOut(p=>({...p,nama:e.target.value.toUpperCase()}))} placeholder="BELI STOK PULSA..." style={{...inp,fontWeight:700}} autoFocus/>
+            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nominal *</label>
+            <input type="number" value={formOut.nominal} onChange={e=>setFormOut(p=>({...p,nominal:e.target.value}))} placeholder="0" style={{...inp,fontSize:18,fontWeight:800,textAlign:"right"}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Kategori</label>
+                <select value={formOut.kategori} onChange={e=>setFormOut(p=>({...p,kategori:e.target.value}))} style={{...inp,marginBottom:0}}>
+                  <option value="">— Pilih —</option>
+                  {kategoris.map(k=><option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Tanggal</label>
+                <input type="date" value={formOut.tgl} onChange={e=>setFormOut(p=>({...p,tgl:e.target.value}))} style={{...inp,marginBottom:0}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>setShowFormOut(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+              <button onClick={addPengeluaran} style={{flex:2,background:"linear-gradient(135deg,#e74c3c,#ff6b6b)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ROOT
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3977,6 +4408,7 @@ export default function App() {
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="cashflow"  && isAdmin && <CashflowPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage title="Saldo Kasir" saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
@@ -3986,7 +4418,7 @@ export default function App() {
       {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
-      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank"].includes(page)&&!isAdmin&&(
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow"].includes(page)&&!isAdmin&&(
         <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0faf8",flexDirection:"column",gap:12,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:48}}>🔒</div>
           <div style={{fontWeight:900,fontSize:18,color:"#ff4757"}}>Akses Ditolak</div>
