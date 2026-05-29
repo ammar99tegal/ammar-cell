@@ -3285,105 +3285,236 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
 function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCancel}) {
   const APPS = (saldoApps && saldoApps.length > 0) ? saldoApps : ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay"];
   const blank = ()=>Object.fromEntries(APPS.map(a=>[a,""]));
-  const [namaShift,  setNamaShift]  = useState("");
-  const [cashKemb,   setCashKemb]   = useState("");
-  const [saldoForm,  setSaldoForm]  = useState(blank());
-  const [saldoClose, setSaldoClose] = useState(blank());
+
+  // ── State Buka Shift ──────────────────────────────────────────────────────
+  const [namaShift, setNamaShift] = useState("");
+  const [cashKemb,  setCashKemb]  = useState("");
+  const [saldoForm, setSaldoForm] = useState(blank());
+
+  // ── State Tutup Shift — load draft dari localStorage ──────────────────────
+  const draftKey = `bank_saldo_draft_${shift?.id||"x"}`;
+  const [saldoClose, setSaldoClose] = useState(()=>{
+    try{ const d=localStorage.getItem(draftKey); return d?JSON.parse(d):blank(); }catch{ return blank(); }
+  });
   const [uangLaci,   setUangLaci]   = useState("");
   const [catatan,    setCatatan]    = useState("");
+  const [draftSaved, setDraftSaved] = useState(false);
 
+  // Auto-save saldo close ke localStorage
+  useEffect(()=>{
+    if(mode!=="close") return;
+    const hasInput = Object.values(saldoClose).some(v=>+v>0);
+    if(hasInput){
+      try{ localStorage.setItem(draftKey, JSON.stringify(saldoClose)); }catch{}
+      setDraftSaved(true);
+      const t=setTimeout(()=>setDraftSaved(false),1500);
+      return()=>clearTimeout(t);
+    }
+  },[saldoClose]);
+
+  // Hitung
   const shiftTrx    = trxList.filter(t=>t.shiftId===shift?.id);
   const sMasuk      = shiftTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
   const sKeluar     = shiftTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-  const uangSistemS = sMasuk - sKeluar;
-  const uangLaciNum = +uangLaci||0;
-  const selisih     = uangLaciNum - uangSistemS;
-  const totalSaldoF = Object.values(saldoForm).reduce((s,v)=>s+(+v||0),0);
+  // REVISI: uang sistem = cash kembalian awal + transaksi shift
+  const cashKembAwal  = shift?.cashKemb||0;
+  const uangSistemS   = cashKembAwal + sMasuk - sKeluar;
+  const uangLaciNum   = +uangLaci||0;
+  const selisih       = uangLaciNum - uangSistemS;
+  const totalSaldoF   = Object.values(saldoForm).reduce((s,v)=>s+(+v||0),0);
+  const totalSaldoC   = Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0);
+  const cashKembNum   = +cashKemb||0;
+  const totalSistemBuka = cashKembNum + totalSaldoF;
 
-  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
-  const SH=({t})=><div style={{fontWeight:800,fontSize:11,color:"#0d9488",background:"#e0faf5",borderRadius:7,padding:"4px 10px",margin:"12px 0 7px"}}>{t}</div>;
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
+  const lbl = {fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4};
+  const SH  = ({t,c})=><div style={{fontWeight:800,fontSize:11,color:c||"#0d9488",background:(c||"#0d9488")+"15",borderRadius:7,padding:"5px 12px",margin:"12px 0 8px"}}>{t}</div>;
 
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
-      <div style={{background:"#fff",borderRadius:18,padding:22,width:440,boxShadow:"0 20px 55px rgba(0,0,0,.25)",maxHeight:"92vh",overflowY:"auto",fontFamily:"'Nunito',sans-serif"}}>
-        <div style={{fontWeight:900,fontSize:15,color:mode==="open"?"#0d9488":"#e74c3c",marginBottom:14}}>
-          {mode==="open"?"🟢 Buka Shift Bank":"🔴 Tutup Shift Bank"}
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
+      <div style={{background:"#fff",borderRadius:18,padding:22,width:460,boxShadow:"0 24px 60px rgba(0,0,0,.25)",maxHeight:"92vh",overflowY:"auto",fontFamily:"'Nunito',sans-serif"}}>
+
+        {/* Header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:900,fontSize:15,color:mode==="open"?"#0d9488":"#e74c3c"}}>
+            {mode==="open"?"🟢 Buka Shift Bank":"🔴 Tutup Shift Bank"}
+          </div>
+          {mode==="close"&&(
+            <div style={{fontSize:10,fontWeight:700,color:draftSaved?"#27ae60":"#aaa",transition:"color .3s"}}>
+              {draftSaved?"💾 Tersimpan!":"🔄 Auto-save aktif"}
+            </div>
+          )}
         </div>
 
+        {/* ── BUKA SHIFT ── */}
         {mode==="open"&&(
           <>
-            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Nama Shift *</label>
-            <input value={namaShift} onChange={e=>setNamaShift(e.target.value)} placeholder="Pagi / Siang / Malam..." style={inp}/>
-            <SH t="💵 Cash Kembalian (Catatan — tidak mempengaruhi perhitungan)"/>
-            <input type="number" value={cashKemb} onChange={e=>setCashKemb(e.target.value)} placeholder="0" style={inp}/>
+            <label style={lbl}>Nama Shift *</label>
+            <input value={namaShift} onChange={e=>setNamaShift(e.target.value)} placeholder="Pagi / Siang / Malam..."
+              style={{...inp,fontWeight:700}}/>
+
+            <SH t="💵 Cash Kembalian — Otomatis Masuk Saldo Sistem"/>
+            <div style={{background:"#e0faf512",border:"1px solid #0d948822",borderRadius:9,padding:"8px 12px",marginBottom:8,fontSize:11,color:"#555",lineHeight:1.6}}>
+              ✅ <b>Cash kembalian langsung tercatat sebagai saldo awal.</b> Tidak perlu input manual saat closing.
+            </div>
+            <label style={lbl}>Jumlah Cash Kembalian (Rp)</label>
+            <div style={{position:"relative",marginBottom:10}}>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontWeight:700,color:"#0d9488"}}>Rp</span>
+              <input type="number" value={cashKemb} onChange={e=>setCashKemb(e.target.value)} placeholder="0"
+                style={{...inp,paddingLeft:38,fontSize:18,fontWeight:900,textAlign:"right",border:`2px solid ${cashKembNum>0?"#0d9488":"#b2ede6"}`,marginBottom:0}}/>
+            </div>
+
             <SH t="📱 Saldo Aplikasi Awal (Catatan)"/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
               {APPS.map(app=>(
                 <div key={app}>
-                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
-                  <input type="number" value={saldoForm[app]||""} onChange={e=>setSaldoForm(p=>({...p,[app]:e.target.value}))} placeholder="0" style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
+                  <label style={{...lbl,fontSize:10}}>{app}</label>
+                  <input type="number" value={saldoForm[app]||""} onChange={e=>setSaldoForm(p=>({...p,[app]:e.target.value}))} placeholder="0"
+                    style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
                 </div>
               ))}
             </div>
-            {/* Total saldo otomatis */}
-            <div style={{background:"#e0faf5",borderRadius:9,padding:"10px 13px",marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>💰 Total Saldo Aplikasi</span>
-              <span style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
+
+            {/* Total saldo SELALU tampil */}
+            <div style={{background:"#e0faf5",borderRadius:10,padding:"11px 14px",border:"2px solid #0d948833"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:totalSaldoF>0||cashKembNum>0?8:0}}>
+                <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>💰 Total Saldo Aplikasi</span>
+                <span style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
+              </div>
+              {(cashKembNum>0||totalSaldoF>0)&&(
+                <div style={{borderTop:"1px dashed #0d948833",paddingTop:8}}>
+                  {cashKembNum>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                      <span style={{color:"#555"}}>Cash Kembalian</span>
+                      <span style={{fontWeight:700,color:"#0d9488"}}>{fmtRp(cashKembNum)}</span>
+                    </div>
+                  )}
+                  {totalSaldoF>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                      <span style={{color:"#555"}}>+ Saldo Aplikasi</span>
+                      <span style={{fontWeight:700,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
+                    </div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:"1px dashed #0d948833"}}>
+                    <span style={{fontWeight:800,fontSize:13}}>= Total Awal Sistem</span>
+                    <span style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(totalSistemBuka)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
 
+        {/* ── TUTUP SHIFT ── */}
         {mode==="close"&&(
           <>
-            <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#555"}}>
+            <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#555"}}>
               Shift: <b style={{color:"#0d9488"}}>{shift?.nama}</b> · {shift?.start}
             </div>
-            <SH t="📊 Rekap Transaksi Shift"/>
+
+            {/* Rekap sistem */}
             <div style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:10,padding:"11px 14px",marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:12}}><span style={{color:"#555"}}>Total Masuk</span><span style={{fontWeight:800,color:"#27ae60"}}>{fmtRp(sMasuk)}</span></div>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:12}}><span style={{color:"#555"}}>Total Keluar</span><span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(sKeluar)}</span></div>
+              <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:8}}>📊 Rekap Shift</div>
+              {cashKembAwal>0&&(
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:12}}>
+                  <span style={{color:"#555"}}>Cash Kembalian Awal</span>
+                  <span style={{fontWeight:700,color:"#0d9488"}}>{fmtRp(cashKembAwal)}</span>
+                </div>
+              )}
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:12}}>
+                <span style={{color:"#555"}}>+ Total Masuk</span>
+                <span style={{fontWeight:700,color:"#27ae60"}}>{fmtRp(sMasuk)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:12}}>
+                <span style={{color:"#555"}}>− Total Keluar</span>
+                <span style={{fontWeight:700,color:"#e74c3c"}}>{fmtRp(sKeluar)}</span>
+              </div>
               <div style={{display:"flex",justifyContent:"space-between",paddingTop:8,borderTop:"2px solid #e0f5f1"}}>
-                <span style={{fontWeight:800,fontSize:13}}>Uang Sistem</span>
+                <span style={{fontWeight:800,fontSize:13}}>💵 Uang Sistem</span>
                 <span style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(uangSistemS)}</span>
               </div>
               <div style={{fontSize:10,color:"#aaa",marginTop:3}}>{shiftTrx.length} transaksi dalam shift ini</div>
             </div>
-            <SH t="📱 Saldo Aplikasi Akhir (Catatan)"/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:4}}>
+
+            {/* Saldo Aplikasi Akhir — auto-save */}
+            <SH t="📱 Saldo Aplikasi Akhir — Auto Tersimpan"/>
+            <div style={{background:"#fffbe6",border:"1px solid #f39c1233",borderRadius:9,padding:"8px 12px",marginBottom:8,fontSize:11,color:"#b7770d",lineHeight:1.6}}>
+              💡 <b>Input saldo sekarang, lanjutkan nanti.</b> Data tidak hilang meski modal ditutup. Tap ✕ untuk hapus jika salah.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
               {APPS.map(app=>(
                 <div key={app}>
-                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
-                  <input type="number" value={saldoClose[app]||""} onChange={e=>setSaldoClose(p=>({...p,[app]:e.target.value}))} placeholder="0" style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0}}/>
+                  <label style={{...lbl,fontSize:10,display:"flex",justifyContent:"space-between"}}>
+                    <span>{app}</span>
+                    {+saldoClose[app]>0&&<span style={{color:"#0d9488",fontWeight:700}}>✓</span>}
+                  </label>
+                  <div style={{display:"flex",gap:4}}>
+                    <input type="number" value={saldoClose[app]||""} onChange={e=>setSaldoClose(p=>({...p,[app]:e.target.value}))} placeholder="0"
+                      style={{...inp,padding:"7px 10px",fontSize:12,marginBottom:0,border:`2px solid ${+saldoClose[app]>0?"#0d9488":"#b2ede6"}`,flex:1}}/>
+                    {+saldoClose[app]>0&&(
+                      <button onClick={()=>setSaldoClose(p=>({...p,[app]:""}))}
+                        style={{background:"#fff0f0",border:"1px solid #e74c3c33",borderRadius:8,padding:"0 8px",color:"#e74c3c",fontSize:14,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
+
+            {/* Total saldo akhir SELALU tampil */}
+            <div style={{background:"#e0faf5",borderRadius:10,padding:"11px 14px",marginBottom:10,border:"2px solid #0d948833"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:totalSaldoC>0?8:0}}>
+                <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>💰 Total Saldo Aplikasi Akhir</span>
+                <span style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>{fmtRp(totalSaldoC)}</span>
+              </div>
+              {totalSaldoC>0&&(
+                <div style={{borderTop:"1px dashed #0d948833",paddingTop:8}}>
+                  {APPS.filter(a=>+saldoClose[a]>0).map(a=>(
+                    <div key={a} style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                      <span style={{color:"#555"}}>{a}</span>
+                      <span style={{fontWeight:700,color:"#0d9488"}}>{fmtRp(+saldoClose[a])}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Uang Laci Fisik */}
             <SH t="💰 Uang Laci Fisik"/>
-            <input type="number" value={uangLaci} onChange={e=>setUangLaci(e.target.value)} placeholder="0"
-              style={{...inp,border:"2px solid #0d9488",fontWeight:800,fontSize:16,textAlign:"right"}}/>
+            <div style={{position:"relative",marginBottom:10}}>
+              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontWeight:900,fontSize:16,color:"#0d9488"}}>Rp</span>
+              <input type="number" value={uangLaci} onChange={e=>setUangLaci(e.target.value)} placeholder="0"
+                style={{...inp,paddingLeft:42,fontSize:24,fontWeight:900,textAlign:"right",border:`2px solid ${uangLaciNum>0?"#0d9488":"#b2ede6"}`,marginBottom:0}}/>
+            </div>
+
             {uangLaci&&(
               <div style={{background:selisih===0?"#e8f8f4":selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${selisih===0?"#2ecc71":selisih>0?"#f39c12":"#ff4757"}`,borderRadius:11,padding:"11px 14px",marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:12}}><span>Uang Sistem</span><span style={{fontWeight:700}}>{fmtRp(uangSistemS)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12}}><span>Uang Laci Fisik</span><span style={{fontWeight:700}}>{fmtRp(uangLaciNum)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:12}}><span style={{color:"#555"}}>Uang Sistem</span><span style={{fontWeight:700}}>{fmtRp(uangSistemS)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12}}><span style={{color:"#555"}}>Uang Laci Fisik</span><span style={{fontWeight:700}}>{fmtRp(uangLaciNum)}</span></div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span style={{fontWeight:800,fontSize:13}}>{selisih===0?"✅ Balance!":selisih>0?"📈 Lebih":"📉 Kurang"}</span>
                   <span style={{fontWeight:900,fontSize:20,color:selisih===0?"#2ecc71":selisih>0?"#f39c12":"#ff4757"}}>{selisih!==0?(selisih>0?"+":"")+fmtRp(Math.abs(selisih)):"✓ Sesuai"}</span>
                 </div>
               </div>
             )}
-            <label style={{fontSize:11,fontWeight:700,color:"#444",display:"block",marginBottom:4}}>Catatan / Kendala</label>
-            <textarea value={catatan} onChange={e=>setCatatan(e.target.value)} placeholder="Tulis jika ada kendala, selisih, atau catatan penting..."
-              style={{...inp,resize:"vertical",minHeight:65}}/>
+
+            <label style={lbl}>Catatan / Kendala</label>
+            <textarea value={catatan} onChange={e=>setCatatan(e.target.value)} placeholder="Tulis jika ada kendala..."
+              style={{...inp,resize:"vertical",minHeight:60}}/>
           </>
         )}
 
-        <div style={{display:"flex",gap:8,marginTop:4}}>
+        <div style={{display:"flex",gap:8,marginTop:6}}>
           <button onClick={onCancel} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
           <button onClick={()=>{
             if(mode==="open"){
               if(!namaShift.trim()) return;
-              onOpen({namaShift,cashKemb:+cashKemb||0,saldoApps:saldoForm,totalSaldo:totalSaldoF});
+              onOpen({namaShift,cashKemb:cashKembNum,saldoApps:saldoForm,totalSaldo:totalSaldoF,totalSistemBuka});
             } else {
-              onClose({saldoAppsC:saldoClose,uangLaci:uangLaciNum,uangSistem:uangSistemS,selisih,catatan,totalMasuk:sMasuk,totalKeluar:sKeluar});
+              // Hapus draft setelah tutup
+              try{ localStorage.removeItem(draftKey); }catch{}
+              onClose({saldoAppsC:saldoClose,totalSaldoC,uangLaci:uangLaciNum,uangSistem:uangSistemS,selisih,catatan,totalMasuk:sMasuk,totalKeluar:sKeluar});
             }
           }} style={{flex:2,background:`linear-gradient(135deg,${mode==="open"?"#0d9488,#14b8a6":"#e74c3c,#ff6b6b"})`,border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             {mode==="open"?"🟢 Buka Shift":"🔴 Tutup & Simpan"}
