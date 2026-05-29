@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-
 import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -247,7 +246,8 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"bank",     icon:Ic.Cash(22),   label:"Bank",               desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
-    {id:"cashflow", icon:Ic.Dashboard(), label:"Cashflow Manager",  desc:"Pantau arus kas & saran bisnis",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
+    {id:"monitor",  icon:Ic.Dashboard(),label:"Monitor Live",        desc:"Pantau kasir & bank realtime", color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
+    {id:"cashflow", icon:Ic.Dashboard(),label:"Cashflow Manager",    desc:"Pantau arus kas & saran bisnis",color:"#27ae60",bg:"#e8f8f0", roles:["admin"]},
     {id:"produk",   icon:Ic.Produk(),   label:"Manajemen Produk",   desc:"Tambah, edit & hapus produk",  color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),   label:"Manajemen Outlet",   desc:"Kelola outlet & kasir",        color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
     {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Kasir",        desc:"Kelola list saldo di shift kasir",color:"#16a085",bg:"#e0faf5",roles:["admin"]},
@@ -524,6 +524,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
             <select value={uForm.role} onChange={e=>setUForm(p=>({...p,role:e.target.value}))} style={{...inp}}>
               <option value="karyawan">👷 Karyawan</option>
               <option value="admin">👑 Admin</option>
+              <option value="monitor">👁 Monitor</option>
             </select>
           </div>
           <div style={{marginBottom:14}}>
@@ -4030,6 +4031,368 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// MONITOR PAGE — Pantau Penjualan Realtime
+// ══════════════════════════════════════════════════════════════════════════════
+function PulseDotM({color="#27ae60",size=8}){
+  return(
+    <span style={{position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+6,height:size+6}}>
+      <span style={{position:"absolute",width:size+6,height:size+6,borderRadius:"50%",background:color,opacity:.3,animation:"pulseM 1.5s infinite"}}/>
+      <span style={{width:size,height:size,borderRadius:"50%",background:color,display:"block"}}/>
+      <style>{`@keyframes pulseM{0%,100%{transform:scale(1);opacity:.3}50%{transform:scale(1.6);opacity:0}}`}</style>
+    </span>
+  );
+}
+
+function MonitorPage({ user, outlets, transactions, onBack, notify }) {
+  const isMonitorRole = user?.role==="monitor";
+  const [clock,       setClock]      = useState(now());
+  const [kasirShifts, setKasirShifts]= useState([]);
+  const [bankTrxList, setBankTrxList]= useState([]);
+  const [filterOutlet,setFilterOutlet]= useState("semua");
+  const [filterBank,  setFilterBank] = useState("semua");
+  const [loading,     setLoading]    = useState(true);
+
+  // Clock
+  useEffect(()=>{ const iv=setInterval(()=>setClock(now()),1000); return()=>clearInterval(iv); },[]);
+
+  // Load data
+  useEffect(()=>{
+    const load = async () => {
+      try {
+        // Load active shifts semua outlet
+        const {data:shifts} = await supabase.from('active_shifts').select('*').catch(()=>({data:[]}));
+        setKasirShifts(shifts||[]);
+        // Load bank transactions hari ini
+        const allBankTrx = await dbBank.getTransactions();
+        setBankTrxList(allBankTrx);
+      } catch(e){ console.error(e); }
+      setLoading(false);
+    };
+    load();
+
+    // Realtime active_shifts
+    const chShift = supabase.channel('monitor-shifts')
+      .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},async()=>{
+        const {data} = await supabase.from('active_shifts').select('*').catch(()=>({data:[]}));
+        setKasirShifts(data||[]);
+      }).subscribe();
+
+    // Realtime transaksi kasir baru
+    const chTrx = supabase.channel('monitor-trx')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'transactions'},(payload)=>{
+        // Trigger reload kasir shifts untuk update omset
+        supabase.from('active_shifts').select('*').then(({data})=>setKasirShifts(data||[]));
+      }).subscribe();
+
+    // Realtime bank transactions
+    const chBank = supabase.channel('monitor-bank')
+      .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
+        if(payload.eventType==='INSERT'&&payload.new){
+          const r=payload.new;
+          const t={id:r.id,waktu:r.waktu,tgl:r.tgl,shiftId:r.shift_id,nama:r.nama,jenis:r.jenis,feeType:r.fee_type,fee:r.fee,nominal:r.nominal,netNominal:r.net_nominal,outletId:r.outlet_id};
+          setBankTrxList(prev=>prev.find(x=>x.id===t.id)?prev:[t,...prev]);
+        } else if(payload.eventType==='DELETE'){
+          setBankTrxList(prev=>prev.filter(t=>t.id!==payload.old?.id));
+        }
+      }).subscribe();
+
+    return()=>{ supabase.removeChannel(chShift); supabase.removeChannel(chTrx); supabase.removeChannel(chBank); };
+  },[]);
+
+  // Hitung cash laci per kasir dari transaksi hari ini
+  const calcOmsetShift = (shiftId) => {
+    return transactions
+      .filter(t=>t.shiftId===shiftId)
+      .reduce((s,t)=>{ const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
+  };
+  const calcTrxShift = (shiftId) => transactions.filter(t=>t.shiftId===shiftId).length;
+
+  // Hitung uang sistem bank per outlet (dari semua transaksi, bukan hanya hari ini)
+  const getBankStats = (outletId) => {
+    const list = bankTrxList.filter(t=>t.outletId===outletId);
+    const masuk  = list.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+    const keluar = list.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+    return { uangSistem:masuk-keluar, totalMasuk:masuk, totalKeluar:keluar, trx:list.length, list };
+  };
+
+  // Transaksi kasir hari ini terurut terbaru
+  const todayTrx = transactions.filter(t=>t.date===today())
+    .sort((a,b)=>b.id?.localeCompare(a.id)||0)
+    .slice(0,50);
+
+  const filteredTrx = filterOutlet==="semua" ? todayTrx : todayTrx.filter(t=>t.outletId===filterOutlet);
+  const filteredBank = filterBank==="semua" ? bankTrxList : bankTrxList.filter(t=>t.outletId===filterBank);
+
+  // Grand totals
+  const totalCashLaci  = kasirShifts.reduce((s,sh)=>s+calcOmsetShift(sh.id),0);
+  const totalBankSistem= outlets.reduce((s,o)=>s+getBankStats(o.id).uangSistem,0);
+  const totalOmset     = calcOmsetShift ? transactions.filter(t=>t.date===today()).reduce((s,t)=>{ const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0) : 0;
+
+  // Warna per outlet
+  const outletColor = (id) => {
+    const colors={"0":"#0d9488","1":"#2980b9","2":"#8e44ad","3":"#27ae60","4":"#e67e22"};
+    const idx = outlets.findIndex(o=>o.id===id);
+    return colors[String(idx)]||"#0d9488";
+  };
+
+  if(loading) return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{textAlign:"center"}}>
+        <PulseDotM color="#0d9488" size={16}/>
+        <div style={{fontWeight:700,fontSize:14,color:"#0d9488",marginTop:12}}>Menghubungkan ke server...</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif",color:"#1a2e2a"}}>
+
+      {/* HEADER */}
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 16px rgba(13,148,136,.3)"}}>
+        <div style={{padding:"0 20px",display:"flex",alignItems:"center",gap:12,minHeight:52}}>
+          {!isMonitorRole&&(
+            <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
+          )}
+          <div style={{flex:1}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <PulseDotM color="#2ecc71" size={7}/>
+              <span style={{fontWeight:900,fontSize:15,color:"#fff"}}>Monitor Penjualan Live</span>
+              {isMonitorRole&&<span style={{fontSize:10,color:"rgba(255,255,255,.6)",background:"rgba(255,255,255,.1)",padding:"2px 8px",borderRadius:20}}>👁 Monitor</span>}
+            </div>
+          </div>
+          {isMonitorRole&&(
+            <button onClick={()=>{try{localStorage.removeItem('ammar_user');}catch{}window.location.reload();}}
+              style={{background:"rgba(255,100,100,.25)",border:"1px solid rgba(255,100,100,.4)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+              Logout
+            </button>
+          )}
+          <div style={{fontFamily:"monospace",fontWeight:900,fontSize:17,color:"#fff",background:"rgba(0,0,0,.2)",padding:"5px 14px",borderRadius:20,letterSpacing:"1px"}}>{clock}</div>
+        </div>
+
+        {/* KPI bar */}
+        <div style={{background:"rgba(0,0,0,.12)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"7px 20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+          {[
+            {l:"Kasir Aktif",      v:`${kasirShifts.length} shift`,    c:"#a7f3d0"},
+            {l:"Omset Kasir Hari Ini", v:fmtRp(totalOmset),           c:"#fcd34d"},
+            {l:"Transaksi Hari Ini",   v:`${todayTrx.length} trx`,    c:"#fff"},
+            {l:"Uang Sistem Bank",     v:fmtRp(totalBankSistem),       c:"#bfdbfe"},
+            {l:"Grand Total",          v:fmtRp(totalOmset+totalBankSistem), c:"#fca5a5"},
+          ].map(k=>(
+            <div key={k.l} style={{textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:600,marginTop:1}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"14px 20px",maxWidth:1300,margin:"0 auto"}}>
+
+        {/* ── KASIR AKTIF ── */}
+        <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+          <PulseDotM color="#0d9488" size={7}/>
+          <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>Kasir & Bank Aktif — Semua Outlet</div>
+        </div>
+
+        {outlets.map((outlet,oi)=>{
+          const shifts = kasirShifts.filter(s=>s.outlet_id===outlet.id);
+          const bank   = getBankStats(outlet.id);
+          const oc     = outletColor(outlet.id);
+          if(shifts.length===0&&bank.trx===0) return null;
+          return (
+            <div key={outlet.id} style={{marginBottom:16}}>
+              {/* Outlet header */}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"7px 14px",background:oc+"12",borderRadius:10,border:`1px solid ${oc}25`}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:oc}}/>
+                <div style={{fontWeight:800,fontSize:13,color:oc}}>{outlet.nama}</div>
+                <div style={{fontSize:11,color:"#888",marginLeft:"auto"}}>
+                  {shifts.length} kasir aktif
+                </div>
+              </div>
+
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(shifts.length+1,4)},1fr)`,gap:12}}>
+                {/* Kasir cards */}
+                {shifts.map(sh=>{
+                  const omset = calcOmsetShift(sh.id);
+                  const trxCount = calcTrxShift(sh.id);
+                  const sd = sh.saldo_data||{};
+                  return (
+                    <div key={sh.id} style={{background:"#fff",borderRadius:14,padding:"14px 16px",border:`2px solid #e0f5f1`,position:"relative",overflow:"hidden"}}>
+                      <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:`linear-gradient(90deg,${oc},${oc}88)`}}/>
+                      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
+                        <PulseDotM color="#27ae60" size={6}/>
+                        <div>
+                          <div style={{fontWeight:900,fontSize:14,color:"#1a2e2a"}}>{sh.user_id}</div>
+                          <div style={{fontSize:10,color:"#aaa"}}>Shift {sh.nama} · Buka {sh.start_time?.substring(11,16)||"—"}</div>
+                        </div>
+                      </div>
+
+                      {/* Cash laci — fokus utama */}
+                      <div style={{background:`linear-gradient(135deg,#0d9488,#14b8a6)`,borderRadius:11,padding:"11px 14px",marginBottom:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.7)",marginBottom:3}}>💵 CASH DI LACI</div>
+                        <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(omset)}</div>
+                        <div style={{fontSize:9,color:"rgba(255,255,255,.6)",marginTop:2}}>*estimasi dari omset shift</div>
+                      </div>
+
+                      {/* Saldo aplikasi awal */}
+                      {sd.totalSaldoApps>0&&(
+                        <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 11px",marginBottom:8,display:"flex",justifyContent:"space-between"}}>
+                          <span style={{fontSize:11,color:"#555",fontWeight:600}}>Saldo Apl Awal</span>
+                          <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>{fmtRp(sd.totalSaldoApps)}</span>
+                        </div>
+                      )}
+
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+                        <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#aaa",fontWeight:600}}>OMSET</div>
+                          <div style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>{fmtRp(omset)}</div>
+                        </div>
+                        <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#aaa",fontWeight:600}}>TRANSAKSI</div>
+                          <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a"}}>{trxCount} trx</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Bank card */}
+                {bank.trx>0&&(
+                  <div style={{background:"#fff",borderRadius:14,padding:"14px 16px",border:`2px solid #e0f5f1`,position:"relative",overflow:"hidden"}}>
+                    <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,#1a2e2a,#2d4a44)"}}/>
+                    <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:10}}>🏦 Bank — {outlet.nama.replace("Ammar Cell ","")}</div>
+                    <div style={{background:"linear-gradient(135deg,#1a2e2a,#2d4a44)",borderRadius:11,padding:"11px 14px",marginBottom:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:3}}>UANG SISTEM</div>
+                      <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(bank.uangSistem)}</div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7}}>
+                      <div style={{background:"#e8f8f0",borderRadius:9,padding:"7px 9px"}}>
+                        <div style={{fontSize:9,color:"#27ae60",fontWeight:700}}>MASUK</div>
+                        <div style={{fontWeight:800,fontSize:11,color:"#27ae60"}}>{fmtRp(bank.totalMasuk)}</div>
+                      </div>
+                      <div style={{background:"#fff0f0",borderRadius:9,padding:"7px 9px"}}>
+                        <div style={{fontSize:9,color:"#e74c3c",fontWeight:700}}>KELUAR</div>
+                        <div style={{fontWeight:800,fontSize:11,color:"#e74c3c"}}>{fmtRp(bank.totalKeluar)}</div>
+                      </div>
+                      <div style={{background:"#f0faf8",borderRadius:9,padding:"7px 9px"}}>
+                        <div style={{fontSize:9,color:"#aaa",fontWeight:700}}>TRX</div>
+                        <div style={{fontWeight:800,fontSize:11,color:"#1a2e2a"}}>{bank.trx}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ── TRANSAKSI KASIR + RIWAYAT BANK berdampingan ── */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:4}}>
+
+          {/* Transaksi Kasir */}
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                <PulseDotM color="#0d9488" size={7}/>
+                <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>Transaksi Kasir Berjalan</span>
+                <span style={{background:"#e0faf5",color:"#0d9488",fontWeight:800,fontSize:11,padding:"1px 8px",borderRadius:20}}>{filteredTrx.length}</span>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[{k:"semua",l:"Semua"},...outlets.map(o=>({k:o.id,l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
+                  <button key={f.k} onClick={()=>setFilterOutlet(f.k)}
+                    style={{padding:"3px 10px",borderRadius:20,border:`2px solid ${filterOutlet===f.k?"#0d9488":"#b2ede6"}`,background:filterOutlet===f.k?"#0d9488":"transparent",color:filterOutlet===f.k?"#fff":"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                    {f.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{overflowY:"auto",flex:1,maxHeight:400}}>
+              {filteredTrx.length===0 ? (
+                <div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada transaksi hari ini</div>
+              ):filteredTrx.map((t,i)=>{
+                const oc = outletColor(t.outletId);
+                const outletNama = outlets.find(o=>o.id===t.outletId)?.nama?.replace("Ammar Cell ","") || t.outletId;
+                const items = t.items||[];
+                return (
+                  <div key={t.id} style={{padding:"9px 14px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe",display:"flex",alignItems:"flex-start",gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:9,background:oc+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:oc,flexShrink:0}}>
+                      {String(i+1).padStart(2,"0")}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:12,color:"#1a2e2a"}}>{items.map(it=>it.name).join(", ").substring(0,35)||"—"}</div>
+                          <div style={{fontSize:10,color:"#aaa",marginTop:1}}>{t.kasir||t.shiftNama} · {t.time||"—"}</div>
+                        </div>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(t.total)}</div>
+                          <div style={{fontSize:9,fontWeight:700,color:oc,background:oc+"15",padding:"1px 6px",borderRadius:20,marginTop:2,display:"inline-block"}}>{outletNama}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Riwayat Bank */}
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                <PulseDotM color="#1a2e2a" size={7}/>
+                <span style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>Riwayat Transaksi Bank</span>
+                <span style={{background:"#f0f0f0",color:"#555",fontWeight:800,fontSize:11,padding:"1px 8px",borderRadius:20}}>{filteredBank.length}</span>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[{k:"semua",l:"Semua"},...outlets.map(o=>({k:o.id,l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
+                  <button key={f.k} onClick={()=>setFilterBank(f.k)}
+                    style={{padding:"3px 10px",borderRadius:20,border:`2px solid ${filterBank===f.k?"#1a2e2a":"#b2ede6"}`,background:filterBank===f.k?"#1a2e2a":"transparent",color:filterBank===f.k?"#fff":"#555",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                    {f.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{overflowY:"auto",flex:1,maxHeight:400}}>
+              {filteredBank.length===0 ? (
+                <div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada transaksi bank</div>
+              ):filteredBank.map((t,i)=>{
+                const isIn = t.netNominal>0;
+                const oc = outletColor(t.outletId);
+                const outletNama = outlets.find(o=>o.id===t.outletId)?.nama?.replace("Ammar Cell ","") || t.outletId;
+                return (
+                  <div key={t.id} style={{padding:"9px 14px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:32,height:32,borderRadius:9,background:isIn?"#e0faf5":"#fff0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
+                      {isIn?"⬇":"⬆"}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.nama}</div>
+                      <div style={{fontSize:10,color:"#aaa",marginTop:1}}>
+                        {t.waktu}
+                        {t.feeType==="fee"&&<span style={{color:"#0d9488",fontWeight:700,marginLeft:5}}>+fee {fmtRp(t.fee)}</span>}
+                        {t.feeType==="dipotong"&&t.fee>0&&<span style={{color:"#e74c3c",fontWeight:700,marginLeft:5}}>−{fmtRp(t.fee)}</span>}
+                      </div>
+                    </div>
+                    <div style={{flexShrink:0,textAlign:"right"}}>
+                      <div style={{fontWeight:900,fontSize:13,color:isIn?"#0d9488":"#e74c3c"}}>{isIn?"+":""}{fmtRp(Math.abs(t.netNominal))}</div>
+                      <div style={{fontSize:9,fontWeight:700,color:oc,background:oc+"15",padding:"1px 6px",borderRadius:20,marginTop:2,display:"inline-block"}}>{outletNama}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div style={{textAlign:"center",marginTop:12,fontSize:10,color:"#aaa",fontWeight:600}}>
+          🔴 LIVE — Supabase Realtime · Update otomatis tiap transaksi masuk
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROOT
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
@@ -4064,12 +4427,20 @@ export default function App() {
   useEffect(()=>{
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
-        // Reload data terbaru saat user balik ke app
         reloadData();
       }
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+
+    // Reload data setiap 60 detik sebagai fallback jika realtime putus
+    const iv = setInterval(()=>{
+      if(document.visibilityState==='visible') reloadData();
+    }, 60000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(iv);
+    };
   },[]);
 
   // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
@@ -4212,9 +4583,33 @@ export default function App() {
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'users' },
         async () => {
-          // Reload semua users saat ada perubahan
           const usrs = await db.getUsers().catch(()=>null);
           if (usrs) setUsersState(usrs);
+        }
+      )
+      .subscribe();
+
+    // Channel transactions: transaksi baru otomatis masuk ke semua device
+    const trxChannel = supabase
+      .channel('realtime-transactions')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'transactions' },
+        (payload) => {
+          if (!payload.new) return;
+          const t = {...payload.new, items: payload.new.items||[]};
+          setTx(prev => {
+            if (prev.find(x => x.id === t.id)) return prev;
+            return [t, ...prev];
+          });
+        }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'transactions' },
+        (payload) => {
+          if (!payload.new) return;
+          setTx(prev =>
+            prev.map(t => t.id === payload.new.id ? {...t, ...payload.new, items: payload.new.items||[]} : t)
+          );
         }
       )
       .subscribe();
@@ -4225,6 +4620,7 @@ export default function App() {
       supabase.removeChannel(productChannel);
       supabase.removeChannel(outletChannel);
       supabase.removeChannel(userChannel);
+      supabase.removeChannel(trxChannel);
     };
   },[]);
 
@@ -4351,7 +4747,8 @@ export default function App() {
     feeHari:        bankStatsHari.fee,
   };
 
-  const isAdmin = user?.role==="admin";
+  const isAdmin   = user?.role==="admin";
+  const isMonitor = user?.role==="monitor";
 
   // ── Loading screen ────────────────────────────────────────────────────────
   if (loading) return (
@@ -4385,7 +4782,11 @@ export default function App() {
   if (!user) return (
     <>
       <style>{css+`@keyframes fadeUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}`}</style>
-      <LoginPage users={users} onLogin={u=>{setUser(u);setPage("menu");}}/>
+      <LoginPage users={users} onLogin={u=>{
+        setUser(u);
+        // Monitor role langsung ke halaman monitor
+        setPage(u.role==="monitor"?"monitor":"menu");
+      }}/>
     </>
   );
 
@@ -4409,7 +4810,8 @@ export default function App() {
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="cashflow"  && isAdmin && <CashflowPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
+      {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage title="Saldo Kasir" saldoApps={saldoApps} setSaldoApps={setSaldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
@@ -4419,7 +4821,17 @@ export default function App() {
       {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
-      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow"].includes(page)&&!isAdmin&&(
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","kasir","bank"].includes(page)&&isMonitor&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:48,marginBottom:12}}>🔒</div>
+            <div style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>Akses Terbatas</div>
+            <div style={{color:"#888",fontSize:13,marginTop:6}}>Akun monitor hanya bisa mengakses halaman Monitor</div>
+            <button onClick={()=>setPage("monitor")} style={{background:"#0d9488",border:"none",borderRadius:10,padding:"10px 24px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:16}}>Kembali ke Monitor</button>
+          </div>
+        </div>
+      )}
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","monitor"].includes(page)&&!isAdmin&&!isMonitor&&(
         <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0faf8",flexDirection:"column",gap:12,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:48}}>🔒</div>
           <div style={{fontWeight:900,fontSize:18,color:"#ff4757"}}>Akses Ditolak</div>
