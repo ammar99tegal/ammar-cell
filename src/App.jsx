@@ -4454,14 +4454,14 @@ export default function App() {
 
   // ── Auto cleanup shift expired (> 24 jam = lupa tutup) ───────────────────
   useEffect(()=>{
-    const cleanup = () => {
-      const cutoff = new Date(Date.now() - 24*60*60*1000).toISOString();
-      supabase.from('active_shifts').delete().lt('created_at', cutoff).catch(()=>{});
-      supabase.from('bank_shifts').delete().lt('created_at', cutoff).catch(()=>{});
+    const cleanup = async () => {
+      try {
+        const cutoff = new Date(Date.now() - 24*60*60*1000).toISOString();
+        await supabase.from('active_shifts').delete().lt('created_at', cutoff);
+        await supabase.from('bank_shifts').delete().lt('created_at', cutoff);
+      } catch(e) { console.warn('cleanup:', e); }
     };
-    // Jalankan saat app pertama load
     cleanup();
-    // Jalankan lagi tiap 1 jam
     const iv = setInterval(cleanup, 60*60*1000);
     return ()=>clearInterval(iv);
   },[]);
