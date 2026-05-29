@@ -618,6 +618,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
   const [importError, setImportError] = useState("");
   const [saving,      setSaving]      = useState(false);
   const [prodOrder,   setProdOrder]   = useState(null); // null = urutan default
+  const [sortProd,    setSortProd]    = useState("default");
   const dragProdIdx = useRef(null);
   const saveOrderTimer = useRef(null);
 
@@ -656,7 +657,14 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
     ? [...prodOrder.map(id=>products.find(p=>p.id===id)).filter(Boolean),
        ...products.filter(p=>!prodOrder.includes(p.id))]
     : products;
-  const fp = orderedProducts.filter(p=>(catFilter==="Semua"||p.category===catFilter)&&(p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search)));
+  const fpBase = orderedProducts.filter(p=>(catFilter==="Semua"||p.category===catFilter)&&(p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search)));
+  const fp = sortProd==="default" ? fpBase : [...fpBase].sort((a,b)=>{
+    if(sortProd==="nama")      return a.name.localeCompare(b.name);
+    if(sortProd==="kat")       return a.category.localeCompare(b.category);
+    if(sortProd==="harga_asc") return a.price-b.price;
+    if(sortProd==="harga_dsc") return b.price-a.price;
+    return 0;
+  });
 
   const openAdd  = ()=>{ setEditTarget(null); setForm({name:"",barcode:"",category:"",price:"",modal:""}); setShowModal(true); };
   const openEdit = p=>{ setEditTarget(p); setForm({name:p.name,barcode:p.barcode||"",category:p.category,price:String(p.price),modal:String(p.modal)}); setShowModal(true); };
@@ -880,6 +888,18 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
           ))}
         </div>
 
+        {/* Sort & drag info */}
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#555"}}>Urutkan:</span>
+          {[{k:"default",l:"Default"},{k:"nama",l:"A-Z Nama"},{k:"kat",l:"Kategori"},{k:"harga_asc",l:"Harga ↑"},{k:"harga_dsc",l:"Harga ↓"}].map(s=>(
+            <button key={s.k} onClick={()=>setSortProd(s.k)}
+              style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${sortProd===s.k?"#0d9488":"#b2ede6"}`,background:sortProd===s.k?"#0d9488":"#fff",color:sortProd===s.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+              {s.l}
+            </button>
+          ))}
+          <span style={{fontSize:10,color:"#aaa",marginLeft:8}}>⠿ Drag untuk atur urutan kustom</span>
+        </div>
+
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr style={{background:"#e0faf5"}}>
@@ -1039,6 +1059,8 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
   const [bulkTransferTo, setBulkTransferTo] = useState("");
   const [bulkSaving,     setBulkSaving]     = useState(false);
   const [sortField,      setSortField]      = useState("nama");
+  const [stokAdminOrder, setStokAdminOrder] = useState(null);
+  const dragStokAdminIdx = useRef(null);
 
   const outletStock = stocks[selectedOutlet]||{};
   const outlet      = outlets.find(o=>o.id===selectedOutlet);
@@ -1154,7 +1176,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
     notify(`${successCount} produk berhasil diproses ✓`,"ok");
   };
 
-  const filteredProds = products
+  const filteredProdsBase = products
     .filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a,b)=>{
       const qa=outletStock[a.id]??0, qb=outletStock[b.id]??0;
@@ -1163,8 +1185,12 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
       if(sortField==="stok_asc")return qa-qb;
       if(sortField==="stok_dsc")return qb-qa;
       if(sortField==="habis")   return (qa===0?-1:1)-(qb===0?-1:1);
-      return a.name.localeCompare(b.name); // default
+      return a.name.localeCompare(b.name);
     });
+  const filteredProds = stokAdminOrder
+    ? [...stokAdminOrder.map(id=>filteredProdsBase.find(p=>p.id===id)).filter(Boolean),
+       ...filteredProdsBase.filter(p=>!stokAdminOrder.includes(p.id))]
+    : filteredProdsBase;
   const getStatus = s=>s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss={habis:{bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},over:{bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},aman:{bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"}};
   const typeColor={masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"};
@@ -1292,8 +1318,14 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
                     const diff = realQty-sysQty;
                     const st = getStatus(sysQty);
                     return (
-                      <tr key={p.id} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
+                      <tr key={p.id}
+                        draggable
+                        onDragStart={()=>{dragStokAdminIdx.current=i;}}
+                        onDragOver={e=>{e.preventDefault();if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i)return;const ord=filteredProds.map(x=>x.id);const[mv]=ord.splice(dragStokAdminIdx.current,1);ord.splice(i,0,mv);dragStokAdminIdx.current=i;setStokAdminOrder(ord);}}
+                        onDragEnd={()=>{dragStokAdminIdx.current=null;}}
+                        style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}>
                         <td style={{padding:"7px 11px",color:"#ccc",fontWeight:600}}>{i+1}</td>
+                        <td style={{padding:"7px 6px",color:"#b2ede6",fontSize:16,userSelect:"none",textAlign:"center"}}>⠿</td>
                         <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
                         <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{p.category}</span></td>
                         <td style={{padding:"7px 11px"}}><span style={{background:ss[st].bg,color:ss[st].c,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{ss[st].l}</span></td>
