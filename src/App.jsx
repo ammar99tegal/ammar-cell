@@ -4768,7 +4768,7 @@ export default function App() {
     });
   },[]);
 
-  const calcOmset = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+  const calcOmset = list=>list.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
 
   // Ambil data bank hari ini dari Supabase untuk cashflow
   const [bankStatsHari, setBankStatsHari] = useState({masuk:0,keluar:0,fee:0});
