@@ -2300,7 +2300,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
         </div>
 
         {/* Grouped shifts */}
-        {shiftGroups.filter(g=>(filterOutlet==="all"||g.outletId===filterOutlet)&&(filterShift==="all"||g.label===filterShift)).map(group=>(
+        {groupArr.filter(g=>(filterOutlet==="all"||transactions.find(t=>t.shiftId===g.key)?.outletId===filterOutlet)&&(filterShift==="all"||g.label===filterShift||g.key===filterShift)).map(group=>(
           <div key={group.key} onClick={()=>{setSelectedShift(group);setDetailTab("kasir");}}
             style={{background:"#fff",borderRadius:13,padding:"13px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
@@ -2317,7 +2317,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
             </div>
           </div>
         ))}
-        {shiftGroups.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
+        {groupArr.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
       </div>
     </div>
   );
@@ -4174,6 +4174,8 @@ function useDragSort(initialItems, onReorder) {
 // ── Sub-components extracted from preview v3 ────────────────────────────────
 const toNumCF = s => +String(s||"").replace(/[^\d]/g,"")||0;
 const toFmtCF = s => { const r=String(s||"").replace(/[^\d]/g,""); return r?new Intl.NumberFormat("id-ID").format(+r):""; };
+// Color constants for cashflow components
+const CF={teal:"#0d9488",teal2:"#e0faf5",green:"#27ae60",red:"#e74c3c",orange:"#f39c12",blue:"#2980b9",purple:"#8e44ad",bg:"#f0faf8",text:"#1a2e2a",muted:"#6b7280",border:"#e0f5f1"};
 
 function DynRows({rows, setRows, color, placeholder="Keterangan..."}) {
   const update = (id,field,val) => setRows(p=>p.map(r=>r.id===id?{...r,[field]:val}:r));
@@ -4184,14 +4186,14 @@ function DynRows({rows, setRows, color, placeholder="Keterangan..."}) {
   return (
     <div>
       {rows.map((r,i)=>(
-        <div key={r.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:`1px solid ${C.bg}`}}>
+        <div key={r.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:`1px solid ${CF.bg}`}}>
           <input value={r.label} onChange={e=>update(r.id,"label",e.target.value)}
             placeholder={placeholder}
-            style={{flex:"0 0 175px",padding:"5px 8px",borderRadius:7,border:`1px solid ${C.border}`,fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff"}}/>
+            style={{flex:"0 0 175px",padding:"5px 8px",borderRadius:7,border:`1px solid ${CF.border}`,fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff"}}/>
           <span style={{fontSize:11,color,fontWeight:700,flexShrink:0}}>Rp</span>
           <input value={r.nominal} onChange={e=>update(r.id,"nominal",toFmtCF(e.target.value))}
             placeholder="0"
-            style={{flex:1,padding:"5px 8px",borderRadius:7,border:`1.5px solid ${toNumCF(r.nominal)>0?color:C.border}`,fontSize:12,fontWeight:700,textAlign:"right",outline:"none",fontFamily:"inherit",background:"#fff",minWidth:0}}/>
+            style={{flex:1,padding:"5px 8px",borderRadius:7,border:`1.5px solid ${toNumCF(r.nominal)>0?color:CF.border}`,fontSize:12,fontWeight:700,textAlign:"right",outline:"none",fontFamily:"inherit",background:"#fff",minWidth:0}}/>
           <button onClick={()=>delRow(r.id)}
             style={{background:"transparent",border:"none",color:"#ccc",fontSize:14,cursor:"pointer",padding:"0 3px",flexShrink:0}}>✕</button>
         </div>
@@ -4246,51 +4248,51 @@ function TabLog({log,setLog,onAddEntries,onDelete}) {
     <div>
       {/* Tanggal */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-        <span style={{fontSize:12,fontWeight:700,color:C.muted,flexShrink:0}}>Tanggal:</span>
+        <span style={{fontSize:12,fontWeight:700,color:CF.muted,flexShrink:0}}>Tanggal:</span>
         <input value={tgl} onChange={e=>setTgl(e.target.value)}
-          style={{padding:"6px 11px",borderRadius:9,border:`2px solid ${C.border}`,fontSize:13,outline:"none",fontFamily:"inherit",fontWeight:600}}/>
+          style={{padding:"6px 11px",borderRadius:9,border:`2px solid ${CF.border}`,fontSize:13,outline:"none",fontFamily:"inherit",fontWeight:600}}/>
       </div>
 
       {/* Pemasukan & Pengeluaran berdampingan */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
         {/* PEMASUKAN */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${C.green}44`,overflow:"hidden"}}>
-          <div style={{background:`${C.green}12`,padding:"10px 14px",borderBottom:`1px solid ${C.green}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontWeight:900,fontSize:13,color:C.green}}>⬇ PEMASUKAN</span>
-            <span style={{fontWeight:800,fontSize:12,color:C.green}}>{fmtRp(totalIn)}</span>
+        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.green}44`,overflow:"hidden"}}>
+          <div style={{background:`${CF.green}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.green}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontWeight:900,fontSize:13,color:CF.green}}>⬇ PEMASUKAN</span>
+            <span style={{fontWeight:800,fontSize:12,color:CF.green}}>{fmtRp(totalIn)}</span>
           </div>
           <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsIn} setRows={setRowsIn} color={C.green} placeholder="Sumber pemasukan..."/>
+            <DynRows rows={rowsIn} setRows={setRowsIn} color={CF.green} placeholder="Sumber pemasukan..."/>
           </div>
         </div>
 
         {/* PENGELUARAN */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${C.red}44`,overflow:"hidden"}}>
-          <div style={{background:`${C.red}12`,padding:"10px 14px",borderBottom:`1px solid ${C.red}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontWeight:900,fontSize:13,color:C.red}}>⬆ PENGELUARAN</span>
-            <span style={{fontWeight:800,fontSize:12,color:C.red}}>{fmtRp(totalOut)}</span>
+        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.red}44`,overflow:"hidden"}}>
+          <div style={{background:`${CF.red}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.red}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontWeight:900,fontSize:13,color:CF.red}}>⬆ PENGELUARAN</span>
+            <span style={{fontWeight:800,fontSize:12,color:CF.red}}>{fmtRp(totalOut)}</span>
           </div>
           <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsOut} setRows={setRowsOut} color={C.red} placeholder="Jenis pengeluaran..."/>
+            <DynRows rows={rowsOut} setRows={setRowsOut} color={CF.red} placeholder="Jenis pengeluaran..."/>
           </div>
         </div>
       </div>
 
       {/* HASIL AKHIR GABUNGAN */}
-      <div style={{background:"#fff",borderRadius:14,border:`2px solid ${C.teal}44`,padding:"14px 16px",marginBottom:14}}>
-        <div style={{fontWeight:900,fontSize:13,color:C.teal,marginBottom:12}}>📊 Hasil Akhir Hari Ini</div>
+      <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.teal}44`,padding:"14px 16px",marginBottom:14}}>
+        <div style={{fontWeight:900,fontSize:13,color:CF.teal,marginBottom:12}}>📊 Hasil Akhir Hari Ini</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          <div style={{background:`${C.green}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${C.green}33`}}>
-            <div style={{fontSize:10,color:C.green,fontWeight:700,marginBottom:3}}>TOTAL PEMASUKAN</div>
-            <div style={{fontWeight:900,fontSize:18,color:C.green}}>{fmtRp(totalIn)}</div>
+          <div style={{background:`${CF.green}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${CF.green}33`}}>
+            <div style={{fontSize:10,color:CF.green,fontWeight:700,marginBottom:3}}>TOTAL PEMASUKAN</div>
+            <div style={{fontWeight:900,fontSize:18,color:CF.green}}>{fmtRp(totalIn)}</div>
           </div>
-          <div style={{background:`${C.red}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${C.red}33`}}>
-            <div style={{fontSize:10,color:C.red,fontWeight:700,marginBottom:3}}>TOTAL PENGELUARAN</div>
-            <div style={{fontWeight:900,fontSize:18,color:C.red}}>{fmtRp(totalOut)}</div>
+          <div style={{background:`${CF.red}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${CF.red}33`}}>
+            <div style={{fontSize:10,color:CF.red,fontWeight:700,marginBottom:3}}>TOTAL PENGELUARAN</div>
+            <div style={{fontWeight:900,fontSize:18,color:CF.red}}>{fmtRp(totalOut)}</div>
           </div>
-          <div style={{background:saldo>=0?`${C.teal}12`:`${C.red}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${saldo>=0?C.teal:C.red}33`}}>
-            <div style={{fontSize:10,color:saldo>=0?C.teal:C.red,fontWeight:700,marginBottom:3}}>SALDO BERSIH</div>
-            <div style={{fontWeight:900,fontSize:18,color:saldo>=0?C.teal:C.red}}>{saldo>=0?"+":"-"}{fmtRp(saldo)}</div>
+          <div style={{background:saldo>=0?`${CF.teal}12`:`${CF.red}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${saldo>=0?CF.teal:CF.red}33`}}>
+            <div style={{fontSize:10,color:saldo>=0?CF.teal:CF.red,fontWeight:700,marginBottom:3}}>SALDO BERSIH</div>
+            <div style={{fontWeight:900,fontSize:18,color:saldo>=0?CF.teal:CF.red}}>{saldo>=0?"+":"-"}{fmtRp(saldo)}</div>
           </div>
         </div>
       </div>
@@ -4298,52 +4300,52 @@ function TabLog({log,setLog,onAddEntries,onDelete}) {
       {/* ASET */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
         {/* Aset Barang/Device */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${C.purple}44`,overflow:"hidden"}}>
-          <div style={{background:`${C.purple}12`,padding:"10px 14px",borderBottom:`1px solid ${C.purple}22`}}>
-            <div style={{fontWeight:900,fontSize:13,color:C.purple}}>🖥️ Aset Bertambah</div>
-            <div style={{fontSize:10,color:C.purple,marginTop:2,opacity:.8}}>Device, komputer, barang konter, dll</div>
+        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.purple}44`,overflow:"hidden"}}>
+          <div style={{background:`${CF.purple}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.purple}22`}}>
+            <div style={{fontWeight:900,fontSize:13,color:CF.purple}}>🖥️ Aset Bertambah</div>
+            <div style={{fontSize:10,color:CF.purple,marginTop:2,opacity:.8}}>Device, komputer, barang konter, dll</div>
           </div>
           <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsAset} setRows={setRowsAset} color={C.purple} placeholder="Nama aset barang..."/>
+            <DynRows rows={rowsAset} setRows={setRowsAset} color={CF.purple} placeholder="Nama aset barang..."/>
           </div>
-          {totalAset>0&&<div style={{background:`${C.purple}12`,padding:"8px 14px",borderTop:`1px solid ${C.purple}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:12,color:C.purple}}>Total Aset Bertambah</span>
-            <span style={{fontWeight:900,fontSize:13,color:C.purple}}>{fmtRp(totalAset)}</span>
+          {totalAset>0&&<div style={{background:`${CF.purple}12`,padding:"8px 14px",borderTop:`1px solid ${CF.purple}22`,display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontWeight:800,fontSize:12,color:CF.purple}}>Total Aset Bertambah</span>
+            <span style={{fontWeight:900,fontSize:13,color:CF.purple}}>{fmtRp(totalAset)}</span>
           </div>}
         </div>
 
         {/* Aset Modal Berputar */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${C.blue}44`,overflow:"hidden"}}>
-          <div style={{background:`${C.blue}12`,padding:"10px 14px",borderBottom:`1px solid ${C.blue}22`}}>
-            <div style={{fontWeight:900,fontSize:13,color:C.blue}}>🔄 Aset Modal Diputar</div>
-            <div style={{fontSize:10,color:C.blue,marginTop:2,opacity:.8}}>Voucer, SP, aksesoris, stok diputar</div>
+        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.blue}44`,overflow:"hidden"}}>
+          <div style={{background:`${CF.blue}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.blue}22`}}>
+            <div style={{fontWeight:900,fontSize:13,color:CF.blue}}>🔄 Aset Modal Diputar</div>
+            <div style={{fontSize:10,color:CF.blue,marginTop:2,opacity:.8}}>Voucer, SP, aksesoris, stok diputar</div>
           </div>
           <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsMod} setRows={setRowsMod} color={C.blue} placeholder="Nama modal berputar..."/>
+            <DynRows rows={rowsMod} setRows={setRowsMod} color={CF.blue} placeholder="Nama modal berputar..."/>
           </div>
-          {totalMod>0&&<div style={{background:`${C.blue}12`,padding:"8px 14px",borderTop:`1px solid ${C.blue}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:12,color:C.blue}}>Total Modal Diputar</span>
-            <span style={{fontWeight:900,fontSize:13,color:C.blue}}>{fmtRp(totalMod)}</span>
+          {totalMod>0&&<div style={{background:`${CF.blue}12`,padding:"8px 14px",borderTop:`1px solid ${CF.blue}22`,display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontWeight:800,fontSize:12,color:CF.blue}}>Total Modal Diputar</span>
+            <span style={{fontWeight:900,fontSize:13,color:CF.blue}}>{fmtRp(totalMod)}</span>
           </div>}
         </div>
       </div>
 
       {/* Ringkasan aset */}
       {(totalAset>0||totalMod>0)&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${C.border}`,padding:"13px 16px",marginBottom:14}}>
-          <div style={{fontWeight:800,fontSize:13,color:C.text,marginBottom:10}}>💼 Ringkasan Aset Hari Ini</div>
+        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,padding:"13px 16px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:CF.text,marginBottom:10}}>💼 Ringkasan Aset Hari Ini</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-            <div style={{background:`${C.purple}12`,borderRadius:9,padding:"9px 12px"}}>
-              <div style={{fontSize:10,color:C.purple,fontWeight:700}}>ASET BARANG/DEVICE</div>
-              <div style={{fontWeight:900,fontSize:16,color:C.purple,marginTop:2}}>{fmtRp(totalAset)}</div>
+            <div style={{background:`${CF.purple}12`,borderRadius:9,padding:"9px 12px"}}>
+              <div style={{fontSize:10,color:CF.purple,fontWeight:700}}>ASET BARANG/DEVICE</div>
+              <div style={{fontWeight:900,fontSize:16,color:CF.purple,marginTop:2}}>{fmtRp(totalAset)}</div>
             </div>
-            <div style={{background:`${C.blue}12`,borderRadius:9,padding:"9px 12px"}}>
-              <div style={{fontSize:10,color:C.blue,fontWeight:700}}>MODAL BERPUTAR</div>
-              <div style={{fontWeight:900,fontSize:16,color:C.blue,marginTop:2}}>{fmtRp(totalMod)}</div>
+            <div style={{background:`${CF.blue}12`,borderRadius:9,padding:"9px 12px"}}>
+              <div style={{fontSize:10,color:CF.blue,fontWeight:700}}>MODAL BERPUTAR</div>
+              <div style={{fontWeight:900,fontSize:16,color:CF.blue,marginTop:2}}>{fmtRp(totalMod)}</div>
             </div>
-            <div style={{background:`${C.orange}12`,borderRadius:9,padding:"9px 12px"}}>
-              <div style={{fontSize:10,color:C.orange,fontWeight:700}}>TOTAL ASET</div>
-              <div style={{fontWeight:900,fontSize:16,color:C.orange,marginTop:2}}>{fmtRp(totalAset+totalMod)}</div>
+            <div style={{background:`${CF.orange}12`,borderRadius:9,padding:"9px 12px"}}>
+              <div style={{fontSize:10,color:CF.orange,fontWeight:700}}>TOTAL ASET</div>
+              <div style={{fontWeight:900,fontSize:16,color:CF.orange,marginTop:2}}>{fmtRp(totalAset+totalMod)}</div>
             </div>
           </div>
         </div>
@@ -4351,22 +4353,22 @@ function TabLog({log,setLog,onAddEntries,onDelete}) {
 
       {/* Simpan */}
       <button onClick={save}
-        style={{width:"100%",background:saved?"#27ae60":`linear-gradient(135deg,${C.teal},#14b8a6)`,border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",transition:"background .3s"}}>
+        style={{width:"100%",background:saved?"#27ae60":`linear-gradient(135deg,${CF.teal},#14b8a6)`,border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",transition:"background .3s"}}>
         {saved?"✅ Tersimpan!":"💾 Simpan Semua Entri"}
       </button>
 
       {/* Riwayat */}
       {log.length>0&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${C.border}`,overflow:"hidden",marginTop:14}}>
-          <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,fontWeight:800,fontSize:13,color:C.text}}>📋 Riwayat Log</div>
+        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,overflow:"hidden",marginTop:14}}>
+          <div style={{padding:"10px 14px",borderBottom:`1px solid ${CF.border}`,fontWeight:800,fontSize:13,color:CF.text}}>📋 Riwayat Log</div>
           {[...new Set(log.map(e=>e.tgl))].map(tglRow=>(
             <div key={tglRow}>
-              <div style={{background:C.teal2,padding:"4px 14px",fontSize:11,fontWeight:800,color:C.teal}}>{tglRow}</div>
+              <div style={{background:CF.teal2,padding:"4px 14px",fontSize:11,fontWeight:800,color:CF.teal}}>{tglRow}</div>
               {log.filter(e=>e.tgl===tglRow).map((e,i)=>{
-                const color=e.jenis==="masuk"?C.green:e.jenis==="keluar"?C.red:e.jenis==="aset_barang"?C.purple:C.blue;
+                const color=e.jenis==="masuk"?CF.green:e.jenis==="keluar"?CF.red:e.jenis==="aset_barang"?CF.purple:CF.blue;
                 const icon=e.jenis==="masuk"?"⬇":e.jenis==="keluar"?"⬆":e.jenis==="aset_barang"?"🖥️":"🔄";
                 return(
-                  <div key={e.id} style={{display:"flex",gap:8,padding:"7px 14px",borderTop:`1px solid ${C.bg}`,background:i%2===0?"#fff":"#fafffe",alignItems:"center"}}>
+                  <div key={e.id} style={{display:"flex",gap:8,padding:"7px 14px",borderTop:`1px solid ${CF.bg}`,background:i%2===0?"#fff":"#fafffe",alignItems:"center"}}>
                     <span style={{fontSize:13,flexShrink:0}}>{icon}</span>
                     <span style={{flex:1,fontSize:12,fontWeight:600}}>{e.nama}</span>
                     <span style={{fontWeight:800,fontSize:12,color}}>{e.jenis==="keluar"?"-":"+"}{fmtRp(e.nominal)}</span>
@@ -4393,7 +4395,7 @@ function TabAnalisis({log}) {
   const days    = [...new Set(log.map(e=>e.tgl))].length||1;
   const rataHari= masuk/days;
   const kondisi = margin>=20?"sehat":margin>=10?"cukup":"perhatian";
-  const kColor  = kondisi==="sehat"?C.green:kondisi==="cukup"?C.orange:C.red;
+  const kColor  = kondisi==="sehat"?CF.green:kondisi==="cukup"?CF.orange:CF.red;
 
   // Aset per item
   const asetBrgList = log.filter(e=>e.jenis==="aset_barang");
@@ -4408,24 +4410,24 @@ function TabAnalisis({log}) {
         </div>
         <div>
           <div style={{fontWeight:900,fontSize:14,color:kColor}}>Kondisi Bisnis: {kondisi.toUpperCase()}</div>
-          <div style={{fontSize:11,color:C.muted}}>Margin {margin.toFixed(1)}% · Rata {fmtRp(rataHari)}/hari</div>
+          <div style={{fontSize:11,color:CF.muted}}>Margin {margin.toFixed(1)}% · Rata {fmtRp(rataHari)}/hari</div>
         </div>
       </div>
 
       {/* Aset Barang/Device */}
       {asetBrgList.length>0&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${C.purple}33`,overflow:"hidden",marginBottom:14}}>
-          <div style={{background:`${C.purple}12`,padding:"10px 14px",borderBottom:`1px solid ${C.purple}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:13,color:C.purple}}>🖥️ Aset Barang / Device Konter</span>
-            <span style={{fontWeight:900,fontSize:13,color:C.purple}}>{fmtRp(asetBrg)}</span>
+        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.purple}33`,overflow:"hidden",marginBottom:14}}>
+          <div style={{background:`${CF.purple}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.purple}22`,display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontWeight:800,fontSize:13,color:CF.purple}}>🖥️ Aset Barang / Device Konter</span>
+            <span style={{fontWeight:900,fontSize:13,color:CF.purple}}>{fmtRp(asetBrg)}</span>
           </div>
           {asetBrgList.map((e,i)=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderTop:i>0?`1px solid ${C.bg}`:"none",fontSize:12}}>
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderTop:i>0?`1px solid ${CF.bg}`:"none",fontSize:12}}>
               <span style={{fontWeight:600}}>{e.nama}</span>
-              <span style={{fontWeight:800,color:C.purple}}>{fmtRp(e.nominal)}</span>
+              <span style={{fontWeight:800,color:CF.purple}}>{fmtRp(e.nominal)}</span>
             </div>
           ))}
-          <div style={{background:`${C.purple}08`,padding:"8px 14px",borderTop:`1px solid ${C.purple}22`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:900,color:C.purple}}>
+          <div style={{background:`${CF.purple}08`,padding:"8px 14px",borderTop:`1px solid ${CF.purple}22`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:900,color:CF.purple}}>
             <span>Total Aset Barang</span><span>{fmtRp(asetBrg)}</span>
           </div>
         </div>
@@ -4433,18 +4435,18 @@ function TabAnalisis({log}) {
 
       {/* Aset Modal Berputar */}
       {asetModList.length>0&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${C.blue}33`,overflow:"hidden",marginBottom:14}}>
-          <div style={{background:`${C.blue}12`,padding:"10px 14px",borderBottom:`1px solid ${C.blue}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:13,color:C.blue}}>🔄 Aset Modal Diputar (Voucer, SP, dll)</span>
-            <span style={{fontWeight:900,fontSize:13,color:C.blue}}>{fmtRp(asetMod)}</span>
+        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.blue}33`,overflow:"hidden",marginBottom:14}}>
+          <div style={{background:`${CF.blue}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.blue}22`,display:"flex",justifyContent:"space-between"}}>
+            <span style={{fontWeight:800,fontSize:13,color:CF.blue}}>🔄 Aset Modal Diputar (Voucer, SP, dll)</span>
+            <span style={{fontWeight:900,fontSize:13,color:CF.blue}}>{fmtRp(asetMod)}</span>
           </div>
           {asetModList.map((e,i)=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderTop:i>0?`1px solid ${C.bg}`:"none",fontSize:12}}>
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderTop:i>0?`1px solid ${CF.bg}`:"none",fontSize:12}}>
               <span style={{fontWeight:600}}>{e.nama}</span>
-              <span style={{fontWeight:800,color:C.blue}}>{fmtRp(e.nominal)}</span>
+              <span style={{fontWeight:800,color:CF.blue}}>{fmtRp(e.nominal)}</span>
             </div>
           ))}
-          <div style={{background:`${C.blue}08`,padding:"8px 14px",borderTop:`1px solid ${C.blue}22`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:900,color:C.blue}}>
+          <div style={{background:`${CF.blue}08`,padding:"8px 14px",borderTop:`1px solid ${CF.blue}22`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:900,color:CF.blue}}>
             <span>Total Modal Diputar</span><span>{fmtRp(asetMod)}</span>
           </div>
         </div>
@@ -4452,7 +4454,7 @@ function TabAnalisis({log}) {
 
       {/* Total aset gabungan */}
       {(asetBrg+asetMod)>0&&(
-        <div style={{background:`linear-gradient(135deg,${C.purple},${C.blue})`,borderRadius:13,padding:"13px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{background:`linear-gradient(135deg,${CF.purple},${CF.blue})`,borderRadius:13,padding:"13px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
             <div style={{fontWeight:800,fontSize:12,color:"rgba(255,255,255,.8)"}}>TOTAL ASET KESELURUHAN</div>
             <div style={{fontSize:11,color:"rgba(255,255,255,.6)"}}>Barang {fmtRp(asetBrg)} + Modal {fmtRp(asetMod)}</div>
@@ -4463,14 +4465,14 @@ function TabAnalisis({log}) {
 
       {/* Saran pisah rekening */}
       {laba>0&&(
-        <div style={{background:"#fff8e1",border:`2px solid ${C.orange}`,borderRadius:13,padding:"13px",marginBottom:14}}>
-          <div style={{fontWeight:800,fontSize:13,color:C.orange,marginBottom:8}}>💡 Saran Pisah Rekening dari Laba {fmtRp(laba)}</div>
+        <div style={{background:"#fff8e1",border:`2px solid ${CF.orange}`,borderRadius:13,padding:"13px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:CF.orange,marginBottom:8}}>💡 Saran Pisah Rekening dari Laba {fmtRp(laba)}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             {[
-              {l:"💰 Tabungan (30%)",v:Math.floor(laba*.3/10000)*10000,c:C.teal},
-              {l:"🔄 Modal Usaha (40%)",v:Math.floor(laba*.4/10000)*10000,c:C.blue},
-              {l:"📦 Stok Cadangan (20%)",v:Math.floor(laba*.2/10000)*10000,c:C.purple},
-              {l:"🎯 Dana Darurat (10%)",v:Math.floor(laba*.1/10000)*10000,c:C.orange},
+              {l:"💰 Tabungan (30%)",v:Math.floor(laba*.3/10000)*10000,c:CF.teal},
+              {l:"🔄 Modal Usaha (40%)",v:Math.floor(laba*.4/10000)*10000,c:CF.blue},
+              {l:"📦 Stok Cadangan (20%)",v:Math.floor(laba*.2/10000)*10000,c:CF.purple},
+              {l:"🎯 Dana Darurat (10%)",v:Math.floor(laba*.1/10000)*10000,c:CF.orange},
             ].map(s=>(
               <div key={s.l} style={{background:`${s.c}12`,borderRadius:9,padding:"9px 12px",border:`1px solid ${s.c}33`}}>
                 <div style={{fontSize:10,color:s.c,fontWeight:700}}>{s.l}</div>
@@ -4482,18 +4484,18 @@ function TabAnalisis({log}) {
       )}
 
       {/* Proyeksi */}
-      <div style={{background:"#fff",borderRadius:13,border:`2px solid ${C.border}`,padding:"13px",marginBottom:14}}>
+      <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,padding:"13px",marginBottom:14}}>
         <div style={{fontWeight:800,fontSize:13,marginBottom:10}}>📈 Proyeksi 3 Bulan</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
           {[{b:"Bulan 1",m:1.0},{b:"Bulan 2",m:1.05},{b:"Bulan 3",m:1.1}].map(p=>{
             const pm=masuk*p.m*30/days, pl=pm-keluar*30/days;
             return(
-              <div key={p.b} style={{background:C.bg,borderRadius:9,padding:"10px 11px",border:`1px solid ${C.border}`}}>
+              <div key={p.b} style={{background:CF.bg,borderRadius:9,padding:"10px 11px",border:`1px solid ${CF.border}`}}>
                 <div style={{fontWeight:800,fontSize:12,marginBottom:4}}>{p.b}</div>
-                <div style={{fontWeight:800,fontSize:13,color:C.green}}>{fmtRp(pm)}</div>
-                <div style={{fontSize:10,color:C.muted}}>est. masuk</div>
-                <div style={{fontWeight:800,fontSize:12,color:pl>=0?C.teal:C.red,marginTop:3}}>{pl>=0?"+":"-"}{fmtRp(pl)}</div>
-                <div style={{fontSize:10,color:C.muted}}>est. laba</div>
+                <div style={{fontWeight:800,fontSize:13,color:CF.green}}>{fmtRp(pm)}</div>
+                <div style={{fontSize:10,color:CF.muted}}>est. masuk</div>
+                <div style={{fontWeight:800,fontSize:12,color:pl>=0?CF.teal:CF.red,marginTop:3}}>{pl>=0?"+":"-"}{fmtRp(pl)}</div>
+                <div style={{fontSize:10,color:CF.muted}}>est. laba</div>
               </div>
             );
           })}
@@ -4596,34 +4598,34 @@ function TabBukuBesar({log}) {
     else if(e.jenis==="keluar")byDate[e.tgl].keluar+=e.nominal;
   });
   const rows=Object.values(byDate).sort((a,b)=>b.tgl.localeCompare(a.tgl));
-  const colorJenis=j=>j==="masuk"?C.green:j==="keluar"?C.red:j==="aset_barang"?C.purple:C.blue;
+  const colorJenis=j=>j==="masuk"?CF.green:j==="keluar"?CF.red:j==="aset_barang"?CF.purple:CF.blue;
   return(
-    <div style={{background:"#fff",borderRadius:13,border:`2px solid ${C.border}`,overflow:"hidden"}}>
-      <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,fontWeight:800,fontSize:13}}>📚 Buku Besar</div>
+    <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,overflow:"hidden"}}>
+      <div style={{padding:"10px 14px",borderBottom:`1px solid ${CF.border}`,fontWeight:800,fontSize:13}}>📚 Buku Besar</div>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-        <thead><tr style={{background:C.teal2}}>
+        <thead><tr style={{background:CF.teal2}}>
           {["Tgl","Keterangan","Jenis","Masuk","Keluar","Aset"].map(h=>(
-            <th key={h} style={{padding:"8px 11px",textAlign:"left",fontWeight:800,color:C.teal}}>{h}</th>
+            <th key={h} style={{padding:"8px 11px",textAlign:"left",fontWeight:800,color:CF.teal}}>{h}</th>
           ))}
         </tr></thead>
         <tbody>
           {rows.flatMap((r,ri)=>[
             ...r.entries.map((e,ei)=>(
-              <tr key={e.id} style={{borderTop:`1px solid ${C.bg}`,background:ri%2===0?"#fff":"#fafffe"}}>
-                <td style={{padding:"5px 11px",color:C.muted,fontSize:10}}>{ei===0?e.tgl:""}</td>
+              <tr key={e.id} style={{borderTop:`1px solid ${CF.bg}`,background:ri%2===0?"#fff":"#fafffe"}}>
+                <td style={{padding:"5px 11px",color:CF.muted,fontSize:10}}>{ei===0?e.tgl:""}</td>
                 <td style={{padding:"5px 11px",fontWeight:600}}>{e.nama}</td>
                 <td style={{padding:"5px 11px"}}><span style={{background:colorJenis(e.jenis)+"15",color:colorJenis(e.jenis),fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20}}>{e.jenis}</span></td>
-                <td style={{padding:"5px 11px",color:C.green,fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"—"}</td>
-                <td style={{padding:"5px 11px",color:C.red,fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"—"}</td>
-                <td style={{padding:"5px 11px",color:C.purple,fontWeight:700}}>{(e.jenis==="aset_barang"||e.jenis==="aset_modal")?fmtRp(e.nominal):"—"}</td>
+                <td style={{padding:"5px 11px",color:CF.green,fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"—"}</td>
+                <td style={{padding:"5px 11px",color:CF.red,fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"—"}</td>
+                <td style={{padding:"5px 11px",color:CF.purple,fontWeight:700}}>{(e.jenis==="aset_barang"||e.jenis==="aset_modal")?fmtRp(e.nominal):"—"}</td>
               </tr>
             )),
-            <tr key={r.tgl+"s"} style={{borderTop:`2px solid ${C.border}`,background:`${C.teal}08`}}>
-              <td colSpan={2} style={{padding:"6px 11px",fontWeight:800,color:C.teal,fontSize:11}}>Subtotal {r.tgl}</td>
+            <tr key={r.tgl+"s"} style={{borderTop:`2px solid ${CF.border}`,background:`${CF.teal}08`}}>
+              <td colSpan={2} style={{padding:"6px 11px",fontWeight:800,color:CF.teal,fontSize:11}}>Subtotal {r.tgl}</td>
               <td style={{padding:"6px 11px"}}></td>
-              <td style={{padding:"6px 11px",fontWeight:900,color:C.green}}>{fmtRp(r.masuk)}</td>
-              <td style={{padding:"6px 11px",fontWeight:900,color:C.red}}>{fmtRp(r.keluar)}</td>
-              <td style={{padding:"6px 11px",fontWeight:900,color:(r.masuk-r.keluar)>=0?C.teal:C.red}}>{(r.masuk-r.keluar)>=0?"+":"-"}{fmtRp(r.masuk-r.keluar)}</td>
+              <td style={{padding:"6px 11px",fontWeight:900,color:CF.green}}>{fmtRp(r.masuk)}</td>
+              <td style={{padding:"6px 11px",fontWeight:900,color:CF.red}}>{fmtRp(r.keluar)}</td>
+              <td style={{padding:"6px 11px",fontWeight:900,color:(r.masuk-r.keluar)>=0?CF.teal:CF.red}}>{(r.masuk-r.keluar)>=0?"+":"-"}{fmtRp(r.masuk-r.keluar)}</td>
             </tr>
           ])}
         </tbody>
