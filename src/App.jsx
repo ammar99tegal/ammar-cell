@@ -1754,7 +1754,10 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
 function LaporanPage({ transactions, outlets, onBack }) {
   const [filterOutlet,  setFilterOutlet]  = useState("all");
   const [filterShift,   setFilterShift]   = useState("all");
-  const [selectedShift, setSelectedShift] = useState(null); // untuk detail shift
+  const [selectedShift, setSelectedShift] = useState(null);
+  const [detailTab,     setDetailTab]     = useState("kasir"); // kasir | bank
+  const [bankShiftLogs, setBankShiftLogs] = useState({});
+  const [bankTrxMap,    setBankTrxMap]    = useState({}); // shiftId -> trx[]
 
   const calcOmset = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
 
@@ -1843,6 +1846,35 @@ function LaporanPage({ transactions, outlets, onBack }) {
         });
 
         setShiftLogs(m);
+
+        // Load bank shift logs
+        const {data:bankLogs} = await supabase.from('bank_shift_logs').select('*')
+          .order('created_at',{ascending:false}).limit(200).catch(()=>({data:[]}));
+        const bm={};
+        (bankLogs||[]).forEach(l=>{
+          const so = l.saldo_open||{};
+          const sc = l.saldo_close||{};
+          bm[l.outlet_id+'_'+l.start_time?.substring(0,10)] = {
+            id: l.id, outletId: l.outlet_id, userId: l.user_id,
+            nama: l.nama, waktuBuka: l.start_time, waktuTutup: l.end_time,
+            saldoAwal: so.saldoApps||{}, cashKemb: so.cashKemb||0,
+            saldoAkhir: sc.saldoAppsC||{},
+            uangLaci: sc.uangLaci||0, uangSistem: sc.uangSistem||0,
+            selisih: sc.selisih??0, catatan: sc.catatan||'',
+          };
+        });
+        setBankShiftLogs(bm);
+
+        // Load bank transactions untuk mapping per shift
+        const allBankTrx = await dbBank.getTransactions().catch(()=>[]);
+        const btm={};
+        allBankTrx.forEach(t=>{
+          const key = t.outletId+'_'+(t.tgl||'');
+          if(!btm[key]) btm[key]=[];
+          btm[key].push(t);
+        });
+        setBankTrxMap(btm);
+
       } catch(e){ console.error(e); }
     };
     loadLogs();
@@ -1872,21 +1904,45 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const isClosed = saldo?.type==="closed" || !!saldo?.waktuTutup;
     const isActive = !isClosed;
 
+    // Bank data untuk shift ini
+    const outletId = group.items[0]?.outletId;
+    const tglShift = group.items[0]?.date||'';
+    const bankKey  = outletId+'_'+tglShift;
+    const bankData = bankShiftLogs[bankKey];
+    const bankTrx  = bankTrxMap[bankKey]||[];
+    const bankMasuk  = bankTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+    const bankKeluar = bankTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+    const uangSistemBank = (bankData?.cashKemb||0) + bankMasuk - bankKeluar;
+
     return (
       <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
         <SubHeader title={`📋 Detail Shift: ${group.label}`} onBack={()=>setSelectedShift(null)}
           badge={group.outletNama}
         />
-        <div style={{padding:"14px 18px",maxWidth:800,margin:"0 auto"}}>
 
-          {/* Status shift */}
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        {/* Tab kasir / bank */}
+        <div style={{background:`linear-gradient(135deg,#0a7a70,#0d9488)`,display:"flex"}}>
+          {[{k:"kasir",l:"🧾 Laporan Kasir"},{k:"bank",l:"🏦 Laporan Bank"}].map(t=>(
+            <button key={t.k} onClick={()=>setDetailTab(t.k)}
+              style={{flex:1,padding:"10px 0",border:"none",borderBottom:`3px solid ${detailTab===t.k?"#fff":"transparent"}`,background:"transparent",color:detailTab===t.k?"#fff":"rgba(255,255,255,.55)",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        <div style={{padding:"14px 18px",maxWidth:860,margin:"0 auto"}}>
+
+          {/* ── STATUS SHIFT ── */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
             <div style={{background:isActive?"#e8f8f4":"#f0f0f0",border:`2px solid ${isActive?"#2ecc71":"#aaa"}`,borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:800,color:isActive?"#2ecc71":"#888",display:"flex",alignItems:"center",gap:5}}>
               {isActive?"🟢 SHIFT MASIH AKTIF":"⚫ SHIFT SUDAH DITUTUP"}
             </div>
             {saldo?.waktuBuka&&<span style={{fontSize:11,color:"#aaa"}}>Buka: {saldo.waktuBuka}</span>}
             {saldo?.waktuTutup&&<span style={{fontSize:11,color:"#aaa"}}>Tutup: {saldo.waktuTutup}</span>}
           </div>
+
+          {/* ══ TAB KASIR ══ */}
+          {detailTab==="kasir"&&(<>
 
           {/* Ringkasan shift */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
@@ -2058,10 +2114,233 @@ function LaporanPage({ transactions, outlets, onBack }) {
               </div>
             );
           })}
+
+          </>)}
+
+          {/* ══ TAB BANK ══ */}
+          {detailTab==="bank"&&(<>
+
+          {/* KPI Bank */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+            {[
+              {l:"Uang Sistem",  v:fmtRp(uangSistemBank), c:"#fff",  bg:"linear-gradient(135deg,#1a2e2a,#2d4a44)"},
+              {l:"Total Masuk",  v:fmtRp(bankMasuk),       c:"#27ae60",bg:"#e8f8f0"},
+              {l:"Total Keluar", v:fmtRp(bankKeluar),      c:"#e74c3c",bg:"#fff0f0"},
+            ].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"12px 15px"}}>
+                <div style={{fontWeight:900,fontSize:18,color:k.c}}>{k.v}</div>
+                <div style={{fontSize:11,fontWeight:700,color:k.c,opacity:.8,marginTop:2}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Saldo Bank Awal & Akhir */}
+          {bankData&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+              <div style={{background:"#fff",borderRadius:13,border:"2px solid #0d948833",padding:"13px 15px"}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:8}}>🟢 Saldo Aplikasi Awal</div>
+                {Object.entries(bankData.saldoAwal||{}).map(([app,val])=>(
+                  <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #f5faf8",fontSize:12}}>
+                    <span style={{color:"#555",fontWeight:600}}>{app}</span>
+                    <span style={{fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                  </div>
+                ))}
+                {bankData.cashKemb>0&&(
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #f5faf8",fontSize:12}}>
+                    <span style={{color:"#b7770d",fontWeight:600}}>Cash Kembalian</span>
+                    <span style={{fontWeight:800,color:"#b7770d"}}>{fmtRp(bankData.cashKemb)}</span>
+                  </div>
+                )}
+              </div>
+              <div style={{background:"#fff",borderRadius:13,border:"2px solid #e74c3c33",padding:"13px 15px"}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#e74c3c",marginBottom:8}}>🔴 Saldo Aplikasi Akhir</div>
+                {Object.entries(bankData.saldoAkhir||{}).map(([app,val])=>(
+                  <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #f5faf8",fontSize:12}}>
+                    <span style={{color:"#555",fontWeight:600}}>{app}</span>
+                    <span style={{fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Rekap Closing Bank */}
+          <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:12}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:10}}>🏦 Rekap Closing Bank</div>
+            {[
+              {l:"Cash Kembalian Awal", v:bankData?.cashKemb||0,    c:"#b7770d"},
+              {l:"Total Masuk",         v:bankMasuk,                 c:"#27ae60"},
+              {l:"Total Keluar",        v:bankKeluar,                c:"#e74c3c"},
+            ].map(r=>(
+              <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f5faf8",fontSize:12}}>
+                <span style={{color:"#555",fontWeight:600}}>{r.l}</span>
+                <span style={{fontWeight:800,color:r.c}}>{fmtRp(r.v)}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 6px",borderTop:"2px solid #e0f5f1",fontSize:14,fontWeight:900,color:"#0d9488"}}>
+              <span>Uang Sistem</span><span>{fmtRp(uangSistemBank)}</span>
+            </div>
+            {bankData?.uangLaci>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,fontWeight:700}}>
+                <span style={{color:"#555"}}>Uang Laci Fisik</span><span style={{color:"#2980b9"}}>{fmtRp(bankData.uangLaci)}</span>
+              </div>
+            )}
+            {bankData?.catatan&&<div style={{fontSize:11,color:"#aaa",margin:"6px 0"}}>📝 {bankData.catatan}</div>}
+            {bankData?.selisih!==undefined&&(
+              <div style={{marginTop:10,background:bankData.selisih===0?"#e8f8f4":bankData.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${bankData.selisih===0?"#2ecc71":bankData.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontWeight:800,fontSize:13}}>{bankData.selisih===0?"✅ Balance!":bankData.selisih>0?"📈 Lebih":"📉 Kurang"}</span>
+                <span style={{fontWeight:900,fontSize:20,color:bankData.selisih===0?"#2ecc71":bankData.selisih>0?"#f39c12":"#ff4757"}}>{bankData.selisih>0?"+":""}{fmtRp(Math.abs(bankData.selisih))}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Riwayat Transaksi Bank */}
+          <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+            <div style={{padding:"11px 15px",borderBottom:"1px solid #f0faf8",fontWeight:800,fontSize:13,color:"#1a2e2a"}}>
+              📋 Riwayat Transaksi Bank ({bankTrx.length})
+            </div>
+            {bankTrx.length===0?(
+              <div style={{textAlign:"center",color:"#ccc",padding:24,fontSize:13}}>Belum ada transaksi bank hari ini</div>
+            ):bankTrx.map((t,i)=>{
+              const isIn=t.netNominal>0;
+              return(
+                <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 15px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe"}}>
+                  <div style={{width:32,height:32,borderRadius:8,background:isIn?"#e0faf5":"#fff0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
+                    {isIn?"⬇":"⬆"}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.nama}</div>
+                    <div style={{fontSize:10,color:"#aaa",marginTop:1}}>
+                      {t.waktu}
+                      {t.feeType==="fee"&&t.fee>0&&<span style={{color:"#0d9488",fontWeight:700,marginLeft:5}}>+fee {fmtRp(t.fee)}</span>}
+                      {t.feeType==="dipotong"&&t.fee>0&&<span style={{color:"#e74c3c",fontWeight:700,marginLeft:5}}>−{fmtRp(t.fee)}</span>}
+                    </div>
+                  </div>
+                  <div style={{fontWeight:900,fontSize:13,color:isIn?"#0d9488":"#e74c3c",flexShrink:0}}>
+                    {isIn?"+":""}{fmtRp(Math.abs(t.netNominal))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          </>)}
+
         </div>
       </div>
     );
   }
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+            {[
+              {l:"Omset Bersih",  v:fmtRp(gOmset),        c:"#0d9488", bg:"linear-gradient(135deg,#0d9488,#14b8a6)", tc:"#fff"},
+              {l:"Item Terjual",  v:`${gItems} pcs`,        c:"#8e44ad", bg:"#f5eeff",                                tc:"#8e44ad"},
+              {l:"Transaksi",     v:`${group.items.length}`, c:"#2980b9", bg:"#e8f4fd",                                tc:"#2980b9"},
+            ].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"12px 15px"}}>
+                <div style={{fontWeight:900,fontSize:18,color:k.tc}}>{k.v}</div>
+                <div style={{fontSize:11,fontWeight:700,color:k.tc,opacity:.8}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Saldo & Rekap — selalu tampil walau data kosong */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+            {/* SALDO AWAL */}
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
+                🟢 Saldo Awal (Buka Shift)
+                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"—"}</div>
+              </div>
+              {saldo?.saldoApps && Object.keys(saldo.saldoApps).length>0 ? (
+                <>
+                  {Object.entries(saldo.saldoApps).map(([app,val])=>(
+                    <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
+                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                    </div>
+                  ))}
+                  {saldo.cashKembalian>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
+                      <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
+                    </div>
+                  )}
+                  {(saldo.totalSaldoApps>0)&&(
+                    <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"7px 10px",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo</span>
+                      <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
+                    </div>
+                  )}
+                </>
+              ):(
+                <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>Tidak ada catatan saldo awal</div>
+              )}
+            </div>
+
+            {/* SALDO AKHIR */}
+            <div style={{background:"#fff",borderRadius:13,border:`2px solid ${isClosed?"#ffe0e0":"#e0faf5"}`,padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:isClosed?"#e74c3c":"#aaa",marginBottom:10}}>
+                {isClosed?"🔴 Saldo Akhir (Tutup Shift)":"⏳ Shift Belum Ditutup"}
+                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuTutup||"—"}</div>
+              </div>
+              {isClosed&&saldo?.saldoAppsAkhir&&Object.keys(saldo.saldoAppsAkhir).length>0?(
+                <>
+                  {Object.entries(saldo.saldoAppsAkhir).map(([app,val])=>(
+                    <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
+                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                    </div>
+                  ))}
+                  {saldo.cashKembClose>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+                      <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
+                      <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembClose)}</span>
+                    </div>
+                  )}
+                </>
+              ):(
+                <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>{isClosed?"Tidak ada catatan saldo akhir":"Shift masih berjalan"}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Rekap Kas Akhir Shift */}
+          {isClosed&&(
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:12}}>💰 Rekap Kas Akhir Shift</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
+                {[
+                  {l:"Setor Tunai Cash",  v:saldo?.setorTunai},
+                  {l:"Hutang Pelanggan",  v:saldo?.hutang},
+                  {l:"Transaksi Pending", v:saldo?.pending},
+                  {l:"Pengeluaran",       v:saldo?.pengeluaran},
+                ].filter(r=>r.v>0).map(r=>(
+                  <div key={r.l} style={{background:"#f8fffe",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
+                    <span style={{color:"#666",fontWeight:600}}>{r.l}</span>
+                    <span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(r.v)}</span>
+                  </div>
+                ))}
+              </div>
+              {saldo?.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginTop:6}}>Note: {saldo.noteKlr}</div>}
+              {(saldo?.kasNyataSystem>0||saldo?.kasNyataFisik>0)&&(
+                <div style={{marginTop:10,display:"flex",gap:8}}>
+                  {[{l:"Kas Sistem",v:saldo.kasNyataSystem,c:"#0d9488"},{l:"Kas Fisik",v:saldo.kasNyataFisik,c:"#2980b9"}].map(r=>(
+                    <div key={r.l} style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"9px 12px",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{r.l}</span>
+                      <span style={{fontWeight:900,fontSize:14,color:r.c}}>{fmtRp(r.v)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {saldo?.selisih!==undefined&&(
+                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontWeight:800,fontSize:13}}>{saldo.selisih===0?"✅ Kas Sesuai":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}</span>
+                  <span style={{fontWeight:900,fontSize:20,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>{saldo.selisih>0?"+":""}{fmtRp(saldo.selisih)}</span>
+                </div>
+              )}
+              {saldo?.notes&&<div style={{marginTop:8,background:"#f8f8f8",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#666",fontStyle:"italic"}}>📝 {saldo.notes}</div>}
+            </div>
+          )}
 
   const exportCSV=()=>{
     const rows=[["ID","Outlet","Shift","Kasir","Waktu","Produk","Qty","Harga","Subtotal","Status","Alasan Refund"]];
