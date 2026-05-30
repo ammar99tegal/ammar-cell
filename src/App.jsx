@@ -2275,256 +2275,53 @@ function LaporanPage({ transactions, outlets, onBack }) {
         </div>
       </div>
     );
-  }
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
-            {[
-              {l:"Omset Bersih",  v:fmtRp(gOmset),        c:"#0d9488", bg:"linear-gradient(135deg,#0d9488,#14b8a6)", tc:"#fff"},
-              {l:"Item Terjual",  v:`${gItems} pcs`,        c:"#8e44ad", bg:"#f5eeff",                                tc:"#8e44ad"},
-              {l:"Transaksi",     v:`${group.items.length}`, c:"#2980b9", bg:"#e8f4fd",                                tc:"#2980b9"},
-            ].map(k=>(
-              <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"12px 15px"}}>
-                <div style={{fontWeight:900,fontSize:18,color:k.tc}}>{k.v}</div>
-                <div style={{fontSize:11,fontWeight:700,color:k.tc,opacity:.8}}>{k.l}</div>
-              </div>
-            ))}
-          </div>
+  } // end if(selectedShift)
 
-          {/* Saldo & Rekap — selalu tampil walau data kosong */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-            {/* SALDO AWAL */}
-            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
-                🟢 Saldo Awal (Buka Shift)
-                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"—"}</div>
-              </div>
-              {saldo?.saldoApps && Object.keys(saldo.saldoApps).length>0 ? (
-                <>
-                  {Object.entries(saldo.saldoApps).map(([app,val])=>(
-                    <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                      <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
-                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
-                    </div>
-                  ))}
-                  {saldo.cashKembalian>0&&(
-                    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                      <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
-                      <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembalian)}</span>
-                    </div>
-                  )}
-                  {(saldo.totalSaldoApps>0)&&(
-                    <div style={{marginTop:8,background:"#e0faf5",borderRadius:8,padding:"7px 10px",display:"flex",justifyContent:"space-between"}}>
-                      <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Total Saldo</span>
-                      <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(saldo.totalSaldoApps)}</span>
-                    </div>
-                  )}
-                </>
-              ):(
-                <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>Tidak ada catatan saldo awal</div>
-              )}
-            </div>
-
-            {/* SALDO AKHIR */}
-            <div style={{background:"#fff",borderRadius:13,border:`2px solid ${isClosed?"#ffe0e0":"#e0faf5"}`,padding:"14px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:isClosed?"#e74c3c":"#aaa",marginBottom:10}}>
-                {isClosed?"🔴 Saldo Akhir (Tutup Shift)":"⏳ Shift Belum Ditutup"}
-                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuTutup||"—"}</div>
-              </div>
-              {isClosed&&saldo?.saldoAppsAkhir&&Object.keys(saldo.saldoAppsAkhir).length>0?(
-                <>
-                  {Object.entries(saldo.saldoAppsAkhir).map(([app,val])=>(
-                    <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
-                      <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
-                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
-                    </div>
-                  ))}
-                  {saldo.cashKembClose>0&&(
-                    <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
-                      <span style={{fontSize:12,fontWeight:600,color:"#b7770d"}}>Cash Kembalian</span>
-                      <span style={{fontSize:12,fontWeight:800,color:"#b7770d"}}>{fmtRp(saldo.cashKembClose)}</span>
-                    </div>
-                  )}
-                </>
-              ):(
-                <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>{isClosed?"Tidak ada catatan saldo akhir":"Shift masih berjalan"}</div>
-              )}
-            </div>
-          </div>
-
-          {/* Rekap Kas Akhir Shift */}
-          {isClosed&&(
-            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:12}}>💰 Rekap Kas Akhir Shift</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
-                {[
-                  {l:"Setor Tunai Cash",  v:saldo?.setorTunai},
-                  {l:"Hutang Pelanggan",  v:saldo?.hutang},
-                  {l:"Transaksi Pending", v:saldo?.pending},
-                  {l:"Pengeluaran",       v:saldo?.pengeluaran},
-                ].filter(r=>r.v>0).map(r=>(
-                  <div key={r.l} style={{background:"#f8fffe",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
-                    <span style={{color:"#666",fontWeight:600}}>{r.l}</span>
-                    <span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(r.v)}</span>
-                  </div>
-                ))}
-              </div>
-              {saldo?.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginTop:6}}>Note: {saldo.noteKlr}</div>}
-              {(saldo?.kasNyataSystem>0||saldo?.kasNyataFisik>0)&&(
-                <div style={{marginTop:10,display:"flex",gap:8}}>
-                  {[{l:"Kas Sistem",v:saldo.kasNyataSystem,c:"#0d9488"},{l:"Kas Fisik",v:saldo.kasNyataFisik,c:"#2980b9"}].map(r=>(
-                    <div key={r.l} style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"9px 12px",display:"flex",justifyContent:"space-between"}}>
-                      <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{r.l}</span>
-                      <span style={{fontWeight:900,fontSize:14,color:r.c}}>{fmtRp(r.v)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {saldo?.selisih!==undefined&&(
-                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:800,fontSize:13}}>{saldo.selisih===0?"✅ Kas Sesuai":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}</span>
-                  <span style={{fontWeight:900,fontSize:20,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>{saldo.selisih>0?"+":""}{fmtRp(saldo.selisih)}</span>
-                </div>
-              )}
-              {saldo?.notes&&<div style={{marginTop:8,background:"#f8f8f8",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#666",fontStyle:"italic"}}>📝 {saldo.notes}</div>}
-            </div>
-          )}
-
-  const exportCSV=()=>{
-    const rows=[["ID","Outlet","Shift","Kasir","Waktu","Produk","Qty","Harga","Subtotal","Status","Alasan Refund"]];
-    filtered.forEach(t=>t.items.forEach(i=>
-      rows.push([t.id,outlets.find(o=>o.id===t.outletId)?.nama||"—",t.shiftNama||"—",t.kasir||"—",t.time,i.name,i.qty,i.price,i.price*i.qty,i.refunded?"REFUND":"OK",i.refundReason||""])
-    ));
-    const blob=new Blob([rows.map(r=>r.join(",")).join("\n")],{type:"text/csv"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`laporan-${today()}.csv`;a.click();
-  };
-
+  // ── MAIN LAPORAN LIST ──────────────────────────────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <SubHeader title="📋 Laporan Transaksi" onBack={onBack}
-        right={<button onClick={exportCSV} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"7px 14px",color:"#fff",fontWeight:800,fontSize:12,display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontFamily:"inherit"}}>{Ic.Export()} Export CSV</button>}
-      />
-      <div style={{padding:"14px 18px",maxWidth:940,margin:"0 auto"}}>
+      <SubHeader title="📋 Laporan Shift" onBack={onBack}/>
+      <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
 
-        {/* Filter bar */}
-        <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"13px 16px",marginBottom:14}}>
-          <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-end"}}>
-            <div style={{flex:1,minWidth:180}}>
-              <label style={{...lbl}}>Filter Outlet</label>
-              <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)} style={{...inp,padding:"7px 10px"}}>
-                <option value="all">Semua Outlet</option>
-                {outlets.map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
-              </select>
-            </div>
-            <div style={{flex:1,minWidth:180}}>
-              <label style={{...lbl}}>Filter Shift</label>
-              <select value={filterShift} onChange={e=>setFilterShift(e.target.value)} style={{...inp,padding:"7px 10px"}}>
-                <option value="all">Semua Shift</option>
-                <option value="noshift">Tanpa Shift</option>
-                {allShifts.map(s=><option key={s.id} value={s.id}>{s.nama}</option>)}
-              </select>
-            </div>
-          </div>
+        {/* Filter */}
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
+            style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff"}}>
+            <option value="all">Semua Outlet</option>
+            {outlets.map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
+          </select>
+          <select value={filterShift} onChange={e=>setFilterShift(e.target.value)}
+            style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff"}}>
+            <option value="all">Semua Shift</option>
+            {[...new Set(transactions.map(t=>t.shiftNama).filter(Boolean))].map(s=>(
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
 
-        {/* Summary */}
-        <div style={{display:"flex",gap:9,marginBottom:14}}>
-          {[
-            {l:"Total Omset",v:fmtRp(omsetTotal),c:"#0d9488",bg:"linear-gradient(135deg,#0d9488,#14b8a6)",tc:"#fff"},
-            {l:"Item Terjual",v:itemTotal+" pcs",c:"#8e44ad",bg:"#f5eeff",tc:"#8e44ad"},
-            {l:"Total Transaksi",v:filtered.length,c:"#2980b9",bg:"#e8f4fd",tc:"#2980b9"},
-          ].map(s=>(
-            <div key={s.l} style={{flex:1,background:s.bg,borderRadius:12,padding:"11px 15px"}}>
-              <div style={{fontWeight:900,fontSize:20,color:s.tc}}>{s.v}</div>
-              <div style={{fontSize:11,fontWeight:700,color:s.tc,opacity:.8}}>{s.l}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Per outlet summary */}
-        {filterOutlet==="all"&&(
-          <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"13px 16px",marginBottom:14}}>
-            <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>💰 Omset Per Outlet</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:8}}>
-              {outlets.map(o=>{
-                const ot=filtered.filter(t=>t.outletId===o.id);
-                const om=calcOmset(ot);
-                const it=ot.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
-                return (
-                  <div key={o.id} style={{background:"#f0faf8",borderRadius:10,padding:"10px 13px",border:"2px solid #e0f5f1"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:3}}>{o.nama}</div>
-                    <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(om)}</div>
-                    <div style={{fontSize:10,color:"#aaa"}}>{ot.length} trx · {it} item</div>
-                  </div>
-                );
-              })}
+        {/* Grouped shifts */}
+        {shiftGroups.filter(g=>(filterOutlet==="all"||g.outletId===filterOutlet)&&(filterShift==="all"||g.label===filterShift)).map(group=>(
+          <div key={group.key} onClick={()=>{setSelectedShift(group);setDetailTab("kasir");}}
+            style={{background:"#fff",borderRadius:13,padding:"13px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</div>
+                <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(calcOmset(group.items))}</div>
+                <div style={{fontSize:10,color:"#aaa"}}>omset bersih</div>
+              </div>
             </div>
           </div>
-        )}
-
-        {/* Transaksi grouped by shift */}
-        {filtered.length===0?(
-          <div style={{textAlign:"center",color:"#bbb",padding:50,fontSize:14}}>Tidak ada transaksi</div>
-        ):groupArr.map(group=>{
-          const gOmset=calcOmset(group.items);
-          const gItems=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
-          return (
-            <div key={group.key} style={{marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:"12px 12px 0 0",padding:"10px 15px",color:"#fff"}}>
-                <div>
-                  <span style={{fontWeight:900,fontSize:14}}>⏱ {group.label}</span>
-                  {filterOutlet==="all"&&<span style={{fontSize:11,opacity:.8,marginLeft:8}}>({group.outletNama})</span>}
-                  <span style={{fontSize:11,opacity:.8,marginLeft:8}}>{group.items.length} trx · {gItems} item</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <button onClick={()=>setSelectedShift(group)} style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.4)",borderRadius:8,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                    🔍 Detail
-                  </button>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontWeight:900,fontSize:16}}>{fmtRp(gOmset)}</div>
-                    <div style={{fontSize:10,opacity:.75}}>omset bersih</div>
-                  </div>
-                </div>
-              </div>
-              <div style={{background:"#fff",border:"2px solid #e0f5f1",borderTop:"none",borderRadius:"0 0 12px 12px",overflow:"hidden"}}>
-                {group.items.map((t,ti)=>{
-                  const rt=t.items.filter(i=>i.refunded).reduce((s,i)=>s+i.price*i.qty,0);
-                  const outletNama=outlets.find(o=>o.id===t.outletId)?.nama;
-                  return (
-                    <div key={t.id} style={{padding:"10px 13px",borderTop:ti>0?"1px solid #f0faf8":"none"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                        <div style={{display:"flex",gap:7,alignItems:"center"}}>
-                          <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>#{t.id}</span>
-                          <span style={{fontSize:11,color:"#aaa"}}>{t.time}</span>
-                          {outletNama&&<span style={{fontSize:10,background:"#e0faf5",color:"#0d9488",padding:"1px 7px",borderRadius:6,fontWeight:700}}>{outletNama}</span>}
-                          {t.kasir&&<span style={{fontSize:10,color:"#aaa"}}>({t.kasir})</span>}
-                        </div>
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontWeight:900,fontSize:14}}>{fmtRp(t.total)}</div>
-                          {rt>0&&<div style={{fontSize:10,color:"#ff4757",fontWeight:700}}>bersih:{fmtRp(t.total-rt)}</div>}
-                        </div>
-                      </div>
-                      {t.items.map(item=>(
-                        <div key={item.cartId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 8px",borderRadius:7,marginBottom:3,background:item.refunded?"#fff5f5":"#f8fffe",border:`1px solid ${item.refunded?"#ffd6d6":"#e0f5f1"}`}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <span style={{fontWeight:700,fontSize:12,color:item.refunded?"#bbb":"#1a2e2a",textDecoration:item.refunded?"line-through":"none"}}>{item.name}</span>
-                            <span style={{fontSize:11,color:"#aaa",marginLeft:6}}>×{item.qty}</span>
-                            {item.refunded&&<span style={{fontSize:10,color:"#ff4757",fontWeight:600,marginLeft:6,fontStyle:"italic"}}>"{item.refundReason}"</span>}
-                          </div>
-                          <span style={{fontWeight:700,fontSize:12,color:item.refunded?"#ccc":"#0d9488",flexShrink:0}}>{fmtRp(item.price*item.qty)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+        ))}
+        {shiftGroups.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
       </div>
     </div>
   );
 }
-
-// ── Stok Opname untuk Karyawan (komponen terpisah agar hooks benar) ──────────
 function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stocks, setStocks }) {
   const [realStocks,  setRealStocks]  = useState(()=>{ const m={}; products.forEach(p=>{m[p.id]=outletStock[p.id]??0;}); return m; });
   const [opnameSaved, setOpnameSaved] = useState(false);
