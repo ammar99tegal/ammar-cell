@@ -1110,6 +1110,32 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
   const outletStock = stocks[selectedOutlet]||{};
   const outlet      = outlets.find(o=>o.id===selectedOutlet);
 
+  // Load stock_logs dari Supabase
+  useEffect(()=>{
+    db.getStockLogs().then(rows=>{
+      const mapped = (rows||[]).map(r=>({
+        id:r.id, time:r.time||r.created_at?.substring(11,16)||"",
+        type:r.type, outletNama:r.outlet_nama||r.outletNama||"",
+        productName:r.product_name||r.productName||"",
+        qty:r.qty||0, note:r.note||"",
+      }));
+      setLog(mapped);
+    }).catch(()=>{});
+
+    // Realtime stock_logs
+    const ch = supabase.channel("stock-logs-rt")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"stock_logs"},(p)=>{
+        const r=p.new; if(!r) return;
+        setLog(prev=>[{id:r.id,time:r.time||"",type:r.type,outletNama:r.outlet_nama||"",productName:r.product_name||"",qty:r.qty||0,note:r.note||""},...prev]);
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"stock_logs"},(p)=>{
+        const id=p.old?.id; if(!id) return;
+        setLog(prev=>prev.filter(x=>x.id!==id));
+      })
+      .subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[]);
+
   const initReal = (oid)=>{
     const s={};
     Object.entries(stocks[oid]||{}).forEach(([pid,qty])=>{s[pid]=qty;});
@@ -1930,13 +1956,22 @@ function LaporanPage({ transactions, outlets, onBack }) {
   },[]);
 
   const getShiftSaldo = (shiftId) => {
-    // Coba Supabase shift_logs dulu
-    if(shiftLogs[shiftId]) return shiftLogs[shiftId];
-    // Fallback ke localStorage (shift yang belum ditutup atau data lama)
+    // Prioritaskan localStorage — closeShift() menyimpan data lengkap di sana
     try{
       const s = localStorage.getItem(`ammar_shift_saldo_${shiftId}`);
-      if(s) return JSON.parse(s);
+      if(s){
+        const parsed = JSON.parse(s);
+        // Jika localStorage punya type closed, pakai itu (data paling lengkap)
+        if(parsed.type==="closed") return parsed;
+        // Jika open di localStorage tapi closed di Supabase, gabungkan
+        if(shiftLogs[shiftId]?.type==="closed"){
+          return {...parsed, ...shiftLogs[shiftId]};
+        }
+        return parsed;
+      }
     }catch{}
+    // Fallback ke Supabase shift_logs
+    if(shiftLogs[shiftId]) return shiftLogs[shiftId];
     return null;
   };
 
