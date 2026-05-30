@@ -1886,16 +1886,17 @@ function LaporanPage({ transactions, outlets, onBack }) {
             waktuTutup:     l.end_time,
             saldoApps:      so.saldoApps || so.saldo_apps || {},
             cashKembalian:  so.cashKembalian || so.cash_kembalian || 0,
-            totalSaldoApps: so.totalSaldoApps || so.total_saldo_apps || 0,
-            saldoAppsAkhir: sc.saldoAppsC || sc.saldoAppsAkhir || sc.saldo_apps_akhir || {},
-            cashKembClose:  sc.cashKembC || sc.cashKembClose || 0,
-            setorTunai:     rekap.setorTunai || 0,
-            hutang:         rekap.hutang || 0,
-            pending:        rekap.pending || 0,
-            pengeluaran:    rekap.pengeluaran || 0,
-            noteKlr:        rekap.noteKlr || "",
-            kasNyataSystem: rekap.kasNyataSystem || sc.uangSistem || 0,
-            kasNyataFisik:  rekap.kasNyataFisik || sc.uangLaci || 0,
+            totalSaldoApps: so.totalSaldoApps || 0,
+            // saldo_close fields — match exactly what closeShift saves
+            saldoAppsAkhir: sc.saldoAppsAkhir || sc.saldoAppsC || sc.saldo_apps_akhir || {},
+            cashKembClose:  sc.cashKembClose   || sc.cashKembC  || 0,
+            setorTunai:     rekap.setorTunai    || 0,
+            hutang:         rekap.hutang        || 0,
+            pending:        rekap.pending       || 0,
+            pengeluaran:    rekap.pengeluaran   || 0,
+            noteKlr:        rekap.noteKlr       || "",
+            kasNyataSystem: rekap.kasNyataSystem || sc.kasNyataSystem || sc.uangSistem || 0,
+            kasNyataFisik:  rekap.kasNyataFisik  || sc.kasNyataFisik  || sc.uangLaci   || 0,
             selisih:        rekap.selisih ?? sc.selisih ?? 0,
             notes:          rekap.notes || sc.catatan || "",
           };
@@ -1926,14 +1927,20 @@ function LaporanPage({ transactions, outlets, onBack }) {
         (bankLogs||[]).forEach(l=>{
           const so = l.saldo_open||{};
           const sc = l.saldo_close||{};
-          bm[l.outlet_id+'_'+l.start_time?.substring(0,10)] = {
+          // Store by both id and outlet+date for flexible lookup
+          const entry = {
             id: l.id, outletId: l.outlet_id, userId: l.user_id,
             nama: l.nama, waktuBuka: l.start_time, waktuTutup: l.end_time,
-            saldoAwal: so.saldoApps||{}, cashKemb: so.cashKemb||0,
-            saldoAkhir: sc.saldoAppsC||{},
-            uangLaci: sc.uangLaci||0, uangSistem: sc.uangSistem||0,
-            selisih: sc.selisih??0, catatan: sc.catatan||'',
+            saldoAwal:  so.saldoApps||so.saldo_apps||{},
+            cashKemb:   so.cashKemb||so.cashKembalian||0,
+            saldoAkhir: sc.saldoAppsAkhir||sc.saldoAppsC||sc.saldo_apps_akhir||{},
+            uangLaci:   sc.uangLaci||0, uangSistem: sc.uangSistem||0,
+            selisih:    sc.selisih??0,  catatan: sc.catatan||'',
           };
+          bm[l.id] = entry;
+          // Also index by outlet+date
+          const dateKey = l.outlet_id+'_'+(l.start_time?.substring(0,10)||'');
+          bm[dateKey] = entry;
         });
         setBankShiftLogs(bm);
 
@@ -5679,6 +5686,7 @@ export default function App() {
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
+      {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} saldoBank={saldoBank} setSaldoBank={setSaldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
 
