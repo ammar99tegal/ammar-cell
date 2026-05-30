@@ -385,9 +385,17 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   const openAddUser  = ()=>{ setEditUser(null); setUForm({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"}); setShowUserForm(true); };
   const openEditUser = (u,k)=>{ setEditUser(k); setUForm({username:k,pass:u.pass,nama:u.nama,outletId:u.outletId||"",outletIds:u.outletIds||[],role:u.role}); setShowUserForm(true); };
   const saveUser = async ()=>{
-    if (!uForm.username.trim()||!uForm.pass||!uForm.nama) return notify("Isi semua field!","err");
+    if (!uForm.username.trim()||!uForm.nama.trim()) return notify("Isi username & nama!","err");
+    if (!editUser && !uForm.pass) return notify("Isi password!","err");
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
-    const userData = {pass:uForm.pass,nama:uForm.nama.trim(),role:uForm.role,outletId:uForm.outletId||null,outletIds:uForm.outletIds||[]};
+    const outletIds = uForm.outletIds||[];
+    const userData = {
+      pass:     uForm.pass || (editUser?users[editUser]?.pass:""),
+      nama:     uForm.nama.trim(),
+      role:     uForm.role,
+      outletId: outletIds[0]||null,  // primary outlet = first selected
+      outletIds,
+    };
     try {
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
@@ -399,7 +407,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
         n[uForm.username.toLowerCase()]=userData;
         return n;
       });
-      notify(editUser?"User diperbarui":"User ditambahkan","ok");
+      notify(editUser?"User diperbarui ✓":"User ditambahkan ✓","ok");
       setShowUserForm(false);
     } catch(e) { notify("Gagal simpan user!","err"); }
   };
@@ -482,7 +490,21 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
                       <td style={{padding:"10px 13px",fontWeight:700}}>{u.nama}</td>
                       <td style={{padding:"10px 13px"}}><span style={{background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":"#e0faf5",color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":"#0d9488",fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":"👷 Karyawan"}</span></td>
-                      <td style={{padding:"10px 13px",color:"#555",fontSize:12}}>{u.role==="monitor"?(u.outletIds?.map(id=>outlets.find(o=>o.id===id)?.nama).filter(Boolean).join(", ")||"Semua Outlet"):outletNama}</td>
+                      <td style={{padding:"10px 13px"}}>
+                        {u.role==="admin"?(
+                          <span style={{color:"#aaa",fontSize:11}}>Semua outlet</span>
+                        ):(u.outletIds||[]).length>0?(
+                          <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                            {(u.outletIds||[]).map(id=>(
+                              <span key={id} style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"1px 7px",borderRadius:20}}>
+                                {outlets.find(o=>o.id===id)?.nama?.replace("Ammar Cell ","")||id}
+                              </span>
+                            ))}
+                          </div>
+                        ):(
+                          <span style={{color:"#ccc",fontSize:11}}>Belum ditugaskan</span>
+                        )}
+                      </td>
                       <td style={{padding:"10px 13px"}}>
                         <div style={{display:"flex",gap:5}}>
                           <button onClick={()=>openEditUser(u,key)} style={{background:"#e0faf5",border:"none",borderRadius:7,padding:"5px 10px",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",gap:3,fontFamily:"inherit"}}>{Ic.Edit()} Edit</button>
@@ -515,57 +537,81 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
       {/* USER FORM */}
       {showUserForm&&(
         <Modal onClose={()=>setShowUserForm(false)} title={editUser?"✏️ Edit User":"👤 Tambah User"}>
-          <Field label="Username *" value={uForm.username} onChange={e=>setUForm(p=>({...p,username:e.target.value}))} placeholder="username (huruf kecil)..."/>
-          <Field label="Password *" value={uForm.pass} onChange={e=>setUForm(p=>({...p,pass:e.target.value}))} placeholder="password..." type="password"/>
+          <Field label="Username *" value={uForm.username} onChange={e=>setUForm(p=>({...p,username:e.target.value.toLowerCase()}))} placeholder="username (huruf kecil)..."/>
+          <Field label="Password" value={uForm.pass} onChange={e=>setUForm(p=>({...p,pass:e.target.value}))} placeholder={editUser?"Kosongkan jika tidak diubah":"Password baru..."} type="password"/>
           <Field label="Nama Lengkap *" value={uForm.nama} onChange={e=>setUForm(p=>({...p,nama:e.target.value}))} placeholder="Nama tampil..."/>
-          <div style={{marginBottom:10}}>
-            <label style={{...lbl}}>Role *</label>
-            <select value={uForm.role} onChange={e=>setUForm(p=>({...p,role:e.target.value}))} style={{...inp}}>
-              <option value="karyawan">👷 Karyawan</option>
-              <option value="admin">👑 Admin</option>
-              <option value="monitor">👁 Monitor</option>
-            </select>
-          </div>
+
+          {/* Role — tombol visual */}
           <div style={{marginBottom:14}}>
-            <label style={{...lbl}}>
-              Outlet Tugasan 
-              {uForm.role==="admin"&&<span style={{color:"#aaa",fontWeight:500}}> (opsional untuk admin)</span>}
-              {uForm.role==="monitor"&&<span style={{color:"#d97706",fontWeight:700}}> — pilih outlet yang dipantau</span>}
-            </label>
-            {uForm.role==="monitor" ? (
-              /* Multi-checklist untuk monitor */
-              <div style={{border:"2px solid #b2ede6",borderRadius:9,padding:"8px 12px",background:"#fafffe"}}>
-                {outlets.map(o=>(
-                  <label key={o.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 4px",cursor:"pointer",borderRadius:7}}>
-                    <input type="checkbox"
-                      checked={(uForm.outletIds||[]).includes(o.id)}
-                      onChange={e=>{
-                        const ids = uForm.outletIds||[];
-                        setUForm(p=>({...p,
-                          outletIds: e.target.checked ? [...ids,o.id] : ids.filter(id=>id!==o.id),
-                          outletId: "" // clear single outletId
-                        }));
-                      }}
-                      style={{width:16,height:16,accentColor:"#0d9488",cursor:"pointer"}}
-                    />
-                    <span style={{fontSize:13,fontWeight:600,color:"#1a2e2a"}}>{o.nama}</span>
-                  </label>
-                ))}
+            <label style={{...lbl}}>Role *</label>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {[
+                {k:"karyawan",icon:"👷",l:"Karyawan",bg:"#e0faf5",c:"#0d9488"},
+                {k:"admin",   icon:"👑",l:"Admin",   bg:"#f5eeff",c:"#8e44ad"},
+                {k:"monitor", icon:"👁",l:"Monitor", bg:"#fef3c7",c:"#d97706"},
+              ].map(r=>(
+                <button key={r.k} onClick={()=>setUForm(p=>({...p,role:r.k}))}
+                  style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${uForm.role===r.k?r.c:"#b2ede6"}`,background:uForm.role===r.k?r.bg:"#fff",color:uForm.role===r.k?r.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all .15s"}}>
+                  <div style={{fontSize:18,marginBottom:4}}>{r.icon}</div>
+                  <div style={{fontWeight:800}}>{r.l}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Outlet checklist — semua role kecuali admin */}
+          {uForm.role!=="admin"?(
+            <div style={{marginBottom:14}}>
+              <label style={{...lbl}}>
+                Outlet Tugasan
+                <span style={{color:uForm.role==="monitor"?"#d97706":"#0d9488",fontWeight:600,marginLeft:6,fontSize:10}}>
+                  {uForm.role==="monitor"?"— outlet yang dipantau":"— bisa pilih beberapa"}
+                </span>
+              </label>
+              <div style={{border:"2px solid #b2ede6",borderRadius:11,padding:"8px 10px",background:"#fafffe"}}>
+                {outlets.map(o=>{
+                  const checked=(uForm.outletIds||[]).includes(o.id);
+                  return(
+                    <div key={o.id} onClick={()=>{
+                      const ids=uForm.outletIds||[];
+                      setUForm(p=>({...p,outletIds:ids.includes(o.id)?ids.filter(x=>x!==o.id):[...ids,o.id]}));
+                    }}
+                      style={{display:"flex",alignItems:"center",gap:10,padding:"7px 6px",cursor:"pointer",borderRadius:8,background:checked?"#e0faf5":"transparent",marginBottom:2,transition:"background .15s"}}>
+                      <div style={{width:20,height:20,borderRadius:6,flexShrink:0,border:`2px solid ${checked?"#0d9488":"#b2ede6"}`,background:checked?"#0d9488":"#fff",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
+                        {checked&&<span style={{color:"#fff",fontSize:11,fontWeight:900,lineHeight:1}}>✓</span>}
+                      </div>
+                      <span style={{fontSize:13,fontWeight:checked?700:500,color:checked?"#0d9488":"#1a2e2a"}}>{o.nama}</span>
+                    </div>
+                  );
+                })}
                 {(uForm.outletIds||[]).length===0&&(
-                  <div style={{fontSize:11,color:"#aaa",marginTop:4}}>* Kosong = pantau semua outlet</div>
+                  <div style={{fontSize:11,color:"#aaa",textAlign:"center",padding:"4px 0",marginTop:2}}>* Belum ada outlet dipilih</div>
                 )}
               </div>
-            ) : (
-              /* Single dropdown untuk karyawan & admin */
-              <select value={uForm.outletId} onChange={e=>setUForm(p=>({...p,outletId:e.target.value}))} style={{...inp}}>
-                <option value="">— Tidak ada / Admin —</option>
-                {outlets.map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
-              </select>
-            )}
-          </div>
+              {(uForm.outletIds||[]).length>0&&(
+                <div style={{marginTop:7,background:"#e0faf5",borderRadius:9,padding:"6px 11px",display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+                  <span style={{fontSize:10,color:"#0d9488",fontWeight:700}}>Dipilih:</span>
+                  {(uForm.outletIds||[]).map(id=>(
+                    <span key={id} style={{background:"#fff",color:"#0d9488",fontWeight:700,fontSize:10,padding:"1px 8px",borderRadius:20,border:"1px solid #0d948833"}}>
+                      {outlets.find(o=>o.id===id)?.nama?.replace("Ammar Cell ","")||id}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ):(
+            <div style={{background:"#f5eeff",border:"1px solid #8e44ad33",borderRadius:10,padding:"10px 13px",marginBottom:14,fontSize:12,color:"#8e44ad",fontWeight:600}}>
+              👑 Admin punya akses ke semua outlet otomatis.
+            </div>
+          )}
+
           <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setShowUserForm(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
-            <button onClick={saveUser} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>setShowUserForm(false)}
+              style={{width:44,height:44,borderRadius:10,border:"2px solid #b2ede6",background:"#fff",color:"#aaa",fontSize:18,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              ✕
+            </button>
+            <button onClick={saveUser}
+              style={{flex:1,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:12,color:"#fff",fontWeight:900,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
               {editUser?"💾 Simpan":"✓ Tambah User"}
             </button>
           </div>
