@@ -643,6 +643,19 @@ function CategoryEditRow({ cat, onSave }) {
   );
 }
 
+// ── StokPageInner — reuse StokPage body dengan tab dari parent ──────────────
+function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutlet, notify }) {
+  // Render StokPage dengan outlet dan tab yang sudah dipilih dari parent
+  return (
+    <StokPage
+      products={products} outlets={outlets}
+      stocks={stocks} setStocks={setStocks}
+      onBack={null} notify={notify}
+      _initTab={tab} _initOutlet={selectedOutlet}
+    />
+  );
+}
+
 // ── StokAktifTab — kelola produk aktif per outlet ──────────────────────────────
 function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifProds, notify }) {
   const [saved,  setSaved]  = useState(false);
@@ -1136,17 +1149,17 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
       )}
       {confirmDel&&<ConfirmModal msg={`Hapus produk "${confirmDel.name}"?`} onConfirm={()=>del(confirmDel.id)} onCancel={()=>setConfirmDel(null)}/>}
 
-      {/* ── STOK TABS (Opname/Masuk/Keluar/Transfer/Log) — delegasi ke StokInner ── */}
+      {/* ── STOK TABS (Opname/Masuk/Keluar/Transfer/Log) ── */}
       {["opname","masuk","keluar","transfer","log"].includes(mainTab)&&(
-        <StokInner
-          tab={mainTab} setTab={setMainTab}
+        <StokPageInner
+          tab={mainTab}
           products={products} outlets={outlets}
           stocks={stocks} setStocks={setStocks}
           selectedOutlet={selOutlet} notify={notify}
         />
       )}
 
-      {/* ── TAB AKTIF — pilih produk aktif per outlet ── */}
+      {/* ── TAB AKTIF ── */}
       {mainTab==="aktif"&&(
         <StokAktifTab
           products={products} outlets={outlets}
@@ -1221,9 +1234,9 @@ function LogRow({ l, i, onEdit, onDelete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // STOK (per outlet, stok masuk/keluar/transfer)
 // ══════════════════════════════════════════════════════════════════════════════
-function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
-  const [selectedOutlet, setSelectedOutlet] = useState(outlets[0]?.id||"");
-  const [tab,            setTab]            = useState("opname");
+function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initTab, _initOutlet }) {
+  const [selectedOutlet, setSelectedOutlet] = useState(_initOutlet||outlets[0]?.id||"");
+  const [tab,            setTab]            = useState(_initTab||"opname");
   const [search,         setSearch]         = useState("");
   const [log,            setLog]            = useState([]);
   const [form,           setForm]           = useState({productId:"",qty:"",note:""});
@@ -1459,18 +1472,21 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <SubHeader title="📦 Stok" onBack={onBack}/>
+      {onBack&&<SubHeader title="📦 Stok" onBack={onBack}/>}
       <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
 
-        {/* Pilih outlet */}
+        {/* Pilih outlet — hanya tampil saat standalone */}
+        {onBack&&(
         <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#555"}}>Outlet:</span>
           {outlets.map(o=>(
             <button key={o.id} onClick={()=>{setSelectedOutlet(o.id);initReal(o.id);}} style={{padding:"6px 14px",borderRadius:20,border:"2px solid",borderColor:selectedOutlet===o.id?"#0d9488":"#b2ede6",background:selectedOutlet===o.id?"#0d9488":"#fff",color:selectedOutlet===o.id?"#fff":"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{o.nama}</button>
           ))}
         </div>
+        )}
 
-        {/* Bulk action buttons */}
+        {/* Bulk action buttons — hanya di standalone */}
+        {onBack&&(
         <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
           <button onClick={()=>startBulk("masuk")} style={{background:"linear-gradient(135deg,#27ae60,#2ecc71)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
             ⬇ Masuk Massal
@@ -1482,13 +1498,16 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
             ⇄ Transfer Massal
           </button>
         </div>
+        )}
 
-        {/* Tabs */}
+        {/* Tabs — hanya di standalone */}
+        {onBack&&(
         <div style={{display:"flex",gap:0,marginBottom:14,background:"#fff",borderRadius:12,padding:4,border:"2px solid #e0f5f1",width:"fit-content",flexWrap:"wrap"}}>
           {[{k:"opname",l:"📋 Opname"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"},{k:"transfer",l:"⇄ Transfer"},{k:"log",l:"📜 Log"}].map(t=>(
             <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"7px 14px",borderRadius:9,border:"none",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:tab===t.k?"#0d9488":"transparent",color:tab===t.k?"#fff":"#888",transition:"all .15s"}}>{t.l}</button>
           ))}
         </div>
+        )}
 
         {/* OPNAME TAB */}
         {tab==="opname"&&(
