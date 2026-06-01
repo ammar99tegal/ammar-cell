@@ -739,7 +739,7 @@ function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifP
 // ══════════════════════════════════════════════════════════════════════════════
 // PRODUK (Master Produk — tanpa stok, stok ada di per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
-function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack, notify }) {
+function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack, notify, prodOrderRoot, setProdOrderRoot }) {
   const [mainTab,      setMainTab]     = useState("produk"); // produk|opname|masuk|keluar|transfer|aktif|log
   const [selOutlet,    setSelOutlet]   = useState(outlets?.[0]?.id||"");
   const [aktifProds,   setAktifProds]  = useState({});     // {outletId: [productId,...]}
@@ -757,7 +757,8 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   const [importText,  setImportText]  = useState("");
   const [importError, setImportError] = useState("");
   const [saving,      setSaving]      = useState(false);
-  const [prodOrder,   setProdOrder]   = useState(null); // null = urutan default
+  // prodOrder local — init dari prodOrderRoot (App root) agar sudah terisi saat buka
+  const [prodOrder,   setProdOrder]   = useState(prodOrderRoot||null);
   const [sortProd,    setSortProd]    = useState("default");
   const dragProdIdx  = useRef(null);
   const [draggingProd, setDraggingProd] = useState(null);
@@ -767,23 +768,29 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   useEffect(()=>{
     dbProductOrder.getOrder().then(ord=>{
       if(ord && ord.length>0){
-        setProdOrder(ord.map(x=>x.productId));
+        const mapped = ord.map(x=>x.productId||x);
+        setProdOrder(mapped);
+        if(setProdOrderRoot) setProdOrderRoot(mapped);
       }
     }).catch(()=>{});
     // Realtime listener product_order
     const ch = supabase.channel('product-order-rt')
       .on('postgres_changes',{event:'*',schema:'public',table:'product_order'},()=>{
-        // Reload urutan saat ada perubahan dari device lain
         dbProductOrder.getOrder().then(ord=>{
-          if(ord && ord.length>0) setProdOrder(ord.map(x=>x.productId));
+          if(ord && ord.length>0){
+            const mapped = ord.map(x=>x.productId||x);
+            setProdOrder(mapped);
+            if(setProdOrderRoot) setProdOrderRoot(mapped);
+          }
         }).catch(()=>{});
       }).subscribe();
     return ()=>supabase.removeChannel(ch);
   },[]);
 
-  // Simpan urutan ke Supabase (debounced 800ms agar tidak terlalu sering)
+  // Simpan urutan ke Supabase (debounced 800ms)
   const saveProdOrder = (newOrder) => {
     setProdOrder(newOrder);
+    if(setProdOrderRoot) setProdOrderRoot(newOrder); // sync ke App root langsung
     if(saveOrderTimer.current) clearTimeout(saveOrderTimer.current);
     saveOrderTimer.current = setTimeout(()=>{
       dbProductOrder.saveOrder(newOrder).catch(e=>console.warn('saveProdOrder:',e));
@@ -2878,7 +2885,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ══════════════════════════════════════════════════════════════════════════════
 // KASIR APP (per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify }) {
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
@@ -5556,6 +5563,7 @@ export default function App() {
   const [toast,       setToast]         = useState(null);
   const [loading,     setLoading]       = useState(true);
   const [dbError,     setDbError]       = useState(null);
+  const [prodOrder,   setProdOrderRoot] = useState(null); // urutan global produk
 
   // Simpan user ke localStorage setiap kali berubah
   const setUser = (u) => {
@@ -5681,13 +5689,15 @@ export default function App() {
   // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
   const reloadData = async () => {
     try {
-      const [prods, outs, stks, txs, usrs] = await Promise.all([
+      const [prods, outs, stks, txs, usrs, prodOrd] = await Promise.all([
         db.getProducts(), db.getOutlets(), db.getStocks(),
         db.getTransactions(), db.getUsers(),
+        dbProductOrder.getOrder().catch(()=>[]),
       ]);
       setProductsState(prods);
       setOutletsState(outs);
       setStocksState(stks);
+      if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
       setTx(txs.map(t=>({
         id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
         shiftNama:t.shift_nama, kasir:t.kasir,
@@ -5717,12 +5727,14 @@ export default function App() {
         const usrs         = await db.getUsers().catch(()=>({}));
         const saldoList    = await dbSaldo.getSaldoApps().catch(()=>[]);
         const saldoBankList= await dbSaldoBank.getSaldoBankApps().catch(()=>[]);
+        const prodOrd      = await dbProductOrder.getOrder().catch(()=>[]);
 
         clearTimeout(timeout);
 
         setProductsState(prods);
         setOutletsState(outs);
         setStocksState(stks);
+        if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
         if (Array.isArray(saldoList) && saldoList.length > 0) setSaldoApps(saldoList);
         if (Array.isArray(saldoBankList) && saldoBankList.length > 0) setSaldoBank(saldoBankList);
         setTx(txs.map(t=>({
@@ -6051,12 +6063,12 @@ export default function App() {
       </div>
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
-      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
-      {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
+      {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} saldoBank={saldoBank} setSaldoBank={setSaldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
 
