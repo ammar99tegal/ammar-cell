@@ -2426,12 +2426,20 @@ function LaporanPage({ transactions, outlets, onBack }) {
             ))}
           </div>
 
-          {/* Saldo & Rekap — selalu tampil walau data kosong */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-            {/* SALDO AWAL */}
-            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
-                🟢 Saldo Awal (Buka Shift)
+          {/* Info untuk shift lama tanpa data saldo */}
+          {!saldo&&isClosed&&(
+            <div style={{background:"#fff8e1",border:"1px solid #f39c1233",borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"center"}}>
+              <span style={{fontSize:20}}>📋</span>
+              <div>
+                <div style={{fontWeight:800,fontSize:13,color:"#b7770d"}}>Data Saldo Tidak Tersedia</div>
+                <div style={{fontSize:11,color:"#888",marginTop:2,lineHeight:1.5}}>
+                  Shift ini terjadi sebelum sistem pencatatan saldo aktif. 
+                  Data omset dan transaksi tetap tersedia di bawah.
+                </div>
+              </div>
+            </div>
+          )}
+          {saldo&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
                 <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"—"}</div>
               </div>
               {saldo?.saldoApps && Object.keys(saldo.saldoApps).length>0 ? (
@@ -2485,7 +2493,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                 <div style={{fontSize:12,color:"#ccc",padding:"8px 0",textAlign:"center"}}>{isClosed?"Tidak ada catatan saldo akhir":"Shift masih berjalan"}</div>
               )}
             </div>
-          </div>
+          </div>)}
 
           {/* Rekap Kas Akhir Shift */}
           {isClosed&&(
