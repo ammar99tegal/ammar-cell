@@ -196,19 +196,48 @@ export const dbShift = {
     }
   },
   closeShift: async (shift, outletId, userId, closeData) => {
-    // Insert ke shift_logs
-    await supabase.from('shift_logs').insert({
-      id: shift.id, outlet_id: outletId, user_id: userId,
-      nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
-      saldo_open: { saldoApps: shift.saldoApps, cashKembalian: shift.cashKembalian, totalSaldoApps: shift.totalSaldoApps },
-      saldo_close: { saldoAppsAkhir: closeData.saldoAppsClose, cashKembClose: closeData.cashKembC, waktuTutup: closeData.waktuTutup },
-      rekap: { setorTunai: closeData.setorTunai, hutang: closeData.hutang, pending: closeData.pending,
-               pengeluaran: closeData.pengeluaran, noteKlr: closeData.noteKlr,
-               kasNyataSystem: closeData.kasNyataSystem, kasNyataFisik: closeData.kasNyataFisik,
-               selisih: closeData.selisih, notes: closeData.notes }
-    }).catch(e => console.error('closeShift log error:', e.message))
-    // Hapus SEMUA active_shifts untuk outlet ini (by outlet_id, bukan by id)
-    await supabase.from('active_shifts').delete().eq('outlet_id', outletId).catch(console.error)
+    // Insert ke shift_logs dengan error handling lengkap
+    const insertData = {
+      id: shift.id,
+      outlet_id: outletId,
+      user_id: userId,
+      nama: shift.nama,
+      start_time: shift.start,
+      end_time: closeData.waktuTutup,
+      saldo_open: {
+        saldoApps: shift.saldoApps || {},
+        cashKembalian: shift.cashKembalian || 0,
+        totalSaldoApps: shift.totalSaldoApps || 0
+      },
+      saldo_close: {
+        saldoAppsAkhir: closeData.saldoAppsClose || {},
+        cashKembClose: closeData.cashKembC || 0,
+        waktuTutup: closeData.waktuTutup
+      },
+      rekap: {
+        setorTunai: closeData.setorTunai || 0,
+        hutang: closeData.hutang || 0,
+        pending: closeData.pending || 0,
+        pengeluaran: closeData.pengeluaran || 0,
+        noteKlr: closeData.noteKlr || '',
+        kasNyataSystem: closeData.kasNyataSystem || 0,
+        kasNyataFisik: closeData.kasNyataFisik || 0,
+        selisih: closeData.selisih || 0,
+        notes: closeData.notes || ''
+      }
+    };
+
+    const { error: insertError } = await supabase.from('shift_logs').insert(insertData);
+    if (insertError) {
+      console.error('closeShift INSERT error:', insertError.message, insertError.code, JSON.stringify(insertError));
+      // Coba upsert sebagai fallback jika id sudah ada
+      const { error: upsertError } = await supabase.from('shift_logs').upsert(insertData);
+      if (upsertError) {
+        console.error('closeShift UPSERT fallback error:', upsertError.message);
+      }
+    }
+    // Hapus dari active_shifts
+    await supabase.from('active_shifts').delete().eq('outlet_id', outletId).catch(console.error);
   },
   getShiftLogs: async (outletId = null) => {
     let q = supabase.from('shift_logs').select('*').order('created_at', { ascending: false }).limit(200)
