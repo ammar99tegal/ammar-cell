@@ -3057,13 +3057,11 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     loadShift();
   },[selectedOutlet]);
 
-  // Wrapper setShift — simpan ke localStorage + Supabase
+  // Wrapper setShift — TIDAK simpan ke localStorage (Supabase = source of truth)
   const setShift = (val) => {
     setShiftState(val);
-    try{
-      if(val) localStorage.setItem(shiftKey, JSON.stringify(val));
-      else    localStorage.removeItem(shiftKey);
-    }catch{}
+    // Hanya hapus localStorage kalau null (tutup shift)
+    if(!val) try{ localStorage.removeItem(shiftKey); }catch{}
   };
 
   // Wrapper setCart — auto simpan ke localStorage
@@ -3164,7 +3162,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const closeShift = async (data) => {
     const closeData={...data, waktuTutup:now()};
-    // Update localStorage saldo
+    // Simpan data closing ke localStorage untuk laporan
     try{
       const shiftSaldoKey=`ammar_shift_saldo_${shift?.id}`;
       const existing=JSON.parse(localStorage.getItem(shiftSaldoKey)||"{}");
@@ -3178,15 +3176,23 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         selisih:data.selisih||0, notes:data.notes||"",
       }));
     }catch{}
-    // Hapus shiftKey dari localStorage juga — pastikan bersih
+
+    // CRITICAL: Set null DULU sebelum hapus Supabase
+    setShiftState(null);
     try{ localStorage.removeItem(shiftKey); }catch{}
-    // Simpan ke Supabase dan tunggu selesai sebelum set null
+    setShowShift(false);
+
+    // Hapus dari Supabase — paksa hapus SEMUA active_shifts outlet ini
     try{
       await dbShift.closeShift(shift, selectedOutlet, user.username, closeData);
     }catch(e){ console.error("closeShift error:", e); }
-    setShift(null);
-    setShowShift(false);
-    notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");
+
+    // Double-check: hapus manual jika masih ada
+    try{
+      await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
+    }catch{}
+
+    notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`, data.selisih===0?"ok":"warn");
   };
 
   const calcOmset=list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
