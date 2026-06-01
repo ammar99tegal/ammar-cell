@@ -3,8 +3,6 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://acxqzupnlkqvmsitolzj.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHF6dXBubGtxdm1zaXRvbHpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODA4OTAsImV4cCI6MjA5NTM1Njg5MH0.qRZ3HkhMYmFOUk1y6sh0aJujSBNJ-Ov1G8Q5s_h6_qU'
 
-
-
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ── PRODUCTS & CORE ───────────────────────────────────────────────────────────
@@ -172,15 +170,30 @@ export const dbShift = {
     return { id: d.id, nama: d.nama, start: d.start_time, outletId: d.outlet_id, ...d.saldo_data }
   },
   openShift: async (shift, outletId, userId) => {
-    // Hapus shift lama untuk outlet ini dulu (pastikan tidak ada duplikat)
-    await supabase.from('active_shifts').delete().eq('outlet_id', outletId).catch(()=>{})
-    // Insert shift baru
-    const { error } = await supabase.from('active_shifts').insert({
-      id: shift.id, outlet_id: outletId, user_id: userId,
-      nama: shift.nama, start_time: shift.start,
-      saldo_data: { saldoApps: shift.saldoApps, cashKembalian: shift.cashKembalian, totalSaldoApps: shift.totalSaldoApps, waktuBuka: shift.start }
-    })
-    if (error) console.error('openShift error:', error.message)
+    // Upsert by outlet_id — replace kalau sudah ada, insert kalau belum
+    const { error } = await supabase.from('active_shifts').upsert({
+      id: shift.id,
+      outlet_id: outletId,
+      user_id: userId,
+      nama: shift.nama,
+      start_time: shift.start,
+      saldo_data: {
+        saldoApps: shift.saldoApps,
+        cashKembalian: shift.cashKembalian,
+        totalSaldoApps: shift.totalSaldoApps,
+        waktuBuka: shift.start
+      }
+    }, { onConflict: 'outlet_id' })
+    if (error) {
+      console.error('openShift error:', error.message)
+      // Fallback: hapus lama lalu insert baru
+      await supabase.from('active_shifts').delete().eq('outlet_id', outletId)
+      await supabase.from('active_shifts').insert({
+        id: shift.id, outlet_id: outletId, user_id: userId,
+        nama: shift.nama, start_time: shift.start,
+        saldo_data: { saldoApps: shift.saldoApps, cashKembalian: shift.cashKembalian, totalSaldoApps: shift.totalSaldoApps, waktuBuka: shift.start }
+      })
+    }
   },
   closeShift: async (shift, outletId, userId, closeData) => {
     // Insert ke shift_logs
