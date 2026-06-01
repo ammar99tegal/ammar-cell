@@ -237,7 +237,9 @@ export const dbShift = {
       }
     }
     // Hapus dari active_shifts
-    await supabase.from('active_shifts').delete().eq('outlet_id', outletId).catch(console.error);
+    try {
+      await supabase.from('active_shifts').delete().eq('outlet_id', outletId);
+    } catch(e) { console.error('delete active_shifts error:', e); }
   },
   getShiftLogs: async (outletId = null) => {
     let q = supabase.from('shift_logs').select('*').order('created_at', { ascending: false }).limit(200)
@@ -291,7 +293,7 @@ export const dbBank = {
       id: shift.id, outlet_id: outletId, user_id: userId,
       nama: shift.nama, start_time: shift.start,
       saldo_data: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb, totalSaldo: shift.totalSaldo }
-    }, { onConflict: 'id' }).catch(console.error)
+    }, { onConflict: 'id' })
   },
   closeShift: async (shift, outletId, userId, closeData) => {
     await supabase.from('bank_shift_logs').insert({
@@ -299,8 +301,8 @@ export const dbBank = {
       nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
       saldo_open: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb },
       saldo_close: { saldoAppsC: closeData.saldoAppsC, uangLaci: closeData.uangLaci, uangSistem: closeData.uangSistem, selisih: closeData.selisih, catatan: closeData.catatan },
-    }).catch(console.error)
-    await supabase.from('bank_shifts').delete().eq('id', shift.id).catch(console.error)
+    })
+    try{ await supabase.from('bank_shifts').delete().eq('id', shift.id); }catch(e){ console.error(e); }
   },
 }
 
