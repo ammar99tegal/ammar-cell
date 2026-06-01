@@ -3194,9 +3194,11 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const closeShift = async (data) => {
     const closeData={...data, waktuTutup:now()};
-    // Simpan data closing ke localStorage untuk laporan
+    const shiftRef = shift; // simpan referensi SEBELUM di-null
+
+    // Simpan ke localStorage untuk laporan
     try{
-      const shiftSaldoKey=`ammar_shift_saldo_${shift?.id}`;
+      const shiftSaldoKey=`ammar_shift_saldo_${shiftRef?.id}`;
       const existing=JSON.parse(localStorage.getItem(shiftSaldoKey)||"{}");
       localStorage.setItem(shiftSaldoKey, JSON.stringify({
         ...existing, type:"closed", waktuTutup:closeData.waktuTutup,
@@ -3209,20 +3211,18 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       }));
     }catch{}
 
-    // CRITICAL: Set null DULU sebelum hapus Supabase
+    // Simpan ke Supabase DULU (pakai shiftRef bukan shift)
+    try{
+      await dbShift.closeShift(shiftRef, selectedOutlet, user.username, closeData);
+    }catch(e){ console.error("closeShift error:", e); }
+
+    // Paksa hapus active_shifts
+    try{ await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet); }catch{}
+
+    // Baru set null UI
     setShiftState(null);
     try{ localStorage.removeItem(shiftKey); }catch{}
     setShowShift(false);
-
-    // Hapus dari Supabase — paksa hapus SEMUA active_shifts outlet ini
-    try{
-      await dbShift.closeShift(shift, selectedOutlet, user.username, closeData);
-    }catch(e){ console.error("closeShift error:", e); }
-
-    // Double-check: hapus manual jika masih ada
-    try{
-      await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
-    }catch{}
 
     notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`, data.selisih===0?"ok":"warn");
   };
