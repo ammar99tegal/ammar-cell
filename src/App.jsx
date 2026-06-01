@@ -2422,42 +2422,70 @@ function LaporanPage({ transactions, outlets, onBack }) {
           {isClosed&&(
             <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
               <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:12}}>💰 Rekap Kas Akhir Shift</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
-                {[
-                  {l:"Setor Tunai Cash",  v:saldo?.setorTunai},
-                  {l:"Hutang Pelanggan",  v:saldo?.hutang},
-                  {l:"Transaksi Pending", v:saldo?.pending},
-                  {l:"Pengeluaran",       v:saldo?.pengeluaran},
-                ].filter(r=>r.v>0).map(r=>(
-                  <div key={r.l} style={{background:"#f8fffe",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
-                    <span style={{color:"#666",fontWeight:600}}>{r.l}</span>
-                    <span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(r.v)}</span>
-                  </div>
-                ))}
+
+              {/* Estimasi kas sistem dari omset */}
+              <div style={{background:"#f0faf8",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+                <div style={{fontWeight:700,fontSize:11,color:"#6b7280",marginBottom:6}}>📊 Estimasi Uang Masuk</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
+                  {[
+                    {l:"Omset Shift",       v:gOmset,               c:"#0d9488"},
+                    {l:"Saldo Awal (Apps)", v:saldo?.totalSaldoApps||Object.values(saldo?.saldoApps||{}).reduce((s,v)=>s+(+v||0),0)+(saldo?.cashKembalian||0), c:"#2980b9"},
+                    {l:"Setor Tunai",       v:saldo?.setorTunai||0,  c:"#e74c3c"},
+                    {l:"Pengeluaran",       v:saldo?.pengeluaran||0, c:"#e74c3c"},
+                  ].map(r=>(
+                    <div key={r.l} style={{background:"#fff",borderRadius:8,padding:"7px 10px",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{color:"#666",fontWeight:600,fontSize:11}}>{r.l}</span>
+                      <span style={{fontWeight:800,color:r.c,fontSize:12}}>{fmtRp(r.v)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              {saldo?.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginTop:6}}>Note: {saldo.noteKlr}</div>}
-              {(saldo?.kasNyataSystem>0||saldo?.kasNyataFisik>0)&&(
-                <div style={{marginTop:10,display:"flex",gap:8}}>
-                  {[{l:"Kas Sistem",v:saldo.kasNyataSystem,c:"#0d9488"},{l:"Kas Fisik",v:saldo.kasNyataFisik,c:"#2980b9"}].map(r=>(
-                    <div key={r.l} style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"9px 12px",display:"flex",justifyContent:"space-between"}}>
-                      <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{r.l}</span>
-                      <span style={{fontWeight:900,fontSize:14,color:r.c}}>{fmtRp(r.v)}</span>
+
+              {/* Pengeluaran detail */}
+              {(saldo?.hutang>0||saldo?.pending>0)&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10,fontSize:12}}>
+                  {[{l:"Hutang Pelanggan",v:saldo?.hutang},{l:"Transaksi Pending",v:saldo?.pending}].filter(r=>r.v>0).map(r=>(
+                    <div key={r.l} style={{background:"#fff0f0",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{color:"#666",fontWeight:600}}>{r.l}</span>
+                      <span style={{fontWeight:800,color:"#e74c3c"}}>{fmtRp(r.v)}</span>
                     </div>
                   ))}
                 </div>
               )}
+              {saldo?.noteKlr&&<div style={{fontSize:11,color:"#aaa",marginBottom:8,background:"#f8f8f8",borderRadius:7,padding:"5px 10px"}}>📝 Catatan: {saldo.noteKlr}</div>}
+
+              {/* Kas Sistem vs Fisik */}
+              {(saldo?.kasNyataSystem>0||saldo?.kasNyataFisik>0)&&(
+                <div style={{marginTop:4,display:"flex",gap:8}}>
+                  {[{l:"Kas Sistem (Estimasi)",v:saldo.kasNyataSystem,c:"#0d9488"},{l:"Kas Fisik (Dihitung)",v:saldo.kasNyataFisik,c:"#2980b9"}].map(r=>(
+                    <div key={r.l} style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:11,fontWeight:700,color:"#555"}}>{r.l}</span>
+                      <span style={{fontWeight:900,fontSize:15,color:r.c}}>{fmtRp(r.v)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Balance BOX */}
               {saldo?.selisih!==undefined&&(
-                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"12px 16px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:saldo.selisih!==0?6:0}}>
-                    <span style={{fontWeight:800,fontSize:14}}>{saldo.selisih===0?"✅ Kas Sesuai / Balance!":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}</span>
-                    <span style={{fontWeight:900,fontSize:24,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
+                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:12,padding:"14px 16px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:saldo.selisih!==0?8:0}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:14,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
+                        {saldo.selisih===0?"✅ Kas Sesuai / Balance!":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}
+                      </div>
+                      <div style={{fontSize:11,color:"#888",marginTop:2}}>
+                        Sistem: {fmtRp(saldo.kasNyataSystem||0)} · Fisik: {fmtRp(saldo.kasNyataFisik||0)}
+                      </div>
+                    </div>
+                    <span style={{fontWeight:900,fontSize:28,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
                       {saldo.selisih===0?"✓":(saldo.selisih>0?"+":"")+fmtRp(saldo.selisih)}
                     </span>
                   </div>
                   {saldo.selisih!==0&&(
-                    <div style={{fontSize:11,color:saldo.selisih>0?"#b7770d":"#c0392b",fontWeight:600}}>
+                    <div style={{fontSize:11,color:saldo.selisih>0?"#b7770d":"#c0392b",fontWeight:600,background:"rgba(0,0,0,.04)",borderRadius:7,padding:"6px 10px"}}>
                       {saldo.selisih>0
-                        ?"Uang fisik lebih dari sistem — ada kelebihan kas atau input salah"
+                        ?"Uang fisik lebih dari sistem — ada kelebihan kas atau input kurang tepat"
                         :"Uang fisik kurang dari sistem — ada selisih yang perlu diperiksa"}
                     </div>
                   )}
@@ -2948,12 +2976,9 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           try{ localStorage.removeItem(shiftKey); }catch{}
         }
       }catch(e){
-        console.log("Shift load:", e);
-        // Fallback ke localStorage jika Supabase error
-        try{
-          const s=localStorage.getItem(shiftKey);
-          if(s) setShiftState(JSON.parse(s));
-        }catch{}
+        console.log("Shift load error:", e);
+        // Jika Supabase error (offline), tetap null — jangan pakai localStorage
+        setShiftState(null);
       } finally {
         setShiftLoading(false);
       }
@@ -3066,7 +3091,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     notify("Shift dibuka!","ok");
   };
 
-  const closeShift=data=>{
+  const closeShift = async (data) => {
     const closeData={...data, waktuTutup:now()};
     // Update localStorage saldo
     try{
@@ -3082,8 +3107,12 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         selisih:data.selisih||0, notes:data.notes||"",
       }));
     }catch{}
-    // Simpan ke Supabase shift_logs dengan data lengkap
-    dbShift.closeShift(shift, selectedOutlet, user.username, closeData).catch(()=>{});
+    // Hapus shiftKey dari localStorage juga — pastikan bersih
+    try{ localStorage.removeItem(shiftKey); }catch{}
+    // Simpan ke Supabase dan tunggu selesai sebelum set null
+    try{
+      await dbShift.closeShift(shift, selectedOutlet, user.username, closeData);
+    }catch(e){ console.error("closeShift error:", e); }
     setShift(null);
     setShowShift(false);
     notify(`Shift ditutup. Selisih: ${fmtRp(data.selisih)}`,data.selisih===0?"ok":"warn");
