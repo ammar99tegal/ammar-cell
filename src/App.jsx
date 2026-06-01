@@ -3032,23 +3032,33 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const [refundModal, setRefundModal] = useState(null);
   const [refundReason,setRefundReason]= useState("");
 
-  // ── Load shift dari Supabase saat pertama buka — jika tidak ada di Supabase, anggap closed ──
+  // ── Load shift dari Supabase — cross-check dengan shift_logs ──────────────
   useEffect(()=>{
     setShiftLoading(true);
     const loadShift = async () => {
       try{
+        // Ambil shift aktif dari active_shifts
         const s = await dbShift.getActiveShift(selectedOutlet, user.username);
         if(s){
-          setShiftState(s);
-          try{ localStorage.setItem(shiftKey, JSON.stringify(s)); }catch{}
+          // Verifikasi: cek apakah shift ini sudah ada di shift_logs (sudah ditutup)
+          const { data: logCheck } = await supabase
+            .from('shift_logs').select('id').eq('id', s.id).limit(1);
+          if(logCheck && logCheck.length > 0){
+            // Shift ini sudah di-close tapi active_shifts belum terhapus — paksa hapus
+            console.warn('Stale active_shift found, cleaning up:', s.id);
+            await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
+            setShiftState(null);
+            try{ localStorage.removeItem(shiftKey); }catch{}
+          } else {
+            // Benar-benar aktif
+            setShiftState(s);
+          }
         } else {
-          // Tidak ada shift aktif di Supabase → hapus localStorage & set null
           setShiftState(null);
           try{ localStorage.removeItem(shiftKey); }catch{}
         }
       }catch(e){
         console.log("Shift load error:", e);
-        // Jika Supabase error (offline), tetap null — jangan pakai localStorage
         setShiftState(null);
       } finally {
         setShiftLoading(false);
