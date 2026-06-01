@@ -163,20 +163,26 @@ export const dbSaldoBank = {
 // ── SHIFT KASIR ───────────────────────────────────────────────────────────────
 export const dbShift = {
   getActiveShift: async (outletId, userId) => {
+    // Cari shift aktif berdasarkan outlet_id saja — 1 shift aktif per outlet
     const { data, error } = await supabase.from('active_shifts').select('*')
-      .eq('outlet_id', outletId).eq('user_id', userId).single()
-    if (error) return null
-    return data ? { id: data.id, nama: data.nama, start: data.start_time, outletId: data.outlet_id, ...data.saldo_data } : null
+      .eq('outlet_id', outletId).limit(1)
+    if (error || !data?.length) return null
+    const d = data[0];
+    return { id: d.id, nama: d.nama, start: d.start_time, outletId: d.outlet_id, ...d.saldo_data }
   },
   openShift: async (shift, outletId, userId) => {
-    const { error } = await supabase.from('active_shifts').upsert({
+    // Hapus shift lama untuk outlet ini dulu (pastikan tidak ada duplikat)
+    await supabase.from('active_shifts').delete().eq('outlet_id', outletId).catch(()=>{})
+    // Insert shift baru
+    const { error } = await supabase.from('active_shifts').insert({
       id: shift.id, outlet_id: outletId, user_id: userId,
       nama: shift.nama, start_time: shift.start,
       saldo_data: { saldoApps: shift.saldoApps, cashKembalian: shift.cashKembalian, totalSaldoApps: shift.totalSaldoApps, waktuBuka: shift.start }
-    }, { onConflict: 'id' })
+    })
     if (error) console.error('openShift error:', error.message)
   },
   closeShift: async (shift, outletId, userId, closeData) => {
+    // Insert ke shift_logs
     await supabase.from('shift_logs').insert({
       id: shift.id, outlet_id: outletId, user_id: userId,
       nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
@@ -187,7 +193,8 @@ export const dbShift = {
                kasNyataSystem: closeData.kasNyataSystem, kasNyataFisik: closeData.kasNyataFisik,
                selisih: closeData.selisih, notes: closeData.notes }
     }).catch(e => console.error('closeShift log error:', e.message))
-    await supabase.from('active_shifts').delete().eq('id', shift.id).catch(console.error)
+    // Hapus SEMUA active_shifts untuk outlet ini (by outlet_id, bukan by id)
+    await supabase.from('active_shifts').delete().eq('outlet_id', outletId).catch(console.error)
   },
   getShiftLogs: async (outletId = null) => {
     let q = supabase.from('shift_logs').select('*').order('created_at', { ascending: false }).limit(200)
@@ -231,9 +238,10 @@ export const dbBank = {
   },
   getActiveShift: async (outletId, userId) => {
     const { data, error } = await supabase.from('bank_shifts').select('*')
-      .eq('outlet_id', outletId).eq('user_id', userId).single()
-    if (error) return null
-    return data ? { id: data.id, nama: data.nama, start: data.start_time, outletId: data.outlet_id, ...data.saldo_data } : null
+      .eq('outlet_id', outletId).limit(1)
+    if (error || !data?.length) return null
+    const d = data[0];
+    return { id: d.id, nama: d.nama, start: d.start_time, outletId: d.outlet_id, ...d.saldo_data }
   },
   openShift: async (shift, outletId, userId) => {
     await supabase.from('bank_shifts').upsert({
@@ -282,7 +290,37 @@ export const dbStokOrder = {
   },
 }
 
-// ── CASHFLOW ENTRIES ──────────────────────────────────────────────────────────
+// ── PRODUK AKTIF PER OUTLET ───────────────────────────────────────────────────
+export const dbAktifProduk = {
+  // Load semua produk aktif untuk outlet tertentu
+  getAktif: async (outletId) => {
+    const { data, error } = await supabase.from('outlet_product_aktif')
+      .select('product_id').eq('outlet_id', outletId)
+    if (error) { console.warn('getAktif:', error.message); return null; } // null = belum ada setting
+    return data.map(r => String(r.product_id))
+  },
+  // Simpan semua produk aktif untuk outlet (replace semua)
+  saveAktif: async (outletId, productIds) => {
+    // Hapus semua dulu
+    await supabase.from('outlet_product_aktif').delete().eq('outlet_id', outletId)
+    if (!productIds.length) return
+    const rows = productIds.map(pid => ({ outlet_id: outletId, product_id: String(pid) }))
+    const { error } = await supabase.from('outlet_product_aktif').insert(rows)
+    if (error) console.error('saveAktif:', error.message)
+  },
+  // Load semua outlet sekaligus
+  getAllAktif: async () => {
+    const { data, error } = await supabase.from('outlet_product_aktif').select('*')
+    if (error) { console.warn('getAllAktif:', error.message); return {}; }
+    const result = {}
+    data.forEach(r => {
+      const oid = r.outlet_id
+      if (!result[oid]) result[oid] = []
+      result[oid].push(String(r.product_id))
+    })
+    return result
+  },
+}
 export const dbCashflow = {
   getEntries: async () => {
     const { data, error } = await supabase.from('cashflow_entries').select('*')
