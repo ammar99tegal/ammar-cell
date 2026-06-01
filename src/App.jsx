@@ -2129,12 +2129,24 @@ function LaporanPage({ transactions, outlets, onBack }) {
         <div style={{padding:"14px 18px",maxWidth:860,margin:"0 auto"}}>
 
           {/* ── STATUS SHIFT ── */}
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
             <div style={{background:isActive?"#e8f8f4":"#f0f0f0",border:`2px solid ${isActive?"#2ecc71":"#aaa"}`,borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:800,color:isActive?"#2ecc71":"#888",display:"flex",alignItems:"center",gap:5}}>
               {isActive?"🟢 SHIFT MASIH AKTIF":"⚫ SHIFT SUDAH DITUTUP"}
             </div>
             {saldo?.waktuBuka&&<span style={{fontSize:11,color:"#aaa"}}>Buka: {saldo.waktuBuka}</span>}
             {saldo?.waktuTutup&&<span style={{fontSize:11,color:"#aaa"}}>Tutup: {saldo.waktuTutup}</span>}
+            {/* Badge balance */}
+            {isClosed&&saldo?.selisih!==undefined&&(
+              <div style={{
+                background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",
+                border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#e74c3c"}`,
+                borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:800,
+                color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#e74c3c",
+                display:"flex",alignItems:"center",gap:5
+              }}>
+                {saldo.selisih===0?"✅ KAS BALANCE":saldo.selisih>0?"📈 LEBIH "+fmtRp(saldo.selisih):"📉 KURANG "+fmtRp(Math.abs(saldo.selisih))}
+              </div>
+            )}
           </div>
 
           {/* ══ TAB KASIR ══ */}
@@ -2244,9 +2256,20 @@ function LaporanPage({ transactions, outlets, onBack }) {
                 </div>
               )}
               {saldo?.selisih!==undefined&&(
-                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontWeight:800,fontSize:13}}>{saldo.selisih===0?"✅ Kas Sesuai":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}</span>
-                  <span style={{fontWeight:900,fontSize:20,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>{saldo.selisih>0?"+":""}{fmtRp(saldo.selisih)}</span>
+                <div style={{marginTop:10,background:saldo.selisih===0?"#e8f8f4":saldo.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"12px 16px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:saldo.selisih!==0?6:0}}>
+                    <span style={{fontWeight:800,fontSize:14}}>{saldo.selisih===0?"✅ Kas Sesuai / Balance!":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}</span>
+                    <span style={{fontWeight:900,fontSize:24,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
+                      {saldo.selisih===0?"✓":(saldo.selisih>0?"+":"")+fmtRp(saldo.selisih)}
+                    </span>
+                  </div>
+                  {saldo.selisih!==0&&(
+                    <div style={{fontSize:11,color:saldo.selisih>0?"#b7770d":"#c0392b",fontWeight:600}}>
+                      {saldo.selisih>0
+                        ?"Uang fisik lebih dari sistem — ada kelebihan kas atau input salah"
+                        :"Uang fisik kurang dari sistem — ada selisih yang perlu diperiksa"}
+                    </div>
+                  )}
                 </div>
               )}
               {saldo?.notes&&<div style={{marginTop:8,background:"#f8f8f8",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#666",fontStyle:"italic"}}>📝 {saldo.notes}</div>}
@@ -2477,12 +2500,16 @@ function LaporanPage({ transactions, outlets, onBack }) {
             const outletId = transactions.find(t=>t.shiftId===g.key)?.outletId;
             return (filterOutlet==="all"||outletId===filterOutlet)&&
                    (filterShift==="all"||g.label===filterShift||g.key===filterShift);
-          }).map(group=>(
+          }).map(group=>{
+            const saldoCard = getShiftSaldo(group.key);
+            const isClosedCard = saldoCard?.type==="closed"||!!saldoCard?.waktuTutup;
+            const selisihCard = isClosedCard && saldoCard?.selisih!==undefined ? saldoCard.selisih : null;
+            return (
             <div key={group.key} onClick={()=>{setSelectedShift(group);setDetailTab("kasir");}}
-              style={{background:"#fff",borderRadius:13,padding:"13px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
+              style={{background:"#fff",borderRadius:13,padding:"13px 16px",marginBottom:10,border:`2px solid ${selisihCard!==null&&selisihCard!==0?"#f39c1255":"#e0f5f1"}`,cursor:"pointer",transition:"all .2s"}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=selisihCard!==null&&selisihCard!==0?"#f39c1255":"#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
                   <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</div>
                   <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
@@ -2492,8 +2519,17 @@ function LaporanPage({ transactions, outlets, onBack }) {
                   <div style={{fontSize:10,color:"#aaa"}}>omset bersih</div>
                 </div>
               </div>
+              {/* Balance badge */}
+              {selisihCard!==null&&(
+                <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:5,background:selisihCard===0?"#e8f8f4":selisihCard>0?"#fffbe6":"#fff0f0",borderRadius:20,padding:"3px 11px",border:`1px solid ${selisihCard===0?"#2ecc71":selisihCard>0?"#f39c12":"#ff4757"}`}}>
+                  <span style={{fontSize:11,fontWeight:800,color:selisihCard===0?"#2ecc71":selisihCard>0?"#f39c12":"#ff4757"}}>
+                    {selisihCard===0?"✅ Balance":(selisihCard>0?"📈 Lebih ":"📉 Kurang ")+fmtRp(Math.abs(selisihCard))}
+                  </span>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
           {groupArr.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
         </>)}
 
