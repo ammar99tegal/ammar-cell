@@ -2238,10 +2238,19 @@ function LaporanPage({ transactions, outlets, onBack }) {
         // Load bank transactions untuk mapping per shift
         const allBankTrx = await dbBank.getTransactions().catch(()=>[]);
         const btm={};
+        const normD = (d) => {
+          if(!d) return '';
+          if(d.includes('-')) return d.substring(0,10);
+          const p=d.split('/');
+          if(p.length===3) return `${p[2]}-${String(p[1]).padStart(2,'0')}-${String(p[0]).padStart(2,'0')}`;
+          return d;
+        };
         allBankTrx.forEach(t=>{
-          const key = t.outletId+'_'+(t.tgl||'');
+          const key    = t.outletId+'_'+(t.tgl||'');
+          const keyISO = t.outletId+'_'+normD(t.tgl||'');
           if(!btm[key]) btm[key]=[];
           btm[key].push(t);
+          if(keyISO!==key){ if(!btm[keyISO]) btm[keyISO]=[]; btm[keyISO].push(t); }
         });
         setBankTrxMap(btm);
 
@@ -2292,11 +2301,24 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const isActive = !isClosed;
 
     // Bank data untuk shift ini
-    const outletId = group.items[0]?.outletId;
+    const outletId = group.items[0]?.outletId || group.outletId;
     const tglShift = group.items[0]?.date||'';
-    const bankKey  = outletId+'_'+tglShift;
-    const bankData = bankShiftLogs[bankKey];
-    const bankTrx  = bankTrxMap[bankKey]||[];
+    // Normalize tanggal: "30/5/2026" → "2026-05-30" agar match dengan bankShiftLogs key
+    const normDate = (d) => {
+      if(!d) return '';
+      if(d.includes('-')) return d.substring(0,10); // sudah ISO
+      const parts = d.split('/');
+      if(parts.length===3){
+        const [day,month,year] = parts;
+        return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      }
+      return d;
+    };
+    const tglISO   = normDate(tglShift);
+    const bankKey  = outletId+'_'+tglISO;
+    // Also try with id format in case transactions store dates differently
+    const bankData = bankShiftLogs[bankKey] || bankShiftLogs[outletId+'_'+tglShift];
+    const bankTrx  = bankTrxMap[bankKey] || bankTrxMap[outletId+'_'+tglShift] || [];
     const bankMasuk  = bankTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
     const bankKeluar = bankTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
     const uangSistemBank = (bankData?.cashKemb||0) + bankMasuk - bankKeluar;
@@ -2623,11 +2645,41 @@ function LaporanPage({ transactions, outlets, onBack }) {
                 <span style={{color:"#555"}}>Uang Laci Fisik</span><span style={{color:"#2980b9"}}>{fmtRp(bankData.uangLaci)}</span>
               </div>
             )}
-            {bankData?.catatan&&<div style={{fontSize:11,color:"#aaa",margin:"6px 0"}}>📝 {bankData.catatan}</div>}
-            {bankData?.selisih!==undefined&&(
-              <div style={{marginTop:10,background:bankData.selisih===0?"#e8f8f4":bankData.selisih>0?"#fffbe6":"#fff0f0",border:`2px solid ${bankData.selisih===0?"#2ecc71":bankData.selisih>0?"#f39c12":"#ff4757"}`,borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontWeight:800,fontSize:13}}>{bankData.selisih===0?"✅ Balance!":bankData.selisih>0?"📈 Lebih":"📉 Kurang"}</span>
-                <span style={{fontWeight:900,fontSize:20,color:bankData.selisih===0?"#2ecc71":bankData.selisih>0?"#f39c12":"#ff4757"}}>{bankData.selisih>0?"+":""}{fmtRp(Math.abs(bankData.selisih))}</span>
+            {bankData?.catatan&&<div style={{fontSize:11,color:"#aaa",margin:"6px 0",background:"#f8f8f8",borderRadius:7,padding:"5px 10px"}}>📝 {bankData.catatan}</div>}
+
+            {/* Balance BOX Bank */}
+            {bankData?.uangLaci>0&&(()=>{
+              const selB = bankData.uangLaci - uangSistemBank;
+              return (
+                <div style={{marginTop:10,background:selB===0?"#e8f8f4":selB>0?"#fffbe6":"#fff0f0",border:`2px solid ${selB===0?"#2ecc71":selB>0?"#f39c12":"#ff4757"}`,borderRadius:13,padding:"14px 16px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:selB!==0?8:0}}>
+                    <div>
+                      <div style={{fontWeight:900,fontSize:15,color:selB===0?"#2ecc71":selB>0?"#f39c12":"#ff4757"}}>
+                        {selB===0?"✅ Balance!":selB>0?"📈 Uang Lebih":"📉 Uang Kurang"}
+                      </div>
+                      <div style={{fontSize:11,color:"#888",marginTop:2}}>
+                        Sistem: {fmtRp(uangSistemBank)} · Fisik: {fmtRp(bankData.uangLaci)}
+                      </div>
+                    </div>
+                    <span style={{fontWeight:900,fontSize:28,color:selB===0?"#2ecc71":selB>0?"#f39c12":"#ff4757"}}>
+                      {selB===0?"✓":(selB>0?"+":"")+fmtRp(selB)}
+                    </span>
+                  </div>
+                  {selB!==0&&(
+                    <div style={{fontSize:11,color:selB>0?"#b7770d":"#c0392b",fontWeight:600,background:"rgba(0,0,0,.04)",borderRadius:8,padding:"6px 10px"}}>
+                      {selB>0?"Uang laci lebih dari sistem — ada kelebihan atau input kurang tepat"
+                             :"Uang laci kurang dari sistem — ada selisih yang perlu diperiksa"}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {/* Jika belum ada data closing bank, tampilkan estimasi */}
+            {!bankData?.uangLaci&&bankTrx.length>0&&(
+              <div style={{marginTop:10,background:"#e8f4fd",border:"2px solid #2980b933",borderRadius:10,padding:"10px 14px"}}>
+                <div style={{fontWeight:800,fontSize:12,color:"#2980b9",marginBottom:4}}>📊 Estimasi Uang Sistem</div>
+                <div style={{fontWeight:900,fontSize:18,color:"#2980b9"}}>{fmtRp(uangSistemBank)}</div>
+                <div style={{fontSize:11,color:"#888",marginTop:2}}>Cash kembalian + masuk − keluar (belum ada data closing)</div>
               </div>
             )}
           </div>
