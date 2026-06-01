@@ -2334,12 +2334,18 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const saldo=getShiftSaldo(group.key);
 
     // Shift dianggap CLOSED jika:
-    // 1. Ada di shiftLogs dengan type closed / waktuTutup
-    // 2. ATAU tidak ada di active_shifts (sudah dihapus dari active_shifts)
+    // 1. Ada di shift_logs dengan type closed / waktuTutup
+    // 2. ATAU: tidak ada di shiftLogs sama sekali (shift lama sebelum sistem ini)
+    // 3. ATAU: ada di shiftLogs tapi type open DAN shift ini ada di active_shifts
     const shiftInLogs = shiftLogs[group.key];
-    const isClosed = (saldo?.type==="closed") || !!saldo?.waktuTutup || 
-                     (shiftInLogs?.type==="closed") || !!shiftInLogs?.waktuTutup;
-    const isActive = !isClosed;
+    const isInActiveShifts = shiftInLogs?.type === "open"; // masih aktif di active_shifts
+
+    const isClosed = 
+      (saldo?.type==="closed") || !!saldo?.waktuTutup ||   // punya data closing
+      (shiftInLogs?.type==="closed") || !!shiftInLogs?.waktuTutup || // di shift_logs sebagai closed
+      (!shiftInLogs && !saldo);  // tidak ada data sama sekali = shift lama = anggap closed
+
+    const isActive = isInActiveShifts && !saldo?.type; // aktif hanya jika benar di active_shifts
 
     // Bank data untuk shift ini
     const outletId = group.items[0]?.outletId || group.outletId;
@@ -2814,7 +2820,11 @@ function LaporanPage({ transactions, outlets, onBack }) {
                    (filterShift==="all"||g.label===filterShift||g.key===filterShift);
           }).map(group=>{
             const saldoCard = getShiftSaldo(group.key);
-            const isClosedCard = saldoCard?.type==="closed"||!!saldoCard?.waktuTutup;
+            const shiftCardInLogs = shiftLogs[group.key];
+            const isClosedCard = 
+              (saldoCard?.type==="closed") || !!saldoCard?.waktuTutup ||
+              (shiftCardInLogs?.type==="closed") || !!shiftCardInLogs?.waktuTutup ||
+              (!shiftCardInLogs && !saldoCard); // shift lama = anggap closed
             const selisihCard = isClosedCard && saldoCard?.selisih!==undefined ? saldoCard.selisih : null;
             return (
             <div key={group.key} onClick={()=>{setSelectedShift(group);setDetailTab("kasir");}}
