@@ -2185,9 +2185,12 @@ function LaporanPage({ transactions, outlets, onBack }) {
         });
 
         // Load active shifts (belum ditutup) dari active_shifts
-        const { data: activeShifts } = await supabase
-          .from('active_shifts').select('*').catch(()=>({data:[]}));
-        (activeShifts||[]).forEach(s=>{
+        let activeShifts = [];
+        try {
+          const {data:asd} = await supabase.from('active_shifts').select('*');
+          activeShifts = asd||[];
+        }catch{}
+        activeShifts.forEach(s=>{
           const sd = s.saldo_data || {};
           m[s.id] = {
             type:"open",
@@ -2203,8 +2206,12 @@ function LaporanPage({ transactions, outlets, onBack }) {
         setShiftLogs(m);
 
         // Load bank shift logs
-        const {data:bankLogs} = await supabase.from('bank_shift_logs').select('*')
-          .order('created_at',{ascending:false}).limit(200).catch(()=>({data:[]}));
+        let bankLogs = [];
+        try {
+          const {data:bld} = await supabase.from('bank_shift_logs').select('*')
+            .order('created_at',{ascending:false}).limit(200);
+          bankLogs = bld||[];
+        }catch{}
         const bm={};
         (bankLogs||[]).forEach(l=>{
           const so = l.saldo_open||{};
@@ -5198,8 +5205,11 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
         const allBankTrx = await dbBank.getTransactions();
         setBankTrxList(allBankTrx);
         // Load reset logs
-        const {data:rlogs} = await supabase.from('reset_logs').select('*').order('created_at',{ascending:false}).limit(30).catch(()=>({data:[]}));
-        setResetLog(rlogs||[]);
+        try {
+          const {data:rlogs} = await supabase.from('reset_logs').select('*')
+            .order('created_at',{ascending:false}).limit(30);
+          setResetLog(rlogs||[]);
+        }catch{}
       } catch(e){ console.error('MonitorPage load error:',e); }
       setLoading(false);
     };
@@ -5207,8 +5217,10 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
 
     const chShift = supabase.channel('monitor-shifts')
       .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},async()=>{
-        const {data} = await supabase.from('active_shifts').select('*').catch(()=>({data:[]}));
-        setKasirShifts(data||[]);
+        try{
+          const {data} = await supabase.from('active_shifts').select('*');
+          setKasirShifts(data||[]);
+        }catch{}
       }).subscribe();
 
     const chTrx = supabase.channel('monitor-trx')
