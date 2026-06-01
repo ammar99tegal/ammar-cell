@@ -248,10 +248,9 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"bank",     icon:Ic.Cash(22),   label:"Bank",               desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"monitor",  icon:Ic.Dashboard(),label:"Monitor Live",        desc:"Pantau kasir & bank realtime", color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"cashflow", icon:Ic.Dashboard(),label:"Cashflow Manager",    desc:"Pantau arus kas & saran bisnis",color:"#27ae60",bg:"#e8f8f0", roles:["admin"]},
-    {id:"produk",   icon:Ic.Produk(),   label:"Manajemen Produk",   desc:"Tambah, edit & hapus produk",  color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
+    {id:"produk",   icon:Ic.Produk(),   label:"Produk & Stok",      desc:"Produk, stok, opname & aktif",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),   label:"Manajemen Outlet",   desc:"Kelola outlet & kasir",        color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
     {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Aplikasi",     desc:"Setting saldo kasir & bank",   color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
-    {id:"stok",     icon:Ic.Stock(),    label:"Stok",               desc:"Stok masuk, keluar & transfer",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"dashboard",icon:Ic.Dashboard(),label:"Dashboard",          desc:"Pantau omset & performa",      color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
     {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"laporan",  icon:Ic.Laporan(),  label:"Laporan",            desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
@@ -644,10 +643,93 @@ function CategoryEditRow({ cat, onSave }) {
   );
 }
 
+// ── StokAktifTab — kelola produk aktif per outlet ──────────────────────────────
+function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifProds, notify }) {
+  const [saved,  setSaved]  = useState(false);
+  const [search, setSearch] = useState("");
+
+  const outletAktif = aktifProds[selectedOutlet] || products.map(p=>String(p.id));
+  const isAktif = id => outletAktif.includes(String(id));
+  const toggle  = id => {
+    setAktifProds(prev=>({
+      ...prev,
+      [selectedOutlet]: isAktif(id)
+        ? outletAktif.filter(x=>x!==String(id))
+        : [...outletAktif, String(id)]
+    }));
+  };
+  const filtered = products.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase()));
+  const toggleAll = () => {
+    const allIds = filtered.map(p=>String(p.id));
+    const allOn  = allIds.every(id=>outletAktif.includes(id));
+    setAktifProds(prev=>({...prev,[selectedOutlet]: allOn ? outletAktif.filter(id=>!allIds.includes(id)) : [...new Set([...outletAktif,...allIds])]}));
+  };
+
+  const aktifCount = outletAktif.length;
+  const outlet = outlets?.find(o=>o.id===selectedOutlet);
+  const save = () => { setSaved(true); setTimeout(()=>setSaved(false),2000); notify("Produk aktif disimpan ✓","ok"); };
+
+  return (
+    <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+        {[
+          {l:`Aktif — ${outlet?.nama?.replace("Ammar Cell ","")||""}`,v:`${aktifCount}/${products.length}`,c:"#27ae60",bg:"#e8f8f0"},
+          {l:"Nonaktif",v:products.length-aktifCount,c:"#e74c3c",bg:"#fff0f0"},
+          {l:"Total Produk",v:products.length,c:"#2980b9",bg:"#e8f4fd"},
+        ].map(k=>(
+          <div key={k.l} style={{background:k.bg,borderRadius:11,padding:"11px 14px"}}>
+            <div style={{fontWeight:900,fontSize:18,color:k.c}}>{k.v}</div>
+            <div style={{fontSize:10,fontWeight:700,color:k.c,opacity:.8,marginTop:2}}>{k.l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:"#fff8e1",border:"1px solid #f39c1233",borderRadius:10,padding:"8px 13px",marginBottom:10,fontSize:11,color:"#b7770d",fontWeight:600}}>
+        💡 Produk <b>aktif</b> tampil di kasir outlet ini. Produk <b>nonaktif</b> tersembunyi saat transaksi.
+      </div>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cari produk..."
+        style={{width:"100%",padding:"8px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+      <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+        <div onClick={toggleAll} style={{display:"flex",alignItems:"center",padding:"9px 16px",borderBottom:"1px solid #e0f5f1",background:"#e0faf5",cursor:"pointer"}}>
+          <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${filtered.every(p=>isAktif(p.id))?"#0d9488":"#b2ede6"}`,background:filtered.every(p=>isAktif(p.id))?"#0d9488":"#fff",display:"flex",alignItems:"center",justifyContent:"center",marginRight:10,flexShrink:0}}>
+            {filtered.every(p=>isAktif(p.id))&&<span style={{color:"#fff",fontSize:11,fontWeight:900,lineHeight:1}}>✓</span>}
+          </div>
+          <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>Pilih / Batalkan Semua ({filtered.length})</span>
+        </div>
+        {filtered.map((p,i)=>{
+          const on=isAktif(p.id);
+          return (
+            <div key={p.id} onClick={()=>toggle(p.id)}
+              style={{display:"flex",alignItems:"center",padding:"9px 16px",borderTop:"1px solid #f0faf8",background:on?"#f8fffd":i%2===0?"#fff":"#fafffe",cursor:"pointer",transition:"background .1s"}}
+              onMouseEnter={e=>e.currentTarget.style.background=on?"#edfaf5":"#f0faf8"}
+              onMouseLeave={e=>e.currentTarget.style.background=on?"#f8fffd":i%2===0?"#fff":"#fafffe"}>
+              <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${on?"#0d9488":"#b2ede6"}`,background:on?"#0d9488":"#fff",display:"flex",alignItems:"center",justifyContent:"center",marginRight:12,flexShrink:0,transition:"all .15s"}}>
+                {on&&<span style={{color:"#fff",fontSize:11,fontWeight:900,lineHeight:1}}>✓</span>}
+              </div>
+              <div style={{flex:1,fontWeight:on?700:500,fontSize:13,color:on?"#1a2e2a":"#aaa"}}>{p.name}</div>
+              <span style={{background:"#e0faf515",color:"#0d9488",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,marginRight:10}}>{p.category}</span>
+              <span style={{background:on?"#27ae6015":"#f0f0f0",color:on?"#27ae60":"#aaa",fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:20,minWidth:60,textAlign:"center"}}>
+                {on?"✅ Aktif":"○ Nonaktif"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{marginTop:12,display:"flex",justifyContent:"flex-end"}}>
+        <button onClick={save} style={{background:saved?"#27ae60":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:11,padding:"11px 28px",color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"background .3s"}}>
+          {saved?"✅ Tersimpan!":"💾 Simpan Perubahan"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PRODUK (Master Produk — tanpa stok, stok ada di per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
-function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }) {
+function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack, notify }) {
+  const [mainTab,      setMainTab]     = useState("produk"); // produk|opname|masuk|keluar|transfer|aktif|log
+  const [selOutlet,    setSelOutlet]   = useState(outlets?.[0]?.id||"");
+  const [aktifProds,   setAktifProds]  = useState({});     // {outletId: [productId,...]}
   const [showModal,   setShowModal]   = useState(false);
   const [editTarget,  setEditTarget]  = useState(null);
   const [form,        setForm]        = useState({name:"",barcode:"",category:"",price:"",modal:""});
@@ -664,7 +746,8 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
   const [saving,      setSaving]      = useState(false);
   const [prodOrder,   setProdOrder]   = useState(null); // null = urutan default
   const [sortProd,    setSortProd]    = useState("default");
-  const dragProdIdx = useRef(null);
+  const dragProdIdx  = useRef(null);
+  const [draggingProd, setDraggingProd] = useState(null);
   const saveOrderTimer = useRef(null);
 
   // Load urutan produk dari Supabase + realtime
@@ -806,7 +889,36 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <SubHeader title="🛍️ Manajemen Produk" onBack={onBack}
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.3)"}}>
+        <div style={{padding:"0 18px",minHeight:50,display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>📦 Produk & Stok</div>
+          {mainTab==="produk"&&(
+            <button onClick={()=>setShowModal(true)} style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.4)",borderRadius:9,padding:"6px 14px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Produk</button>
+          )}
+        </div>
+        {/* Outlet selector — hanya tab stok */}
+        {["opname","masuk","keluar","transfer","aktif","log"].includes(mainTab)&&(
+          <div style={{background:"rgba(0,0,0,.1)",padding:"5px 18px",display:"flex",gap:7,overflowX:"auto"}}>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.7)",flexShrink:0,paddingTop:3}}>Outlet:</span>
+            {(outlets||[]).map(o=>(
+              <button key={o.id} onClick={()=>setSelOutlet(o.id)}
+                style={{padding:"3px 12px",borderRadius:20,border:`2px solid ${selOutlet===o.id?"#fff":"rgba(255,255,255,.3)"}`,background:selOutlet===o.id?"rgba(255,255,255,.25)":"transparent",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
+                {o.nama}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* Tabs */}
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)",overflowX:"auto"}}>
+          {[{k:"produk",l:"🛍️ Produk"},{k:"opname",l:"📋 Opname"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"},{k:"transfer",l:"⇄ Transfer"},{k:"aktif",l:"☑ Aktif"},{k:"log",l:"📜 Log"}].map(t=>(
+            <button key={t.k} onClick={()=>setMainTab(t.k)}
+              style={{padding:"9px 14px",border:"none",borderBottom:`3px solid ${mainTab===t.k?"#fff":"transparent"}`,background:"transparent",color:mainTab===t.k?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
         right={
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <button onClick={()=>setEditCats(p=>!p)} style={{background:editCats?"#fff":"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:editCats?"#0d9488":"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Kategori</button>
@@ -894,8 +1006,8 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
         </Modal>
       )}
 
-      {/* ── NORMAL VIEW ── */}
-      {!bulkMode&&(
+      {/* ── NORMAL VIEW (Produk tab) ── */}
+      {!bulkMode&&mainTab==="produk"&&(
       <div style={{padding:"14px 18px",maxWidth:920,margin:"0 auto"}}>
 
         {/* Edit Kategori Panel */}
@@ -956,21 +1068,21 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
               {fp.map((p,i)=>(
                 <tr key={p.id}
                   draggable
-                  onDragStart={()=>{dragProdIdx.current=i;}}
-                  onDragOver={e=>{
-                    e.preventDefault();
+                  onDragStart={()=>{ dragProdIdx.current=i; setDraggingProd(i); }}
+                  onDragEnter={()=>{
                     if(dragProdIdx.current===null||dragProdIdx.current===i) return;
                     const next=[...fp];
                     const [moved]=next.splice(dragProdIdx.current,1);
                     next.splice(i,0,moved);
                     dragProdIdx.current=i;
-                    setSortProd("default"); // reset sort saat drag
+                    setSortProd("default");
                     saveProdOrder(next.map(p=>String(p.id)));
                   }}
-                  onDragEnd={()=>{dragProdIdx.current=null;}}
-                  style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#f0fdfb"}
-                  onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#fafffe"}>
+                  onDragOver={e=>e.preventDefault()}
+                  onDragEnd={()=>{ dragProdIdx.current=null; setDraggingProd(null); }}
+                  style={{borderTop:"1px solid #f0faf8",background:draggingProd===i?"#d0f5ee":i%2===0?"#fff":"#fafffe",cursor:"grab",opacity:draggingProd===i?0.7:1,boxShadow:draggingProd===i?"0 4px 12px rgba(13,148,136,.2)":"none",transition:"background .1s"}}
+                  onMouseEnter={e=>{ if(draggingProd===null) e.currentTarget.style.background="#f0fdfb"; }}
+                  onMouseLeave={e=>{ if(draggingProd===null) e.currentTarget.style.background=i%2===0?"#fff":"#fafffe"; }}>
                   <td style={{padding:"9px 12px",color:"#ccc",fontWeight:600}}>{i+1}</td>
                   <td style={{padding:"9px 6px",color:"#b2ede6",fontSize:16,cursor:"grab",userSelect:"none",textAlign:"center"}}>⠿</td>
                   <td style={{padding:"9px 12px",fontWeight:800}}>{p.name}</td>
@@ -1023,6 +1135,26 @@ function ProdukPage({ products, setProducts, stocks, setStocks, onBack, notify }
         </Modal>
       )}
       {confirmDel&&<ConfirmModal msg={`Hapus produk "${confirmDel.name}"?`} onConfirm={()=>del(confirmDel.id)} onCancel={()=>setConfirmDel(null)}/>}
+
+      {/* ── STOK TABS (Opname/Masuk/Keluar/Transfer/Log) — delegasi ke StokInner ── */}
+      {["opname","masuk","keluar","transfer","log"].includes(mainTab)&&(
+        <StokInner
+          tab={mainTab} setTab={setMainTab}
+          products={products} outlets={outlets}
+          stocks={stocks} setStocks={setStocks}
+          selectedOutlet={selOutlet} notify={notify}
+        />
+      )}
+
+      {/* ── TAB AKTIF — pilih produk aktif per outlet ── */}
+      {mainTab==="aktif"&&(
+        <StokAktifTab
+          products={products} outlets={outlets}
+          selectedOutlet={selOutlet}
+          aktifProds={aktifProds} setAktifProds={setAktifProds}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }
@@ -1106,6 +1238,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
   const [sortField,      setSortField]      = useState("nama");
   const [stokAdminOrder, setStokAdminOrder] = useState(null);
   const dragStokAdminIdx = useRef(null);
+  const [draggingStokAdmin, setDraggingStokAdmin] = useState(null);
 
   const outletStock = stocks[selectedOutlet]||{};
   const outlet      = outlets.find(o=>o.id===selectedOutlet);
@@ -1391,10 +1524,18 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify }) {
                     return (
                       <tr key={p.id}
                         draggable
-                        onDragStart={()=>{dragStokAdminIdx.current=i;}}
-                        onDragOver={e=>{e.preventDefault();if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i)return;const ord=filteredProds.map(x=>String(x.id));const[mv]=ord.splice(dragStokAdminIdx.current,1);ord.splice(i,0,mv);dragStokAdminIdx.current=i;setStokAdminOrder(ord);}}
-                        onDragEnd={()=>{dragStokAdminIdx.current=null;}}
-                        style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}>
+                        onDragStart={()=>{dragStokAdminIdx.current=i; setDraggingStokAdmin(i);}}
+                        onDragEnter={()=>{
+                          if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i) return;
+                          const ord=filteredProds.map(x=>String(x.id));
+                          const[mv]=ord.splice(dragStokAdminIdx.current,1);
+                          ord.splice(i,0,mv);
+                          dragStokAdminIdx.current=i;
+                          setStokAdminOrder(ord);
+                        }}
+                        onDragOver={e=>e.preventDefault()}
+                        onDragEnd={()=>{dragStokAdminIdx.current=null; setDraggingStokAdmin(null);}}
+                        style={{borderTop:"1px solid #f0faf8",background:draggingStokAdmin===i?"#d0f5ee":i%2===0?"#fff":"#fafffe",cursor:"grab",opacity:draggingStokAdmin===i?0.7:1,transition:"background .1s"}}>
                         <td style={{padding:"7px 11px",color:"#ccc",fontWeight:600}}>{i+1}</td>
                         <td style={{padding:"7px 6px",color:"#b2ede6",fontSize:16,userSelect:"none",textAlign:"center"}}>⠿</td>
                         <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
@@ -2554,6 +2695,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   const [sortK,       setSortK]       = useState("habis");
   const [stokOrder,   setStokOrder]   = useState(null);
   const dragStokIdx  = useRef(null);
+  const [draggingStok, setDraggingStok] = useState(null);
   const saveOrderTmr = useRef(null);
 
   // Load urutan stok dari Supabase + realtime
@@ -2650,9 +2792,8 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
               return (
                 <tr key={p.id}
                   draggable
-                  onDragStart={()=>{ dragStokIdx.current=i; }}
-                  onDragOver={e=>{
-                    e.preventDefault();
+                  onDragStart={()=>{ dragStokIdx.current=i; setDraggingStok(i); }}
+                  onDragEnter={()=>{
                     if(dragStokIdx.current===null||dragStokIdx.current===i) return;
                     const ord=filteredP.map(x=>String(x.id));
                     const [mv]=ord.splice(dragStokIdx.current,1);
@@ -2660,8 +2801,9 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
                     dragStokIdx.current=i;
                     saveStokOrder(ord);
                   }}
-                  onDragEnd={()=>{ dragStokIdx.current=null; }}
-                  style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}>
+                  onDragOver={e=>e.preventDefault()}
+                  onDragEnd={()=>{ dragStokIdx.current=null; setDraggingStok(null); }}
+                  style={{borderTop:"1px solid #f0faf8",background:draggingStok===i?"#d0f5ee":i%2===0?"#fff":"#fafffe",cursor:"grab",opacity:draggingStok===i?0.7:1,transition:"background .1s"}}>
                   <td style={{padding:"7px 11px",color:"#ccc"}}>{i+1}</td>
                   <td style={{padding:"7px 6px",color:"#b2ede6",fontSize:16,userSelect:"none",textAlign:"center"}}>⠿</td>
                   <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
@@ -3236,8 +3378,7 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title
             <div key={i}
               draggable
               onDragStart={()=>{dragIdxRef.current=i;}}
-              onDragOver={e=>{
-                e.preventDefault();
+              onDragEnter={()=>{
                 if(dragIdxRef.current===null||dragIdxRef.current===i) return;
                 const l=[...list];
                 const [mv]=l.splice(dragIdxRef.current,1);
@@ -3245,6 +3386,7 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title
                 dragIdxRef.current=i;
                 setList(l);
               }}
+              onDragOver={e=>e.preventDefault()}
               onDragEnd={()=>{dragIdxRef.current=null;}}
               style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe",cursor:"grab"}}>
               <span style={{color:"#ccc",fontSize:16,userSelect:"none"}}>⠿</span>
@@ -5868,8 +6010,8 @@ export default function App() {
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
-      {page==="stok"      && isAdmin && <StokPage      products={products} outlets={outlets} stocks={stocks} setStocks={setStocks} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
+      {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} saldoBank={saldoBank} setSaldoBank={setSaldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
 
