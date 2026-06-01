@@ -1245,7 +1245,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
   const [bulkRows,       setBulkRows]       = useState([]);
   const [bulkTransferTo, setBulkTransferTo] = useState("");
   const [bulkSaving,     setBulkSaving]     = useState(false);
-  const [sortField,      setSortField]      = useState("nama");
+  const [sortField,      setSortField]      = useState("habis"); // default habis dulu
   const [stokAdminOrder, setStokAdminOrder] = useState(null);
   const dragStokAdminIdx = useRef(null);
   const [draggingStokAdmin, setDraggingStokAdmin] = useState(null);
@@ -1390,26 +1390,21 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     notify(`${successCount} produk berhasil diproses ✓`,"ok");
   };
 
-  // Urutan: pakai _prodOrder (global dari ProdukPage) → stokAdminOrder (local drag) → default sort
+  // Urutan: _prodOrder (global dari ProdukPage admin) override segalanya kecuali ada sort eksplisit
   const baseOrder = _prodOrder || stokAdminOrder;
   const filteredProdsBase = products
     .filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
 
   const filteredProds = (() => {
-    if(baseOrder) {
-      const ordered = [
+    // Jika ada global/local order DAN tidak ada sort eksplisit → pakai order
+    if(baseOrder && sortField==="habis") {
+      return [
         ...baseOrder.map(id=>filteredProdsBase.find(p=>String(p.id)===String(id))).filter(Boolean),
         ...filteredProdsBase.filter(p=>!baseOrder.map(String).includes(String(p.id)))
       ];
-      // Apply sort on top of base order only if sortField is set
-      if(sortField==="nama")     return [...ordered].sort((a,b)=>a.name.localeCompare(b.name));
-      if(sortField==="kat")      return [...ordered].sort((a,b)=>a.category.localeCompare(b.category));
-      if(sortField==="stok_asc") return [...ordered].sort((a,b)=>(outletStock[a.id]??0)-(outletStock[b.id]??0));
-      if(sortField==="stok_dsc") return [...ordered].sort((a,b)=>(outletStock[b.id]??0)-(outletStock[a.id]??0));
-      if(sortField==="habis")    return [...ordered].sort((a,b)=>{const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0;return(qa===0?-1:1)-(qb===0?-1:1);});
-      return ordered;
     }
-    return [...filteredProdsBase].sort((a,b)=>{
+    // Sort eksplisit dipilih user
+    const sorted = [...filteredProdsBase].sort((a,b)=>{
       const qa=outletStock[a.id]??0, qb=outletStock[b.id]??0;
       if(sortField==="nama")    return a.name.localeCompare(b.name);
       if(sortField==="kat")     return a.category.localeCompare(b.category);
@@ -1418,6 +1413,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
       if(sortField==="habis")   return (qa===0?-1:1)-(qb===0?-1:1);
       return a.name.localeCompare(b.name);
     });
+    return sorted;
   })();
   const getStatus = s=>s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss={habis:{bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},over:{bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},aman:{bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"}};
@@ -1526,7 +1522,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
             {/* Sort buttons */}
             <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
               <span style={{fontSize:11,fontWeight:700,color:"#555"}}>Urutkan:</span>
-              {[{k:"nama",l:"A-Z Nama"},{k:"kat",l:"Kategori"},{k:"habis",l:"Habis Dulu"},{k:"stok_asc",l:"Stok ↑"},{k:"stok_dsc",l:"Stok ↓"}].map(s=>(
+              {[...((_prodOrder||stokAdminOrder)?[{k:"habis",l:"✅ Urutan Produk"}]:[]),{k:"nama",l:"A-Z Nama"},{k:"kat",l:"Kategori"},{k:"habis_only",l:"Habis Dulu"},{k:"stok_asc",l:"Stok ↑"},{k:"stok_dsc",l:"Stok ↓"}].map(s=>(
                 <button key={s.k} onClick={()=>setSortField(s.k)} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${sortField===s.k?"#0d9488":"#b2ede6"}`,background:sortField===s.k?"#0d9488":"#fff",color:sortField===s.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{s.l}</button>
               ))}
             </div>
@@ -2757,13 +2753,29 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
     setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
   };
 
-  const baseFP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase())).sort((a,b)=>{ const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0; if(sortK==="habis") return (qa===0?-1:qa<=2?0:1)-(qb===0?-1:qb<=2?0:1); if(sortK==="nama") return a.name.localeCompare(b.name); if(sortK==="kat") return a.category.localeCompare(b.category); if(sortK==="stok_asc") return qa-qb; return qb-qa; });
-  // Urutan: prodOrder (global dari admin) → stokOrder (local drag karyawan) → default
+  // baseFP: filter + sort (hanya jika bukan default urutan produk)
+  const baseFP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase()));
+  // Urutan: prodOrder global → stokOrder lokal → sort user
   const effectiveOrder = prodOrder || stokOrder;
-  const filteredP = effectiveOrder
-    ? [...effectiveOrder.map(id=>baseFP.find(p=>String(p.id)===String(id))).filter(Boolean),
-       ...baseFP.filter(p=>!effectiveOrder.map(String).includes(String(p.id)))]
-    : baseFP;
+  const filteredP = (() => {
+    if(effectiveOrder && sortK==="habis") {
+      // Pakai global/local order
+      return [
+        ...effectiveOrder.map(id=>baseFP.find(p=>String(p.id)===String(id))).filter(Boolean),
+        ...baseFP.filter(p=>!effectiveOrder.map(String).includes(String(p.id)))
+      ];
+    }
+    // Sort eksplisit
+    const sorted = [...baseFP].sort((a,b)=>{
+      const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0;
+      if(sortK==="habis") return (qa===0?-1:qa<=2?0:1)-(qb===0?-1:qb<=2?0:1);
+      if(sortK==="nama")  return a.name.localeCompare(b.name);
+      if(sortK==="kat")   return a.category.localeCompare(b.category);
+      if(sortK==="stok_asc") return qa-qb;
+      return qb-qa;
+    });
+    return sorted;
+  })();
   const getStatus = s => s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss = {
     habis:  {bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},
@@ -2783,7 +2795,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
               style={{padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",width:130}}/>
           </div>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-            {[{k:"habis",l:"Habis↑"},{k:"nama",l:"A-Z"},{k:"kat",l:"Kategori"},{k:"stok_asc",l:"Stok ↑"},{k:"stok_dsc",l:"Stok ↓"}].map(s=>(
+            {[...(effectiveOrder?[{k:"habis",l:"✅ Urutan Produk"}]:[]),{k:"nama",l:"A-Z"},{k:"kat",l:"Kategori"},{k:"habis_stok",l:"Habis↑"},{k:"stok_asc",l:"Stok ↑"},{k:"stok_dsc",l:"Stok ↓"}].map(s=>(
               <button key={s.k} onClick={()=>setSortK(s.k)} style={{padding:"4px 9px",borderRadius:7,border:`1px solid ${sortK===s.k?"#0d9488":"#b2ede6"}`,background:sortK===s.k?"#0d9488":"#fff",color:sortK===s.k?"#fff":"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{s.l}</button>
             ))}
           </div>
