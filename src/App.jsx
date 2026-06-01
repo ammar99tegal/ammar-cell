@@ -644,14 +644,14 @@ function CategoryEditRow({ cat, onSave }) {
 }
 
 // ── StokPageInner — reuse StokPage body dengan tab dari parent ──────────────
-function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutlet, notify }) {
-  // Render StokPage dengan outlet dan tab yang sudah dipilih dari parent
+function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutlet, notify, prodOrder }) {
   return (
     <StokPage
       products={products} outlets={outlets}
       stocks={stocks} setStocks={setStocks}
       onBack={null} notify={notify}
       _initTab={tab} _initOutlet={selectedOutlet}
+      _prodOrder={prodOrder}
     />
   );
 }
@@ -907,7 +907,13 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
           <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>📦 Produk & Stok</div>
           {mainTab==="produk"&&(
-            <button onClick={()=>setShowModal(true)} style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.4)",borderRadius:9,padding:"6px 14px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Produk</button>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              <button onClick={()=>setEditCats(p=>!p)} style={{background:editCats?"#fff":"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:editCats?"#0d9488":"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Kategori</button>
+              <button onClick={startBulkEdit} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📝 Edit Massal</button>
+              <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📥 Import</button>
+              <button onClick={exportCSV} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📤 Export</button>
+              <button onClick={openAdd} style={{background:"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"5px 12px",color:"#0d9488",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Tambah</button>
+            </div>
           )}
         </div>
         {/* Outlet selector — hanya tab stok */}
@@ -932,16 +938,6 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           ))}
         </div>
       </div>
-        right={
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            <button onClick={()=>setEditCats(p=>!p)} style={{background:editCats?"#fff":"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:editCats?"#0d9488":"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Kategori</button>
-            <button onClick={startBulkEdit} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📝 Edit Massal</button>
-            <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📥 Import CSV</button>
-            <button onClick={exportCSV} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"6px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📤 Export CSV</button>
-            <button onClick={openAdd} style={{background:"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"6px 13px",color:"#0d9488",fontWeight:800,fontSize:12,display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontFamily:"inherit"}}>{Ic.PlusCirc()} Tambah</button>
-          </div>
-        }
-      />
 
       {/* ── BULK EDIT TABLE ── */}
       {bulkMode&&(
@@ -1156,6 +1152,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           products={products} outlets={outlets}
           stocks={stocks} setStocks={setStocks}
           selectedOutlet={selOutlet} notify={notify}
+          prodOrder={prodOrder}
         />
       )}
 
@@ -1234,7 +1231,7 @@ function LogRow({ l, i, onEdit, onDelete }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // STOK (per outlet, stok masuk/keluar/transfer)
 // ══════════════════════════════════════════════════════════════════════════════
-function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initTab, _initOutlet }) {
+function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initTab, _initOutlet, _prodOrder }) {
   const [selectedOutlet, setSelectedOutlet] = useState(_initOutlet||outlets[0]?.id||"");
   const [tab,            setTab]            = useState(_initTab||"opname");
   const [search,         setSearch]         = useState("");
@@ -1393,9 +1390,26 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     notify(`${successCount} produk berhasil diproses ✓`,"ok");
   };
 
+  // Urutan: pakai _prodOrder (global dari ProdukPage) → stokAdminOrder (local drag) → default sort
+  const baseOrder = _prodOrder || stokAdminOrder;
   const filteredProdsBase = products
-    .filter(p=>p.name.toLowerCase().includes(search.toLowerCase()))
-    .sort((a,b)=>{
+    .filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+
+  const filteredProds = (() => {
+    if(baseOrder) {
+      const ordered = [
+        ...baseOrder.map(id=>filteredProdsBase.find(p=>String(p.id)===String(id))).filter(Boolean),
+        ...filteredProdsBase.filter(p=>!baseOrder.map(String).includes(String(p.id)))
+      ];
+      // Apply sort on top of base order only if sortField is set
+      if(sortField==="nama")     return [...ordered].sort((a,b)=>a.name.localeCompare(b.name));
+      if(sortField==="kat")      return [...ordered].sort((a,b)=>a.category.localeCompare(b.category));
+      if(sortField==="stok_asc") return [...ordered].sort((a,b)=>(outletStock[a.id]??0)-(outletStock[b.id]??0));
+      if(sortField==="stok_dsc") return [...ordered].sort((a,b)=>(outletStock[b.id]??0)-(outletStock[a.id]??0));
+      if(sortField==="habis")    return [...ordered].sort((a,b)=>{const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0;return(qa===0?-1:1)-(qb===0?-1:1);});
+      return ordered;
+    }
+    return [...filteredProdsBase].sort((a,b)=>{
       const qa=outletStock[a.id]??0, qb=outletStock[b.id]??0;
       if(sortField==="nama")    return a.name.localeCompare(b.name);
       if(sortField==="kat")     return a.category.localeCompare(b.category);
@@ -1404,10 +1418,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
       if(sortField==="habis")   return (qa===0?-1:1)-(qb===0?-1:1);
       return a.name.localeCompare(b.name);
     });
-  const filteredProds = stokAdminOrder
-    ? [...stokAdminOrder.map(id=>filteredProdsBase.find(p=>String(p.id)===String(id))).filter(Boolean),
-       ...filteredProdsBase.filter(p=>!stokAdminOrder.map(String).includes(String(p.id)))]
-    : filteredProdsBase;
+  })();
   const getStatus = s=>s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss={habis:{bg:"#ffe5e5",c:"#c0392b",l:"✗ Habis"},menipis:{bg:"#fff0f0",c:"#ff4757",l:"⚠ Menipis"},over:{bg:"#fffbe6",c:"#f39c12",l:"▲ Over"},aman:{bg:"#e8f8f4",c:"#0d9488",l:"✓ Aman"}};
   const typeColor={masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"};
@@ -2707,7 +2718,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     </div>
   );
 }
-function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stocks, setStocks }) {
+function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stocks, setStocks, prodOrder }) {
   const [realStocks,  setRealStocks]  = useState(()=>{ const m={}; products.forEach(p=>{m[p.id]=outletStock[p.id]??0;}); return m; });
   const [opnameSaved, setOpnameSaved] = useState(false);
   const [srch,        setSrch]        = useState("");
@@ -2747,9 +2758,11 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   };
 
   const baseFP = products.filter(p=>p.name.toLowerCase().includes(srch.toLowerCase())).sort((a,b)=>{ const qa=outletStock[a.id]??0,qb=outletStock[b.id]??0; if(sortK==="habis") return (qa===0?-1:qa<=2?0:1)-(qb===0?-1:qb<=2?0:1); if(sortK==="nama") return a.name.localeCompare(b.name); if(sortK==="kat") return a.category.localeCompare(b.category); if(sortK==="stok_asc") return qa-qb; return qb-qa; });
-  const filteredP = stokOrder
-    ? [...stokOrder.map(id=>baseFP.find(p=>String(p.id)===String(id))).filter(Boolean),
-       ...baseFP.filter(p=>!stokOrder.map(String).includes(String(p.id)))]
+  // Urutan: prodOrder (global dari admin) → stokOrder (local drag karyawan) → default
+  const effectiveOrder = prodOrder || stokOrder;
+  const filteredP = effectiveOrder
+    ? [...effectiveOrder.map(id=>baseFP.find(p=>String(p.id)===String(id))).filter(Boolean),
+       ...baseFP.filter(p=>!effectiveOrder.map(String).includes(String(p.id)))]
     : baseFP;
   const getStatus = s => s===0?"habis":s<=2?"menipis":s>=20?"over":"aman";
   const ss = {
@@ -3263,6 +3276,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           selectedOutlet={selectedOutlet}
           stocks={stocks}
           setStocks={setStocks}
+          prodOrder={prodOrder}
         />
       )}
 
