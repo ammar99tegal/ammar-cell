@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://acxqzupnlkqvmsitolzj.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHF6dXBubGtxdm1zaXRvbHpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODA4OTAsImV4cCI6MjA5NTM1Njg5MH0.qRZ3HkhMYmFOUk1y6sh0aJujSBNJ-Ov1G8Q5s_h6_qU'
 
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ── PRODUCTS & CORE ───────────────────────────────────────────────────────────
@@ -289,11 +290,25 @@ export const dbBank = {
     return { id: d.id, nama: d.nama, start: d.start_time, outletId: d.outlet_id, ...d.saldo_data }
   },
   openShift: async (shift, outletId, userId) => {
-    await supabase.from('bank_shifts').upsert({
-      id: shift.id, outlet_id: outletId, user_id: userId,
-      nama: shift.nama, start_time: shift.start,
-      saldo_data: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb, totalSaldo: shift.totalSaldo }
-    }, { onConflict: 'id' })
+    try {
+      await supabase.from('bank_shifts').delete().eq('outlet_id', outletId);
+      await supabase.from('bank_shifts').insert({
+        id: shift.id, outlet_id: outletId, user_id: userId,
+        nama: shift.nama, start_time: shift.start,
+        saldo_data: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb, totalSaldo: shift.totalSaldo }
+      });
+    } catch(e) { console.error('Bank openShift error:', e.message); }
+  },
+  closeShift: async (shift, outletId, userId, closeData) => {
+    try {
+      await supabase.from('bank_shift_logs').insert({
+        id: shift.id, outlet_id: outletId, user_id: userId,
+        nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
+        saldo_open: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb },
+        saldo_close: { saldoAppsC: closeData.saldoAppsC, uangLaci: closeData.uangLaci, uangSistem: closeData.uangSistem, selisih: closeData.selisih, catatan: closeData.catatan },
+      });
+    } catch(e) { console.error('Bank closeShift error:', e.message); }
+    try { await supabase.from('bank_shifts').delete().eq('outlet_id', outletId); } catch(e) { console.error(e); }
   },
   closeShift: async (shift, outletId, userId, closeData) => {
     await supabase.from('bank_shift_logs').insert({
