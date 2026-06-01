@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, supabase } from "./supabase.js";
+import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -680,7 +680,22 @@ function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifP
 
   const aktifCount = outletAktif.length;
   const outlet = outlets?.find(o=>o.id===selectedOutlet);
-  const save = () => { setSaved(true); setTimeout(()=>setSaved(false),2000); notify("Produk aktif disimpan ✓","ok"); };
+  const save = async () => {
+    setSaved(true);
+    // Simpan ke Supabase
+    try {
+      await dbAktifProduk.saveAktif(selectedOutlet, outletAktif);
+      // Sync ke App root
+      if(setAktifProds) setAktifProds(prev=>{
+        const updated = {...prev, [selectedOutlet]: outletAktif};
+        return updated;
+      });
+      notify("Produk aktif disimpan ✓","ok");
+    } catch(e) {
+      notify("Gagal simpan: "+e.message,"err");
+    }
+    setTimeout(()=>setSaved(false),2000);
+  };
 
   return (
     <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
@@ -739,10 +754,10 @@ function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifP
 // ══════════════════════════════════════════════════════════════════════════════
 // PRODUK (Master Produk — tanpa stok, stok ada di per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
-function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack, notify, prodOrderRoot, setProdOrderRoot }) {
+function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack, notify, prodOrderRoot, setProdOrderRoot, aktifProdsRoot, setAktifProdsRoot }) {
   const [mainTab,      setMainTab]     = useState("produk"); // produk|opname|masuk|keluar|transfer|aktif|log
   const [selOutlet,    setSelOutlet]   = useState(outlets?.[0]?.id||"");
-  const [aktifProds,   setAktifProds]  = useState({});     // {outletId: [productId,...]}
+  const [aktifProds,   setAktifProds]  = useState(aktifProdsRoot||{});     // {outletId: [productId,...]}
   const [showModal,   setShowModal]   = useState(false);
   const [editTarget,  setEditTarget]  = useState(null);
   const [form,        setForm]        = useState({name:"",barcode:"",category:"",price:"",modal:""});
@@ -1168,7 +1183,11 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         <StokAktifTab
           products={products} outlets={outlets}
           selectedOutlet={selOutlet}
-          aktifProds={aktifProds} setAktifProds={setAktifProds}
+          aktifProds={aktifProds}
+          setAktifProds={(updater)=>{
+            setAktifProds(updater);
+            if(setAktifProdsRoot) setAktifProdsRoot(updater);
+          }}
           notify={notify}
         />
       )}
@@ -5694,7 +5713,8 @@ export default function App() {
   const [toast,       setToast]         = useState(null);
   const [loading,     setLoading]       = useState(true);
   const [dbError,     setDbError]       = useState(null);
-  const [prodOrder,   setProdOrderRoot] = useState(null); // urutan global produk
+  const [prodOrder,      setProdOrderRoot]   = useState(null); // urutan global produk
+  const [aktifProdsRoot, setAktifProdsRoot]  = useState({});   // produk aktif per outlet
 
   // Simpan user ke localStorage setiap kali berubah
   const setUser = (u) => {
@@ -5820,15 +5840,17 @@ export default function App() {
   // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
   const reloadData = async () => {
     try {
-      const [prods, outs, stks, txs, usrs, prodOrd] = await Promise.all([
+      const [prods, outs, stks, txs, usrs, prodOrd, aktifMap] = await Promise.all([
         db.getProducts(), db.getOutlets(), db.getStocks(),
         db.getTransactions(), db.getUsers(),
         dbProductOrder.getOrder().catch(()=>[]),
+        dbAktifProduk.getAllAktif().catch(()=>({})),
       ]);
       setProductsState(prods);
       setOutletsState(outs);
       setStocksState(stks);
       if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
+      if(Object.keys(aktifMap).length>0) setAktifProdsRoot(aktifMap);
       setTx(txs.map(t=>({
         id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
         shiftNama:t.shift_nama, kasir:t.kasir,
@@ -5859,6 +5881,7 @@ export default function App() {
         const saldoList    = await dbSaldo.getSaldoApps().catch(()=>[]);
         const saldoBankList= await dbSaldoBank.getSaldoBankApps().catch(()=>[]);
         const prodOrd      = await dbProductOrder.getOrder().catch(()=>[]);
+        const aktifMap     = await dbAktifProduk.getAllAktif().catch(()=>({}));
 
         clearTimeout(timeout);
 
@@ -5866,6 +5889,7 @@ export default function App() {
         setOutletsState(outs);
         setStocksState(stks);
         if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
+        if(Object.keys(aktifMap).length>0) setAktifProdsRoot(aktifMap);
         if (Array.isArray(saldoList) && saldoList.length > 0) setSaldoApps(saldoList);
         if (Array.isArray(saldoBankList) && saldoBankList.length > 0) setSaldoBank(saldoBankList);
         setTx(txs.map(t=>({
