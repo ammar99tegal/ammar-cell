@@ -2150,8 +2150,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
   // Ambil info saldo dari shift_logs Supabase atau localStorage fallback
   const [shiftLogs, setShiftLogs] = useState({});
+  const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
 
   useEffect(()=>{
+    setShiftLogsLoading(true);
     const loadLogs = async () => {
       try {
         // Load closed shifts dari shift_logs
@@ -2244,30 +2246,38 @@ function LaporanPage({ transactions, outlets, onBack }) {
         setBankTrxMap(btm);
 
       } catch(e){ console.error(e); }
+      setShiftLogsLoading(false);
     };
     loadLogs();
     // Reload setiap 30 detik untuk catch perubahan shift
     const iv = setInterval(loadLogs, 30000);
-    return ()=>clearInterval(iv);
+
+    // Realtime: reload saat ada shift baru di-close
+    const ch = supabase.channel('laporan-shift-rt')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{
+        loadLogs();
+      })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'active_shifts'},()=>{
+        loadLogs();
+      })
+      .subscribe();
+    return ()=>{ clearInterval(iv); supabase.removeChannel(ch); };
   },[]);
 
   const getShiftSaldo = (shiftId) => {
-    // Prioritaskan localStorage — closeShift() menyimpan data lengkap di sana
+    // Prioritas 1: Supabase shift_logs (paling akurat — sudah closing)
+    if(shiftLogs[shiftId]) return shiftLogs[shiftId];
+
+    // Prioritas 2: localStorage dengan type closed (closing tapi belum sync ke Supabase)
     try{
       const s = localStorage.getItem(`ammar_shift_saldo_${shiftId}`);
       if(s){
         const parsed = JSON.parse(s);
-        // Jika localStorage punya type closed, pakai itu (data paling lengkap)
         if(parsed.type==="closed") return parsed;
-        // Jika open di localStorage tapi closed di Supabase, gabungkan
-        if(shiftLogs[shiftId]?.type==="closed"){
-          return {...parsed, ...shiftLogs[shiftId]};
-        }
+        // type open di localStorage = shift masih aktif (belum closing)
         return parsed;
       }
     }catch{}
-    // Fallback ke Supabase shift_logs
-    if(shiftLogs[shiftId]) return shiftLogs[shiftId];
     return null;
   };
 
@@ -2695,9 +2705,14 @@ function LaporanPage({ transactions, outlets, onBack }) {
                   <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</div>
                   <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
                 </div>
-                <div style={{textAlign:"right"}}>
+                <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                   <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(calcOmset(group.items))}</div>
                   <div style={{fontSize:10,color:"#aaa"}}>omset bersih</div>
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,
+                    background:isClosedCard?"#f0f0f0":"#e8f8f4",
+                    color:isClosedCard?"#888":"#2ecc71"}}>
+                    {isClosedCard?"⚫ Ditutup":"🟢 Aktif"}
+                  </span>
                 </div>
               </div>
               {/* Balance badge */}
