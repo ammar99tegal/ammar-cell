@@ -1823,11 +1823,119 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // LAPORAN (per outlet + per shift)
 // ══════════════════════════════════════════════════════════════════════════════
+// ── Laporan Bank List (realtime) ──────────────────────────────────────────────
+function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onSelectShift }) {
+  const [bankTrx, setBankTrx] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    // Load semua transaksi bank
+    dbBank.getTransactions().then(trx=>{
+      setBankTrx(trx||[]);
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+
+    // Realtime update
+    const ch = supabase.channel("laporan-bank-rt")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"bank_transactions"},(p)=>{
+        const r=p.new; if(!r) return;
+        setBankTrx(prev=>[...prev,{
+          id:r.id,waktu:r.waktu,tgl:r.tgl,shiftId:r.shift_id,nama:r.nama,
+          jenis:r.jenis,feeType:r.fee_type,fee:r.fee,nominal:r.nominal,
+          netNominal:r.net_nominal,outletId:r.outlet_id,
+        }]);
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"bank_transactions"},(p)=>{
+        setBankTrx(prev=>prev.filter(t=>t.id!==p.old?.id));
+      })
+      .subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[]);
+
+  // Group by outlet + tanggal
+  const filtered = filterOutlet==="all" ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
+
+  // Group by outlet+tanggal
+  const groups = {};
+  filtered.forEach(t=>{
+    const outletNama = outlets.find(o=>o.id===t.outletId)?.nama || t.outletId || "—";
+    const tgl = t.tgl || t.waktu?.substring(0,10) || "—";
+    const key = `${t.outletId}_${tgl}`;
+    if(!groups[key]) groups[key]={key,outletId:t.outletId,outletNama,tgl,trx:[],masuk:0,keluar:0,uangSistem:0};
+    groups[key].trx.push(t);
+    if(t.netNominal>0) groups[key].masuk+=t.netNominal;
+    else groups[key].keluar+=Math.abs(t.netNominal);
+  });
+
+  // Merge dengan bank_shift_logs untuk info shift
+  const groupArr = Object.values(groups).sort((a,b)=>b.tgl.localeCompare(a.tgl));
+
+  if(loading) return <div style={{textAlign:"center",padding:32,color:"#aaa",fontSize:13}}>⏳ Memuat data bank...</div>;
+  if(groupArr.length===0) return <div style={{textAlign:"center",padding:32,color:"#ccc",fontSize:13}}>Belum ada transaksi bank</div>;
+
+  return (
+    <div>
+      {/* KPI total */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+        {[
+          {l:"Total Masuk",  v:filtered.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0),      c:"#27ae60", bg:"#e8f8f0"},
+          {l:"Total Keluar", v:filtered.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0), c:"#e74c3c", bg:"#fff0f0"},
+          {l:"Transaksi",    v:filtered.length,                                                             c:"#0d9488", bg:"#e0faf5", raw:true},
+        ].map(k=>(
+          <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"12px 15px"}}>
+            <div style={{fontWeight:900,fontSize:18,color:k.c}}>{k.raw?k.v:fmtRp(k.v)}</div>
+            <div style={{fontSize:11,color:k.c,fontWeight:700,opacity:.8,marginTop:2}}>{k.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* List per outlet per hari */}
+      {groupArr.map(g=>{
+        const shiftLog = bankShiftLogs[g.key];
+        const uangSistem = g.masuk - g.keluar + (shiftLog?.cashKemb||0);
+        const selisih = shiftLog ? (shiftLog.uangLaci||0) - uangSistem : null;
+        return (
+          <div key={g.key} onClick={()=>onSelectShift({key:g.key,label:g.outletNama+" "+g.tgl,outletNama:g.outletNama,outletId:g.outletId,items:[],bankKey:g.key})}
+            style={{background:"#fff",borderRadius:13,padding:"14px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{g.outletNama}</div>
+                <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{g.tgl} · {g.trx.length} transaksi bank</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(uangSistem)}</div>
+                <div style={{fontSize:10,color:"#aaa"}}>uang sistem</div>
+              </div>
+            </div>
+            {/* Mini rekap */}
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <div style={{background:"#e8f8f0",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:"#27ae60"}}>
+                ⬇ Masuk {fmtRp(g.masuk)}
+              </div>
+              <div style={{background:"#fff0f0",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:"#e74c3c"}}>
+                ⬆ Keluar {fmtRp(g.keluar)}
+              </div>
+              {selisih!==null&&(
+                <div style={{background:selisih===0?"#e8f8f4":selisih>0?"#fffbe6":"#fff0f0",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:selisih===0?"#27ae60":selisih>0?"#f39c12":"#e74c3c"}}>
+                  {selisih===0?"✅ Balance":selisih>0?"📈 Lebih":"📉 Kurang"} {selisih!==0?fmtRp(Math.abs(selisih)):""}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function LaporanPage({ transactions, outlets, onBack }) {
   const [filterOutlet,  setFilterOutlet]  = useState("all");
   const [filterShift,   setFilterShift]   = useState("all");
   const [selectedShift, setSelectedShift] = useState(null);
-  const [detailTab,     setDetailTab]     = useState("kasir"); // kasir | bank
+  const [mainTab,       setMainTab]       = useState("kasir"); // kasir | bank
+  const [detailTab,     setDetailTab]     = useState("kasir");
   const [bankShiftLogs, setBankShiftLogs] = useState({});
   const [bankTrxMap,    setBankTrxMap]    = useState({}); // shiftId -> trx[]
 
@@ -2322,44 +2430,83 @@ function LaporanPage({ transactions, outlets, onBack }) {
   // ── MAIN LAPORAN LIST ──────────────────────────────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <SubHeader title="📋 Laporan Shift" onBack={onBack}/>
-      <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.3)"}}>
+        <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Kembali</button>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>📋 Laporan Shift</div>
+        </div>
+        {/* Tab Kasir / Bank */}
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.15)"}}>
+          {[{k:"kasir",l:"🧾 Laporan Kasir"},{k:"bank",l:"🏦 Laporan Bank"}].map(t=>(
+            <button key={t.k} onClick={()=>setMainTab(t.k)}
+              style={{flex:1,padding:"10px 0",border:"none",borderBottom:`3px solid ${mainTab===t.k?"#fff":"transparent"}`,background:"transparent",color:mainTab===t.k?"#fff":"rgba(255,255,255,.55)",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"14px 18px",maxWidth:960,margin:"0 auto"}}>
 
         {/* Filter */}
-        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
           <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
-            style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff"}}>
+            style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff",fontWeight:600}}>
             <option value="all">Semua Outlet</option>
             {outlets.map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
           </select>
-          <select value={filterShift} onChange={e=>setFilterShift(e.target.value)}
-            style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff"}}>
-            <option value="all">Semua Shift</option>
-            {[...new Set(transactions.map(t=>t.shiftNama).filter(Boolean))].map(s=>(
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          {mainTab==="kasir"&&(
+            <select value={filterShift} onChange={e=>setFilterShift(e.target.value)}
+              style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff",fontWeight:600}}>
+              <option value="all">Semua Shift</option>
+              {[...new Set(transactions.map(t=>t.shiftNama).filter(Boolean))].map(s=>(
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          )}
+          {mainTab==="bank"&&(
+            <div style={{display:"flex",alignItems:"center",gap:6,background:"#e0faf5",borderRadius:9,padding:"5px 12px",fontSize:11,color:"#0d9488",fontWeight:700}}>
+              🔴 Live — Update realtime
+            </div>
+          )}
         </div>
 
-        {/* Grouped shifts */}
-        {groupArr.filter(g=>(filterOutlet==="all"||transactions.find(t=>t.shiftId===g.key)?.outletId===filterOutlet)&&(filterShift==="all"||g.label===filterShift||g.key===filterShift)).map(group=>(
-          <div key={group.key} onClick={()=>{setSelectedShift(group);setDetailTab("kasir");}}
-            style={{background:"#fff",borderRadius:13,padding:"13px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</div>
-                <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
-              </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(calcOmset(group.items))}</div>
-                <div style={{fontSize:10,color:"#aaa"}}>omset bersih</div>
+        {/* ── TAB KASIR ── */}
+        {mainTab==="kasir"&&(<>
+          {groupArr.filter(g=>{
+            const outletId = transactions.find(t=>t.shiftId===g.key)?.outletId;
+            return (filterOutlet==="all"||outletId===filterOutlet)&&
+                   (filterShift==="all"||g.label===filterShift||g.key===filterShift);
+          }).map(group=>(
+            <div key={group.key} onClick={()=>{setSelectedShift(group);setDetailTab("kasir");}}
+              style={{background:"#fff",borderRadius:13,padding:"13px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</div>
+                  <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(calcOmset(group.items))}</div>
+                  <div style={{fontSize:10,color:"#aaa"}}>omset bersih</div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-        {groupArr.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
+          ))}
+          {groupArr.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
+        </>)}
+
+        {/* ── TAB BANK ── */}
+        {mainTab==="bank"&&(
+          <LaporanBankList
+            bankTrxMap={bankTrxMap}
+            bankShiftLogs={bankShiftLogs}
+            outlets={outlets}
+            filterOutlet={filterOutlet}
+            onSelectShift={(group)=>{setSelectedShift(group);setDetailTab("bank");}}
+          />
+        )}
       </div>
     </div>
   );
