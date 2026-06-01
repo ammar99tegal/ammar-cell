@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
 
-
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2191,7 +2190,6 @@ function LaporanPage({ transactions, outlets, onBack }) {
             saldoApps:      so.saldoApps || so.saldo_apps || {},
             cashKembalian:  so.cashKembalian || so.cash_kembalian || 0,
             totalSaldoApps: so.totalSaldoApps || 0,
-            // saldo_close fields — match exactly what closeShift saves
             saldoAppsAkhir: sc.saldoAppsAkhir || sc.saldoAppsC || sc.saldo_apps_akhir || {},
             cashKembClose:  sc.cashKembClose   || sc.cashKembC  || 0,
             setorTunai:     rekap.setorTunai    || 0,
@@ -2204,6 +2202,9 @@ function LaporanPage({ transactions, outlets, onBack }) {
             selisih:        rekap.selisih ?? sc.selisih ?? 0,
             notes:          rekap.notes || sc.catatan || "",
           };
+          // Juga index by outlet_id+date agar mudah dicari
+          const dKey = l.outlet_id+'_'+(l.start_time?.substring(0,10)||'');
+          m[dKey] = m[l.id];
         });
 
         // Load active shifts (belum ditutup) dari active_shifts
@@ -2294,16 +2295,30 @@ function LaporanPage({ transactions, outlets, onBack }) {
   },[]);
 
   const getShiftSaldo = (shiftId) => {
-    // Prioritas 1: Supabase shift_logs (paling akurat — sudah closing)
+    // Prioritas 1: Supabase shift_logs by shift ID
     if(shiftLogs[shiftId]) return shiftLogs[shiftId];
 
-    // Prioritas 2: localStorage dengan type closed (closing tapi belum sync ke Supabase)
+    // Prioritas 2: Cari di shift_logs by outletId+date (jika shiftId tidak match)
+    const tx = transactions.find(t=>t.shiftId===shiftId);
+    if(tx){
+      const outletId = tx.outletId;
+      const date = tx.date||'';
+      const normD = (d) => {
+        if(!d) return '';
+        if(d.includes('-')) return d.substring(0,10);
+        const p=d.split('/');
+        if(p.length===3) return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
+        return d;
+      };
+      const dateKey = outletId+'_'+normD(date);
+      if(shiftLogs[dateKey]) return shiftLogs[dateKey];
+    }
+
+    // Prioritas 3: localStorage dengan type closed
     try{
       const s = localStorage.getItem(`ammar_shift_saldo_${shiftId}`);
       if(s){
         const parsed = JSON.parse(s);
-        if(parsed.type==="closed") return parsed;
-        // type open di localStorage = shift masih aktif (belum closing)
         return parsed;
       }
     }catch{}
@@ -2317,7 +2332,13 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const gOmset=calcOmset(group.items);
     const gItems=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
     const saldo=getShiftSaldo(group.key);
-    const isClosed = saldo?.type==="closed" || !!saldo?.waktuTutup;
+
+    // Shift dianggap CLOSED jika:
+    // 1. Ada di shiftLogs dengan type closed / waktuTutup
+    // 2. ATAU tidak ada di active_shifts (sudah dihapus dari active_shifts)
+    const shiftInLogs = shiftLogs[group.key];
+    const isClosed = (saldo?.type==="closed") || !!saldo?.waktuTutup || 
+                     (shiftInLogs?.type==="closed") || !!shiftInLogs?.waktuTutup;
     const isActive = !isClosed;
 
     // Bank data untuk shift ini
