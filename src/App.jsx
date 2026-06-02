@@ -2134,6 +2134,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
   const calcOmset = list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
 
+  // Deklarasi shiftLogs di sini agar bisa dipakai di groupArr di bawah
+  const [shiftLogs,        setShiftLogs]        = useState({});
+  const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
+
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
 
   const filtered = transactions.filter(t=>
@@ -2188,9 +2192,6 @@ function LaporanPage({ transactions, outlets, onBack }) {
   };
 
   // Ambil info saldo dari shift_logs Supabase atau localStorage fallback
-  const [shiftLogs, setShiftLogs] = useState({});
-  const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
-
   useEffect(()=>{
     setShiftLogsLoading(true);
     const loadLogs = async () => {
