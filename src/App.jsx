@@ -2226,7 +2226,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
 // LAPORAN (per outlet + per shift)
 // ══════════════════════════════════════════════════════════════════════════════
 // ── Laporan Bank List (realtime) ──────────────────────────────────────────────
-function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onSelectShift }) {
+function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filterOutlet, onSelectShift }) {
   const [bankTrx, setBankTrx] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -2243,14 +2243,19 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onS
 
   useEffect(()=>{
     loadBankTrx();
-    // Auto reload setiap 10 detik
-    const iv = setInterval(loadBankTrx, 10000);
-    // Realtime update — reload full saat ada perubahan
-    const ch = supabase.channel("laporan-bank-rt")
+    // Auto reload setiap 5 detik
+    const iv = setInterval(loadBankTrx, 5000);
+    // Realtime komprehensif — bank + shift status
+    const ch = supabase.channel("laporan-bank-rt-v2")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"bank_shift_logs"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"bank_shift_logs"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"shift_logs"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"active_shifts"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"active_shifts"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"active_shifts"},()=>{ loadBankTrx(); })
       .subscribe();
     return()=>{ clearInterval(iv); supabase.removeChannel(ch); };
   },[]);
@@ -2316,26 +2321,55 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onS
 
       {/* List per outlet per hari */}
       {groupArr.map(g=>{
-        const shiftLog = bankShiftLogs[g.key];
-        const uangSistem = g.masuk - g.keluar + (shiftLog?.cashKemb||0);
-        const selisih = shiftLog ? (shiftLog.uangLaci||0) - uangSistem : null;
+        const bankLog  = bankShiftLogs[g.key] || bankShiftLogs[g.outletId+"_"+g.tgl];
+        // Cari shift kasir yang matching outlet+tanggal untuk status aktif/tutup
+        const kasirLog = shiftLogs ? (
+          Object.values(shiftLogs).find(s=>
+            s.outletId===g.outletId &&
+            (s.waktuBuka||"").startsWith(g.tgl)
+          ) || Object.values(shiftLogs).find(s=>
+            s.outletId===g.outletId &&
+            normTgl(s.waktuBuka||"")===g.tgl
+          )
+        ) : null;
+        const isClosed   = kasirLog?.type==="closed" || !!kasirLog?.waktuTutup || !!bankLog?.waktuTutup;
+        const uangSistem = g.masuk - g.keluar + (bankLog?.cashKemb||0);
+        const uangLaci   = bankLog?.uangLaci ?? null;
+        const selisih    = uangLaci!==null ? uangLaci - uangSistem : null;
+        const catatan    = bankLog?.catatan || kasirLog?.notes || "";
+        const waktuTutup = bankLog?.waktuTutup || kasirLog?.waktuTutup || "";
+        const namaShift  = bankLog?.nama || kasirLog?.namaShift || "";
+        const borderColor = selisih!==null&&selisih!==0?"#f39c1255":"#e0f5f1";
         return (
           <div key={g.key} onClick={()=>onSelectShift({key:g.key,label:g.outletNama+" "+g.tgl,outletNama:g.outletNama,outletId:g.outletId,items:[],bankKey:g.key})}
-            style={{background:"#fff",borderRadius:13,padding:"14px 16px",marginBottom:10,border:"2px solid #e0f5f1",cursor:"pointer",transition:"all .2s"}}
+            style={{background:"#fff",borderRadius:13,padding:"14px 16px",marginBottom:10,border:`2px solid ${borderColor}`,cursor:"pointer",transition:"all .2s"}}
             onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.boxShadow="0 2px 12px rgba(13,148,136,.12)";}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=borderColor;e.currentTarget.style.boxShadow="none";}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{g.outletNama}</div>
-                <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{fmtTgl(g.tgl)} · {g.trx.length} transaksi bank</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{g.outletNama}</div>
+                  {/* Status badge */}
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:20,
+                    background:isClosed?"#f0f0f0":"#e8f8f4",
+                    color:isClosed?"#888":"#2ecc71",border:`1px solid ${isClosed?"#ddd":"#a3e9c8"}`}}>
+                    {isClosed?"⚫ Ditutup":"🟢 Aktif"}
+                  </span>
+                </div>
+                <div style={{fontSize:11,color:"#aaa",marginTop:3}}>
+                  {fmtTgl(g.tgl)} · {g.trx.length} transaksi bank
+                  {namaShift&&<span style={{marginLeft:6,color:"#0d9488",fontWeight:600}}>· {namaShift}</span>}
+                  {isClosed&&waktuTutup&&<span style={{marginLeft:6}}> tutup {new Date(waktuTutup).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</span>}
+                </div>
               </div>
-              <div style={{textAlign:"right"}}>
+              <div style={{textAlign:"right",flexShrink:0}}>
                 <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(uangSistem)}</div>
                 <div style={{fontSize:10,color:"#aaa"}}>uang sistem</div>
+                {uangLaci!==null&&<div style={{fontSize:11,fontWeight:700,color:"#555",marginTop:2}}>Fisik: {fmtRp(uangLaci)}</div>}
               </div>
             </div>
-            {/* Mini rekap */}
-            <div style={{display:"flex",gap:8,marginTop:10}}>
+            {/* Mini rekap + balance + catatan */}
+            <div style={{display:"flex",gap:7,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
               <div style={{background:"#e8f8f0",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:"#27ae60"}}>
                 ⬇ Masuk {fmtRp(g.masuk)}
               </div>
@@ -2343,11 +2377,21 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onS
                 ⬆ Keluar {fmtRp(g.keluar)}
               </div>
               {selisih!==null&&(
-                <div style={{background:selisih===0?"#e8f8f4":selisih>0?"#fffbe6":"#fff0f0",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:selisih===0?"#27ae60":selisih>0?"#f39c12":"#e74c3c"}}>
-                  {selisih===0?"✅ Balance":selisih>0?"📈 Lebih":"📉 Kurang"} {selisih!==0?fmtRp(Math.abs(selisih)):""}
+                <div style={{background:selisih===0?"#e8f8f4":selisih>0?"#fffbe6":"#fff0f0",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:selisih===0?"#27ae60":selisih>0?"#f39c12":"#e74c3c",border:`1px solid ${selisih===0?"#a3e9c8":selisih>0?"#f9d56e":"#ffb3b3"}`}}>
+                  {selisih===0?"✅ Balance":selisih>0?"📈 Lebih":"📉 Kurang"}{selisih!==0?" "+fmtRp(Math.abs(selisih)):""}
+                </div>
+              )}
+              {!isClosed&&selisih===null&&(
+                <div style={{background:"#e8f8f4",borderRadius:8,padding:"5px 11px",fontSize:11,fontWeight:700,color:"#2ecc71"}}>
+                  🟢 Shift Aktif
                 </div>
               )}
             </div>
+            {catatan&&(
+              <div style={{marginTop:8,background:"#fffbe6",borderRadius:8,padding:"6px 11px",fontSize:11,color:"#b7770d",fontWeight:600,border:"1px solid #f9d56e"}}>
+                📝 {catatan}
+              </div>
+            )}
           </div>
         );
       })}
@@ -3156,6 +3200,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
           <LaporanBankList
             bankTrxMap={bankTrxMap}
             bankShiftLogs={bankShiftLogs}
+            shiftLogs={shiftLogs}
             outlets={outlets}
             filterOutlet={filterOutlet}
             onSelectShift={(group)=>{setSelectedShift(group);setDetailTab("bank");}}
