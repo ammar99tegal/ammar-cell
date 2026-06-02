@@ -2021,46 +2021,59 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onS
   const [bankTrx, setBankTrx] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(()=>{
-    // Load semua transaksi bank
-    dbBank.getTransactions().then(trx=>{
-      setBankTrx(trx||[]);
-      setLoading(false);
-    }).catch(()=>setLoading(false));
+  const [lastRefresh, setLastRefresh] = useState(null);
 
-    // Realtime update
+  const loadBankTrx = async () => {
+    try {
+      const trx = await dbBank.getTransactions();
+      setBankTrx(trx||[]);
+      setLastRefresh(new Date().toLocaleTimeString("id-ID"));
+    } catch(e){ console.error(e); }
+    setLoading(false);
+  };
+
+  useEffect(()=>{
+    loadBankTrx();
+    // Auto reload setiap 10 detik
+    const iv = setInterval(loadBankTrx, 10000);
+    // Realtime update — reload full saat ada perubahan
     const ch = supabase.channel("laporan-bank-rt")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"bank_transactions"},(p)=>{
-        const r=p.new; if(!r) return;
-        setBankTrx(prev=>[...prev,{
-          id:r.id,waktu:r.waktu,tgl:r.tgl,shiftId:r.shift_id,nama:r.nama,
-          jenis:r.jenis,feeType:r.fee_type,fee:r.fee,nominal:r.nominal,
-          netNominal:r.net_nominal,outletId:r.outlet_id,
-        }]);
-      })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"bank_transactions"},(p)=>{
-        setBankTrx(prev=>prev.filter(t=>t.id!==p.old?.id));
-      })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"bank_transactions"},()=>{ loadBankTrx(); })
       .subscribe();
-    return()=>supabase.removeChannel(ch);
+    return()=>{ clearInterval(iv); supabase.removeChannel(ch); };
   },[]);
 
-  // Group by outlet + tanggal
+  // Normalisasi format tanggal: "30/5/2026" -> "2026-05-30"
+  const normTgl = (d) => {
+    if(!d) return "";
+    if(/^\d{4}-\d{2}-\d{2}/.test(d)) return d.substring(0,10); // sudah ISO
+    const p = d.split("/");
+    if(p.length===3) return `${p[2]}-${String(p[1]).padStart(2,"0")}-${String(p[0]).padStart(2,"0")}`;
+    return d;
+  };
+  const fmtTgl = (iso) => {
+    if(!iso) return "—";
+    const [y,m,dd] = iso.split("-");
+    return `${dd}/${m}/${y}`;
+  };
+
+  // Group by outlet + tanggal (normalisasi dulu)
   const filtered = filterOutlet==="all" ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
 
-  // Group by outlet+tanggal
   const groups = {};
   filtered.forEach(t=>{
     const outletNama = outlets.find(o=>o.id===t.outletId)?.nama || t.outletId || "—";
-    const tgl = t.tgl || t.waktu?.substring(0,10) || "—";
-    const key = `${t.outletId}_${tgl}`;
-    if(!groups[key]) groups[key]={key,outletId:t.outletId,outletNama,tgl,trx:[],masuk:0,keluar:0,uangSistem:0};
+    const tglISO = normTgl(t.tgl || t.waktu?.substring(0,10) || "");
+    const key = `${t.outletId}_${tglISO}`;
+    if(!groups[key]) groups[key]={key,outletId:t.outletId,outletNama,tgl:tglISO,trx:[],masuk:0,keluar:0};
     groups[key].trx.push(t);
     if(t.netNominal>0) groups[key].masuk+=t.netNominal;
     else groups[key].keluar+=Math.abs(t.netNominal);
   });
 
-  // Merge dengan bank_shift_logs untuk info shift
   const groupArr = Object.values(groups).sort((a,b)=>b.tgl.localeCompare(a.tgl));
 
   if(loading) return <div style={{textAlign:"center",padding:32,color:"#aaa",fontSize:13}}>⏳ Memuat data bank...</div>;
@@ -2068,6 +2081,16 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onS
 
   return (
     <div>
+      {/* Info bar refresh */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,background:"#e0faf5",borderRadius:9,padding:"5px 12px",fontSize:11,color:"#0d9488",fontWeight:700}}>
+          🔴 Live — Update realtime
+          {lastRefresh&&<span style={{fontWeight:600,opacity:.7}}>· {lastRefresh}</span>}
+        </div>
+        <button onClick={loadBankTrx} style={{background:"#f0faf8",border:"2px solid #b2ede6",borderRadius:9,padding:"5px 12px",fontSize:11,fontWeight:700,color:"#0d9488",cursor:"pointer",fontFamily:"inherit"}}>
+          🔄 Refresh
+        </button>
+      </div>
       {/* KPI total */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
         {[
@@ -2095,7 +2118,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, outlets, filterOutlet, onS
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
                 <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{g.outletNama}</div>
-                <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{g.tgl} · {g.trx.length} transaksi bank</div>
+                <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{fmtTgl(g.tgl)} · {g.trx.length} transaksi bank</div>
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(uangSistem)}</div>
@@ -2137,6 +2160,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
   // Deklarasi shiftLogs di sini agar bisa dipakai di groupArr di bawah
   const [shiftLogs,        setShiftLogs]        = useState({});
   const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
 
@@ -2300,22 +2324,20 @@ function LaporanPage({ transactions, outlets, onBack }) {
       setShiftLogsLoading(false);
     };
     loadLogs();
-    // Reload setiap 30 detik untuk catch perubahan shift
-    const iv = setInterval(loadLogs, 30000);
+    // Reload setiap 10 detik — lebih responsif
+    const iv = setInterval(loadLogs, 10000);
 
-    // Realtime: reload saat ada shift baru di-close
+    // Realtime: reload saat ada perubahan shift atau transaksi bank baru
     const ch = supabase.channel('laporan-shift-rt')
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{
-        loadLogs();
-      })
-      .on('postgres_changes',{event:'DELETE',schema:'public',table:'active_shifts'},()=>{
-        loadLogs();
-      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'active_shifts'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'bank_transactions'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_shift_logs'},()=>{ loadLogs(); })
       .subscribe();
-    return ()=>{ clearInterval(iv); supabase.removeChannel(ch); };
-  },[]);
-
-  const getShiftSaldo = (shiftId) => {
+        return ()=>{ clearInterval(iv); supabase.removeChannel(ch); };
+  },[refreshTrigger]);const getShiftSaldo = (shiftId) => {
     // Prioritas 1: Supabase shift_logs by shift ID
     if(shiftLogs[shiftId]) return shiftLogs[shiftId];
 
@@ -2838,10 +2860,11 @@ function LaporanPage({ transactions, outlets, onBack }) {
               ))}
             </select>
           )}
-          {mainTab==="bank"&&(
-            <div style={{display:"flex",alignItems:"center",gap:6,background:"#e0faf5",borderRadius:9,padding:"5px 12px",fontSize:11,color:"#0d9488",fontWeight:700}}>
-              🔴 Live — Update realtime
-            </div>
+          {mainTab==="kasir"&&(
+            <button onClick={()=>setRefreshTrigger(p=>p+1)}
+              style={{background:"#f0faf8",border:"2px solid #b2ede6",borderRadius:9,padding:"5px 12px",fontSize:11,fontWeight:700,color:"#0d9488",cursor:"pointer",fontFamily:"inherit",marginLeft:"auto"}}>
+              🔄 Refresh
+            </button>
           )}
         </div>
 
