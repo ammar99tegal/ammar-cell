@@ -1332,6 +1332,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
   const [stokAdminOrder, setStokAdminOrder] = useState(null);
   const dragStokAdminIdx = useRef(null);
   const [draggingStokAdmin, setDraggingStokAdmin] = useState(null);
+  const [dragOverStokAdmin, setDragOverStokAdmin] = useState(null);
 
   const outletStock = stocks[selectedOutlet]||{};
   const outlet      = outlets.find(o=>o.id===selectedOutlet);
@@ -1633,20 +1634,50 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
                     return (
                       <tr key={p.id}
                         draggable
-                        onDragStart={()=>{dragStokAdminIdx.current=i; setDraggingStokAdmin(i);}}
-                        onDragEnter={()=>{
-                          if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i) return;
-                          const ord=filteredProds.map(x=>String(x.id));
-                          const[mv]=ord.splice(dragStokAdminIdx.current,1);
-                          ord.splice(i,0,mv);
-                          dragStokAdminIdx.current=i;
-                          setStokAdminOrder(ord);
+                        onDragStart={(e)=>{
+                          dragStokAdminIdx.current=i; setDraggingStokAdmin(i); setDragOverStokAdmin(null);
+                          e.dataTransfer.effectAllowed="move";
                         }}
-                        onDragOver={e=>e.preventDefault()}
-                        onDragEnd={()=>{dragStokAdminIdx.current=null; setDraggingStokAdmin(null);}}
-                        style={{borderTop:"1px solid #f0faf8",background:draggingStokAdmin===i?"#d0f5ee":i%2===0?"#fff":"#fafffe",cursor:"grab",opacity:draggingStokAdmin===i?0.7:1,transition:"background .1s"}}>
+                        onDragOver={(e)=>{
+                          e.preventDefault(); e.dataTransfer.dropEffect="move";
+                          if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i) return;
+                          setDragOverStokAdmin(i);
+                        }}
+                        onDragEnter={(e)=>{
+                          e.preventDefault();
+                          if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i) return;
+                          setDragOverStokAdmin(i);
+                        }}
+                        onDragLeave={()=>setDragOverStokAdmin(null)}
+                        onDrop={(e)=>{
+                          e.preventDefault();
+                          if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i){setDragOverStokAdmin(null);return;}
+                          const ord=filteredProds.map(x=>String(x.id));
+                          const [mv]=ord.splice(dragStokAdminIdx.current,1);
+                          const rect=e.currentTarget.getBoundingClientRect();
+                          const ins = e.clientY<rect.top+rect.height/2 ? i : i+1;
+                          const adj = dragStokAdminIdx.current<ins ? ins-1 : ins;
+                          ord.splice(adj,0,mv);
+                          dragStokAdminIdx.current=adj;
+                          setStokAdminOrder(ord);
+                          setDragOverStokAdmin(null);
+                          // Sync ke prodOrder global (admin)
+                          if(typeof setProdOrderRoot==="function") setProdOrderRoot(ord);
+                          dbStokOrder.saveOrder(selectedOutlet, ord).catch(()=>{});
+                          dbProductOrder.saveOrder(ord).catch(()=>{});
+                        }}
+                        onDragEnd={()=>{dragStokAdminIdx.current=null; setDraggingStokAdmin(null); setDragOverStokAdmin(null);}}
+                        style={{
+                          borderTop: dragOverStokAdmin===i?"3px solid #0d9488":"1px solid #f0faf8",
+                          background: draggingStokAdmin===i?"#d0f5ee":dragOverStokAdmin===i?"#e8fdf8":i%2===0?"#fff":"#fafffe",
+                          cursor: draggingStokAdmin===i?"grabbing":"grab",
+                          opacity: draggingStokAdmin===i?0.5:1,
+                          transform: draggingStokAdmin===i?"scale(1.01)":"none",
+                          boxShadow: draggingStokAdmin===i?"0 4px 14px rgba(13,148,136,.2)":"none",
+                          transition:"background .08s,opacity .08s,transform .08s",
+                        }}>
                         <td style={{padding:"7px 11px",color:"#ccc",fontWeight:600}}>{i+1}</td>
-                        <td style={{padding:"7px 6px",color:"#b2ede6",fontSize:16,userSelect:"none",textAlign:"center"}}>⠿</td>
+                        <td style={{padding:"7px 6px",color:draggingStokAdmin===i?"#0d9488":"#b2ede6",fontSize:18,userSelect:"none",textAlign:"center",cursor:draggingStokAdmin===i?"grabbing":"grab"}} title="Drag untuk atur urutan">⠿</td>
                         <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
                         <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{p.category}</span></td>
                         <td style={{padding:"7px 11px"}}><span style={{background:ss[st].bg,color:ss[st].c,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{ss[st].l}</span></td>
@@ -3114,6 +3145,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   const [stokOrder,   setStokOrder]   = useState(null);
   const dragStokIdx  = useRef(null);
   const [draggingStok, setDraggingStok] = useState(null);
+  const [dragOverStok, setDragOverStok] = useState(null);
   const saveOrderTmr = useRef(null);
 
   // Load urutan stok dari Supabase + realtime
@@ -3228,20 +3260,46 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
               return (
                 <tr key={p.id}
                   draggable
-                  onDragStart={()=>{ dragStokIdx.current=i; setDraggingStok(i); }}
-                  onDragEnter={()=>{
+                  onDragStart={(e)=>{
+                    dragStokIdx.current=i; setDraggingStok(i); setDragOverStok(null);
+                    e.dataTransfer.effectAllowed="move";
+                  }}
+                  onDragOver={(e)=>{
+                    e.preventDefault(); e.dataTransfer.dropEffect="move";
                     if(dragStokIdx.current===null||dragStokIdx.current===i) return;
+                    setDragOverStok(i);
+                  }}
+                  onDragEnter={(e)=>{
+                    e.preventDefault();
+                    if(dragStokIdx.current===null||dragStokIdx.current===i) return;
+                    setDragOverStok(i);
+                  }}
+                  onDragLeave={()=>setDragOverStok(null)}
+                  onDrop={(e)=>{
+                    e.preventDefault();
+                    if(dragStokIdx.current===null||dragStokIdx.current===i){setDragOverStok(null);return;}
                     const ord=filteredP.map(x=>String(x.id));
                     const [mv]=ord.splice(dragStokIdx.current,1);
-                    ord.splice(i,0,mv);
-                    dragStokIdx.current=i;
+                    const rect=e.currentTarget.getBoundingClientRect();
+                    const ins = e.clientY<rect.top+rect.height/2 ? i : i+1;
+                    const adj = dragStokIdx.current<ins ? ins-1 : ins;
+                    ord.splice(adj,0,mv);
+                    dragStokIdx.current=adj;
                     saveStokOrder(ord);
+                    setDragOverStok(null);
                   }}
-                  onDragOver={e=>e.preventDefault()}
-                  onDragEnd={()=>{ dragStokIdx.current=null; setDraggingStok(null); }}
-                  style={{borderTop:"1px solid #f0faf8",background:draggingStok===i?"#d0f5ee":i%2===0?"#fff":"#fafffe",cursor:"grab",opacity:draggingStok===i?0.7:1,transition:"background .1s"}}>
+                  onDragEnd={()=>{ dragStokIdx.current=null; setDraggingStok(null); setDragOverStok(null); }}
+                  style={{
+                    borderTop: dragOverStok===i?"3px solid #0d9488":"1px solid #f0faf8",
+                    background: draggingStok===i?"#d0f5ee":dragOverStok===i?"#e8fdf8":i%2===0?"#fff":"#fafffe",
+                    cursor: draggingStok===i?"grabbing":"grab",
+                    opacity: draggingStok===i?0.5:1,
+                    transform: draggingStok===i?"scale(1.01)":"none",
+                    boxShadow: draggingStok===i?"0 4px 14px rgba(13,148,136,.2)":"none",
+                    transition:"background .08s,opacity .08s,transform .08s",
+                  }}>
                   <td style={{padding:"7px 11px",color:"#ccc"}}>{i+1}</td>
-                  <td style={{padding:"7px 6px",color:"#b2ede6",fontSize:16,userSelect:"none",textAlign:"center"}}>⠿</td>
+                  <td style={{padding:"7px 6px",color:draggingStok===i?"#0d9488":"#b2ede6",fontSize:18,userSelect:"none",textAlign:"center",cursor:draggingStok===i?"grabbing":"grab"}} title="Drag untuk atur urutan">⠿</td>
                   <td style={{padding:"7px 11px",fontWeight:700}}>{p.name}</td>
                   <td style={{padding:"7px 11px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",borderRadius:6}}>{p.category}</span></td>
                   <td style={{padding:"7px 11px"}}><span style={{background:ss[st].bg,color:ss[st].c,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{ss[st].l}</span></td>
