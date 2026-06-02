@@ -4986,66 +4986,260 @@ function DashboardOverallPage({ transactions, outlets, onBack }) {
           </div>
         )}
 
-        {activeTab==="fastmoving"&&(
-          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
-            <div style={{padding:"14px 18px",borderBottom:"2px solid #e0f5f1",fontWeight:800,fontSize:14,color:"#0d9488"}}>🚀 Top 10 Produk Fast Moving</div>
-            {fastMoving.length===0?<div style={{textAlign:"center",color:"#ccc",padding:40,fontSize:13}}>Belum ada data</div>:
-            fastMoving.map(([name,qty],i)=>{
-              const pct=Math.round((qty/(fastMoving[0]?.[1]||1))*100);
-              const colors=["#0d9488","#14b8a6","#2dd4bf","#5eead4","#99f6e4","#b2f5ea","#ccfbf1","#e0fdfb","#f0fdfa","#f0faf8"];
-              return <div key={name} style={{padding:"11px 18px",borderTop:i>0?"1px solid #f0faf8":"none"}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <div style={{width:22,height:22,borderRadius:"50%",background:colors[i],color:i<5?"#fff":"#0d9488",fontWeight:900,fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
-                    <span style={{fontSize:13,fontWeight:700}}>{name}</span>
-                  </div>
-                  <span style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{qty} pcs</span>
-                </div>
-                <div style={{background:"#e0faf5",borderRadius:20,height:4}}>
-                  <div style={{background:"linear-gradient(90deg,#0d9488,#14b8a6)",height:"100%",width:`${pct}%`,borderRadius:20}}/>
-                </div>
-              </div>;
-            })}
-          </div>
-        )}
+        {activeTab==="fastmoving"&&(()=>{
+          // ── Semua produk terjual — dikelompokkan & disortir ─────────────────
+          const [fmSort,     setFmSort]     = React.useState("qty_dsc");
+          const [fmSearch,   setFmSearch]   = React.useState("");
+          const [fmCatFlt,   setFmCatFlt]   = React.useState("Semua");
+          const [fmShowAll,  setFmShowAll]  = React.useState(false);
 
-        {activeTab==="analisis"&&(<>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+          // Build full product sales map with omset + profit
+          const fullSalesMap = {};
+          filteredTx.forEach(t=>t.items.filter(i=>!i.refunded).forEach(i=>{
+            if(!fullSalesMap[i.name]) fullSalesMap[i.name]={name:i.name,qty:0,omset:0,profit:0,category:i.category||"—"};
+            fullSalesMap[i.name].qty    += i.qty;
+            fullSalesMap[i.name].omset  += i.price*i.qty;
+            fullSalesMap[i.name].profit += (i.price-(i.modal||0))*i.qty;
+          }));
+
+          // Period days for velocity calculation
+          const periodDays = Math.max(1, Math.round((new Date(dateTo)-new Date(dateFrom))/(1000*60*60*24))+1);
+
+          // Classify each product
+          const allSalesArr = Object.values(fullSalesMap).map(p=>{
+            const vel = p.qty/periodDays; // pcs per day
+            let label, labelBg, labelC;
+            if(vel >= 1)          { label="🔥 Fast";      labelBg="#fff0e0"; labelC="#e67e22"; }
+            else if(vel >= 0.3)   { label="✅ Normal";    labelBg="#e8f8f4"; labelC="#27ae60"; }
+            else if(vel >= 0.1)   { label="🐢 Lambat";    labelBg="#fef3c7"; labelC="#d97706"; }
+            else                  { label="💀 Mati";      labelBg="#ffe4e4"; labelC="#e74c3c"; }
+            return {...p, vel, label, labelBg, labelC};
+          });
+
+          // Unique categories from sales
+          const fmCats = ["Semua",...new Set(allSalesArr.map(p=>p.category))];
+
+          // Filter + sort
+          const fmFiltered = allSalesArr
+            .filter(p=>(fmCatFlt==="Semua"||p.category===fmCatFlt)&&p.name.toLowerCase().includes(fmSearch.toLowerCase()))
+            .sort((a,b)=>{
+              if(fmSort==="qty_dsc")    return b.qty-a.qty;
+              if(fmSort==="qty_asc")    return a.qty-b.qty;
+              if(fmSort==="omset_dsc")  return b.omset-a.omset;
+              if(fmSort==="profit_dsc") return b.profit-a.profit;
+              if(fmSort==="vel_dsc")    return b.vel-a.vel;
+              if(fmSort==="nama")       return a.name.localeCompare(b.name);
+              return 0;
+            });
+
+          const maxQty = fmFiltered[0]?.qty||1;
+          const displayed = fmShowAll ? fmFiltered : fmFiltered.slice(0,30);
+
+          // Stats summary
+          const fastCount   = allSalesArr.filter(p=>p.vel>=1).length;
+          const normalCount = allSalesArr.filter(p=>p.vel>=0.3&&p.vel<1).length;
+          const slowCount   = allSalesArr.filter(p=>p.vel>=0.1&&p.vel<0.3).length;
+          const deadCount   = allSalesArr.filter(p=>p.vel<0.1).length;
+
+          return (
+          <div>
+            {/* Stats bar */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+              {[
+                {l:"🔥 Fast Moving",  v:fastCount,   bg:"#fff0e0",c:"#e67e22", desc:"≥1 pcs/hari"},
+                {l:"✅ Normal",       v:normalCount, bg:"#e8f8f4",c:"#27ae60", desc:"0.3–1 pcs/hari"},
+                {l:"🐢 Lambat",       v:slowCount,   bg:"#fef3c7",c:"#d97706", desc:"0.1–0.3 pcs/hari"},
+                {l:"💀 Stok Mati",   v:deadCount,   bg:"#ffe4e4",c:"#e74c3c", desc:"<0.1 pcs/hari"},
+              ].map(s=>(
+                <div key={s.l} style={{background:s.bg,borderRadius:11,padding:"10px 13px",border:`1px solid ${s.c}33`,cursor:"pointer"}}
+                  onClick={()=>{
+                    if(s.l.includes("Fast")) setFmSort("vel_dsc");
+                    else if(s.l.includes("Lambat")) setFmSort("vel_dsc");
+                    else if(s.l.includes("Mati")) setFmSort("vel_dsc");
+                  }}>
+                  <div style={{fontWeight:900,fontSize:22,color:s.c}}>{s.v}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:s.c,marginTop:1}}>{s.l}</div>
+                  <div style={{fontSize:10,color:s.c,opacity:.7,marginTop:2}}>{s.desc}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Filter & sort bar */}
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"10px 14px",marginBottom:10,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{position:"relative",flex:1,minWidth:140}}>
+                <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488",fontSize:12}}>🔍</span>
+                <input value={fmSearch} onChange={e=>setFmSearch(e.target.value)} placeholder="Cari produk..."
+                  style={{width:"100%",padding:"6px 8px 6px 24px",borderRadius:8,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <select value={fmSort} onChange={e=>setFmSort(e.target.value)}
+                style={{padding:"6px 10px",borderRadius:8,border:"2px solid #b2ede6",fontSize:11,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff",color:"#0d9488"}}>
+                <option value="qty_dsc">Terjual Terbanyak ↓</option>
+                <option value="qty_asc">Terjual Tersedikit ↑</option>
+                <option value="omset_dsc">Omset Tertinggi ↓</option>
+                <option value="profit_dsc">Profit Tertinggi ↓</option>
+                <option value="vel_dsc">Kecepatan Jual ↓</option>
+                <option value="nama">A-Z Nama</option>
+              </select>
+              <select value={fmCatFlt} onChange={e=>setFmCatFlt(e.target.value)}
+                style={{padding:"6px 10px",borderRadius:8,border:"2px solid #b2ede6",fontSize:11,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff",color:"#0d9488"}}>
+                {fmCats.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{fontSize:11,color:"#aaa",fontWeight:600,whiteSpace:"nowrap"}}>{fmFiltered.length} produk · {periodDays} hari</div>
+            </div>
+
+            {/* Table */}
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#e0faf5"}}>
+                    {["#","Produk","Kategori","Status","Terjual","Kecepatan","Omset","Profit"].map(h=>(
+                      <th key={h} style={{padding:"9px 11px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap",fontSize:11}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayed.map((p,i)=>(
+                    <tr key={p.name} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
+                      <td style={{padding:"8px 11px",color:"#ccc",fontWeight:600,width:30}}>{i+1}</td>
+                      <td style={{padding:"8px 11px",fontWeight:700,maxWidth:200}}>
+                        <div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+                        {/* mini bar */}
+                        <div style={{background:"#f0faf8",borderRadius:20,height:3,marginTop:3,width:"100%"}}>
+                          <div style={{background:`linear-gradient(90deg,${p.labelC},${p.labelC}88)`,height:"100%",width:`${Math.round((p.qty/maxQty)*100)}%`,borderRadius:20,transition:"width .3s"}}/>
+                        </div>
+                      </td>
+                      <td style={{padding:"8px 11px",color:"#888",fontSize:11}}>{p.category}</td>
+                      <td style={{padding:"8px 11px"}}>
+                        <span style={{background:p.labelBg,color:p.labelC,fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{p.label}</span>
+                      </td>
+                      <td style={{padding:"8px 11px",fontWeight:900,color:"#0d9488"}}>{p.qty} <span style={{fontSize:10,fontWeight:600,color:"#aaa"}}>pcs</span></td>
+                      <td style={{padding:"8px 11px",fontWeight:700,color:p.labelC,whiteSpace:"nowrap"}}>
+                        {p.vel>=1?`${p.vel.toFixed(1)}/hari`:p.vel>=0.1?`${(p.vel*7).toFixed(1)}/mgg`:`${(p.vel*30).toFixed(1)}/bln`}
+                      </td>
+                      <td style={{padding:"8px 11px",color:"#555"}}>{fmtRp(p.omset)}</td>
+                      <td style={{padding:"8px 11px",fontWeight:700,color:p.profit>0?"#27ae60":"#e74c3c"}}>{fmtRp(p.profit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {fmFiltered.length>30&&!fmShowAll&&(
+                <div style={{textAlign:"center",padding:"12px",borderTop:"1px solid #f0faf8"}}>
+                  <button onClick={()=>setFmShowAll(true)}
+                    style={{background:"#f0faf8",border:"2px solid #b2ede6",borderRadius:9,padding:"7px 20px",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                    Tampilkan semua {fmFiltered.length} produk ↓
+                  </button>
+                </div>
+              )}
+              {fmFiltered.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Tidak ada data</div>}
+            </div>
+          </div>
+          );
+        })()}
+
+        {activeTab==="analisis"&&(()=>{
+          // Rebuild with more detail
+          const fullSalesMap2 = {};
+          filteredTx.forEach(t=>t.items.filter(i=>!i.refunded).forEach(i=>{
+            if(!fullSalesMap2[i.name]) fullSalesMap2[i.name]={name:i.name,qty:0,omset:0,profit:0};
+            fullSalesMap2[i.name].qty    += i.qty;
+            fullSalesMap2[i.name].omset  += i.price*i.qty;
+            fullSalesMap2[i.name].profit += (i.price-(i.modal||0))*i.qty;
+          }));
+          const periodDays2 = Math.max(1, Math.round((new Date(dateTo)-new Date(dateFrom))/(1000*60*60*24))+1);
+          const allProds2 = Object.values(fullSalesMap2).sort((a,b)=>b.qty-a.qty);
+          const deadProds = allProds2.filter(p=>p.qty/periodDays2<0.1).sort((a,b)=>a.qty-b.qty);
+          const slowProds = allProds2.filter(p=>p.qty/periodDays2>=0.1&&p.qty/periodDays2<0.3);
+          const fastProds = allProds2.filter(p=>p.qty/periodDays2>=1);
+
+          const topOutlet = outletStats[0];
+          const botOutlet = outletStats[outletStats.length-1];
+          const margin    = totalOmset ? Math.round(totalProfit/totalOmset*100) : 0;
+
+          return (<>
+          {/* KPI insight cards */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
             {[
-              {icon:"📈",t:"Tren Omset",v:totalOmset>0?"Positif ✓":"Belum ada data",c:"#27ae60",bg:"#e8f8f0",desc:`Total omset ${fmtRp(totalOmset)} dalam periode dipilih`},
-              {icon:"💎",t:"Outlet Terbaik",v:outletStats[0]?.nama||"—",c:"#e67e22",bg:"#fef5e7",desc:`Profit tertinggi: ${fmtRp(outletStats[0]?.profit||0)}`},
-              {icon:"🏆",t:"Produk Terlaris",v:fastMoving[0]?.[0]||"—",c:"#0d9488",bg:"#e0faf5",desc:`Terjual ${fastMoving[0]?.[1]||0} pcs dalam periode ini`},
-              {icon:"📊",t:"Margin Rata-rata",v:`${totalOmset?Math.round(totalProfit/totalOmset*100):0}%`,c:"#8e44ad",bg:"#f5eeff",desc:`Profit ${fmtRp(totalProfit)} dari omset ${fmtRp(totalOmset)}`},
+              {icon:"📈",t:"Tren Omset",      v:totalOmset>0?"Positif ✓":"Belum ada",  c:"#27ae60",bg:"#e8f8f0", desc:`Total ${fmtRp(totalOmset)} · ${filteredTx.length} transaksi`},
+              {icon:"💎",t:"Outlet Terbaik",  v:topOutlet?.nama||"—",                  c:"#e67e22",bg:"#fef5e7", desc:`Profit ${fmtRp(topOutlet?.profit||0)}`},
+              {icon:"🏆",t:"Produk Terlaris", v:allProds2[0]?.name||"—",               c:"#0d9488",bg:"#e0faf5", desc:`${allProds2[0]?.qty||0} pcs · ${fmtRp(allProds2[0]?.omset||0)}`},
+              {icon:"📊",t:"Margin Rata-rata", v:`${margin}%`,                          c:"#8e44ad",bg:"#f5eeff", desc:`Profit ${fmtRp(totalProfit)} dari omset ${fmtRp(totalOmset)}`},
             ].map(ins=>(
-              <div key={ins.t} style={{background:ins.bg,borderRadius:13,padding:"16px 18px",border:`1px solid ${ins.c}22`}}>
-                <div style={{fontSize:28,marginBottom:8}}>{ins.icon}</div>
-                <div style={{fontWeight:700,fontSize:11,color:ins.c,textTransform:"uppercase",marginBottom:4}}>{ins.t}</div>
-                <div style={{fontWeight:900,fontSize:18,color:"#1a2e2a",marginBottom:5}}>{ins.v}</div>
-                <div style={{fontSize:11,color:"#888",lineHeight:1.5}}>{ins.desc}</div>
+              <div key={ins.t} style={{background:ins.bg,borderRadius:13,padding:"14px 16px",border:`1px solid ${ins.c}22`}}>
+                <div style={{fontSize:24,marginBottom:6}}>{ins.icon}</div>
+                <div style={{fontWeight:700,fontSize:10,color:ins.c,textTransform:"uppercase",marginBottom:3}}>{ins.t}</div>
+                <div style={{fontWeight:900,fontSize:16,color:"#1a2e2a",marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ins.v}</div>
+                <div style={{fontSize:11,color:"#888",lineHeight:1.4}}>{ins.desc}</div>
               </div>
             ))}
           </div>
-          <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #e0f5f1"}}>
-            <div style={{fontWeight:800,fontSize:14,color:"#0d9488",marginBottom:12}}>🧠 Rekomendasi Berdasarkan Data Real</div>
+
+          {/* Stok Mati & Lambat alert */}
+          {deadProds.length>0&&(
+            <div style={{background:"#fff5f5",border:"2px solid #ff475733",borderRadius:13,padding:"14px 16px",marginBottom:10}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#e74c3c",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                💀 Peringatan: {deadProds.length} Produk Stok Mati
+                <span style={{fontSize:10,fontWeight:600,color:"#aaa"}}>(&lt;0.1 pcs/hari dalam {periodDays2} hari)</span>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {deadProds.slice(0,20).map(p=>(
+                  <span key={p.name} style={{background:"#ffe4e4",color:"#c0392b",fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,border:"1px solid #ff475733"}}>
+                    {p.name} <span style={{opacity:.7}}>({p.qty} pcs)</span>
+                  </span>
+                ))}
+                {deadProds.length>20&&<span style={{fontSize:10,color:"#aaa",padding:"3px 6px"}}>+{deadProds.length-20} lainnya</span>}
+              </div>
+              <div style={{fontSize:11,color:"#888",marginTop:8,lineHeight:1.5}}>
+                ⚠ Produk ini perlu evaluasi: pertimbangkan promo, bundling, atau stop restock untuk hindari modal nganggur.
+              </div>
+            </div>
+          )}
+          {slowProds.length>0&&(
+            <div style={{background:"#fffbeb",border:"2px solid #f39c1233",borderRadius:13,padding:"14px 16px",marginBottom:10}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#d97706",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                🐢 Perhatian: {slowProds.length} Produk Bergerak Lambat
+                <span style={{fontSize:10,fontWeight:600,color:"#aaa"}}>(0.1–0.3 pcs/hari)</span>
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {slowProds.slice(0,15).map(p=>(
+                  <span key={p.name} style={{background:"#fef3c7",color:"#b45309",fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,border:"1px solid #f39c1233"}}>
+                    {p.name} <span style={{opacity:.7}}>({p.qty} pcs)</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Rekomendasi */}
+          <div style={{background:"#fff",borderRadius:13,padding:"14px 16px",border:"2px solid #e0f5f1"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>🧠 Rekomendasi Berdasarkan Data Real</div>
             {[
-              {icon:"📍",pr:"Tinggi",c:"#e74c3c",j:"Fokus Outlet Terbaik",isi:`${outletStats[0]?.nama||"Outlet"} adalah yang paling profitable. Pertahankan stok dan pelayanan terbaik di sini.`},
-              {icon:"📦",pr:"Tinggi",c:"#e74c3c",j:"Jaga Stok Fast Moving",isi:`${fastMoving.slice(0,3).map(([n])=>n).join(", ")||"Produk terlaris"} — pastikan stok selalu tersedia untuk menghindari kehilangan penjualan.`},
-              {icon:"📈",pr:"Sedang",c:"#f39c12",j:"Tingkatkan Margin",isi:`Margin saat ini ${totalOmset?Math.round(totalProfit/totalOmset*100):0}%. Target 30%+ dengan review harga jual dan negosiasi supplier.`},
-              {icon:"🏪",pr:"Sedang",c:"#f39c12",j:"Optimalkan Outlet Terlemah",isi:`${outletStats[outletStats.length-1]?.nama||"Outlet"} perlu perhatian khusus — cek stok, kasir, dan promosi lokal.`},
-            ].map(r=>(
+              fastProds.length>0&&{icon:"🔥",pr:"Tinggi",c:"#e74c3c",j:"Prioritaskan Stok Fast Moving",
+                isi:`${fastProds.slice(0,3).map(p=>p.name).join(", ")} terjual ≥1 pcs/hari — pastikan stok tidak pernah kosong, ini sumber utama pendapatan.`},
+              deadProds.length>0&&{icon:"💀",pr:"Tinggi",c:"#e74c3c",j:`Evaluasi ${deadProds.length} Produk Mati`,
+                isi:`Produk ini nyaris tidak terjual dalam ${periodDays2} hari. Coba promo harga, bundling dengan fast moving, atau hentikan restock untuk bebaskan modal.`},
+              slowProds.length>0&&{icon:"🐢",pr:"Sedang",c:"#f39c12",j:`Dorong ${slowProds.length} Produk Lambat`,
+                isi:`Produk bergerak lambat masih bisa diselamatkan dengan diskon temporer, display lebih menonjol, atau paket combo.`},
+              {icon:"💎",pr:"Tinggi",c:"#e74c3c",j:"Fokus Outlet Terbaik",
+                isi:`${topOutlet?.nama||"Outlet"} profit ${fmtRp(topOutlet?.profit||0)} — pertahankan stok lengkap dan pelayanan optimal di sini.`},
+              botOutlet&&botOutlet.trx>0&&{icon:"🏪",pr:"Sedang",c:"#f39c12",j:`Optimalkan ${botOutlet.nama}`,
+                isi:`Outlet ini tertinggal — cek kelengkapan stok, evaluasi kasir, dan pertimbangkan promosi lokal.`},
+              {icon:"📊",pr:"Sedang",c:"#f39c12",j:"Tingkatkan Margin",
+                isi:`Margin ${margin}%. Target 30%+ dengan review harga jual produk paling laris dan negosiasi supplier untuk produk slow.`},
+            ].filter(Boolean).map(r=>(
               <div key={r.j} style={{display:"flex",gap:10,padding:"10px 12px",borderRadius:10,background:"#f0faf8",marginBottom:7,border:"1px solid #e0f5f1"}}>
-                <span style={{fontSize:20,flexShrink:0}}>{r.icon}</span>
+                <span style={{fontSize:18,flexShrink:0}}>{r.icon}</span>
                 <div style={{flex:1}}>
                   <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3,flexWrap:"wrap"}}>
-                    <span style={{fontWeight:800,fontSize:13}}>{r.j}</span>
+                    <span style={{fontWeight:800,fontSize:12}}>{r.j}</span>
                     <span style={{background:`${r.c}15`,color:r.c,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:20}}>Prioritas {r.pr}</span>
                   </div>
-                  <div style={{fontSize:12,color:"#888",lineHeight:1.5}}>{r.isi}</div>
+                  <div style={{fontSize:11,color:"#888",lineHeight:1.5}}>{r.isi}</div>
                 </div>
               </div>
             ))}
           </div>
-        </>)}
+          </>);
+        })()}
       </div>
     </div>
   );
