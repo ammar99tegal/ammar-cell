@@ -5334,8 +5334,8 @@ const CF_KAT = {
   modal:       {l:"Modal / Investasi",      c:"#6d28d9", bg:"#f5f3ff", icon:"💎"},
   lainnya:     {l:"Lain-lain",              c:"#6b7280", bg:"#f9fafb", icon:"📝"},
 };
-const CF_CF_KAT_IN  = ["pendapatan","setoran","modal","lainnya"];
-const CF_CF_KAT_OUT = ["hpp","operasional","gaji","marketing","aset","lainnya"];
+const CF_KAT_IN  = ["pendapatan","setoran","modal","lainnya"];
+const CF_KAT_OUT = ["hpp","operasional","gaji","marketing","aset","lainnya"];
 
 const OUTLETS = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 const BANKS   = ["BRI","BCA","BSI"];
