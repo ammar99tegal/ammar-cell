@@ -2146,10 +2146,30 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const key=t.shiftId||"no-shift";
     const label=t.shiftNama||"Tanpa Shift";
     const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||"—";
-    if(!groups[key]) groups[key]={key,label,outletNama,items:[]};
+    if(!groups[key]) groups[key]={key,label,outletNama,outletId:t.outletId,items:[]};
     groups[key].items.push(t);
   });
-  const groupArr=Object.values(groups);
+  // Tambahkan shift dari shift_logs yang belum ada di transactions (shift 0 transaksi / ditutup tapi belum load)
+  Object.entries(shiftLogs).forEach(([k,v])=>{
+    // Skip key format outlet_date (bukan shiftId murni)
+    if(k.includes('_') && !k.startsWith('S')) return;
+    if(groups[k]) return; // sudah ada dari transactions
+    if(v.type!=="closed" && v.type!=="open") return;
+    const oId = v.outletId || '';
+    // Cek filter outlet
+    if(filterOutlet!=="all" && oId && oId!==filterOutlet) return;
+    // Cek filter shift
+    if(filterShift!=="all" && k!==filterShift) return;
+    const outletNama=outlets.find(o=>o.id===oId)?.nama||"—";
+    groups[k]={key:k,label:v.namaShift||k,outletNama,outletId:oId,items:[]};
+  });
+  const groupArr=Object.values(groups).sort((a,b)=>{
+    // Sort by waktu tutup/buka terbaru di atas
+    const sa=shiftLogs[a.key]; const sb=shiftLogs[b.key];
+    const ta=sa?.waktuTutup||sa?.waktuBuka||a.items[0]?.time||'';
+    const tb=sb?.waktuTutup||sb?.waktuBuka||b.items[0]?.time||'';
+    return tb.localeCompare(ta);
+  });
 
   const omsetTotal=calcOmset(filtered);
   const itemTotal =filtered.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
@@ -2348,7 +2368,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const isActive = isInActiveShifts && !saldo?.type; // aktif hanya jika benar di active_shifts
 
     // Bank data untuk shift ini
-    const outletId = group.items[0]?.outletId || group.outletId;
+    const outletId = group.outletId || group.items[0]?.outletId || '';
     const tglShift = group.items[0]?.date||'';
     // Normalize tanggal: "30/5/2026" → "2026-05-30" agar match dengan bankShiftLogs key
     const normDate = (d) => {
@@ -2808,8 +2828,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
             <select value={filterShift} onChange={e=>setFilterShift(e.target.value)}
               style={{padding:"7px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",background:"#fff",fontWeight:600}}>
               <option value="all">Semua Shift</option>
-              {[...new Set(transactions.map(t=>t.shiftNama).filter(Boolean))].map(s=>(
-                <option key={s} value={s}>{s}</option>
+              {allShifts.map(s=>(
+                <option key={s.id} value={s.id}>{s.nama}</option>
               ))}
             </select>
           )}
@@ -2822,11 +2842,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
         {/* ── TAB KASIR ── */}
         {mainTab==="kasir"&&(<>
-          {groupArr.filter(g=>{
-            const outletId = transactions.find(t=>t.shiftId===g.key)?.outletId;
-            return (filterOutlet==="all"||outletId===filterOutlet)&&
-                   (filterShift==="all"||g.label===filterShift||g.key===filterShift);
-          }).map(group=>{
+          {shiftLogsLoading&&<div style={{textAlign:"center",color:"#0d9488",padding:20,fontSize:13,fontWeight:700}}>⏳ Memuat data shift...</div>}
+          {!shiftLogsLoading&&groupArr.map(group=>{
             const saldoCard = getShiftSaldo(group.key);
             const shiftCardInLogs = shiftLogs[group.key];
             const isClosedCard = 
@@ -2865,7 +2882,9 @@ function LaporanPage({ transactions, outlets, onBack }) {
             </div>
             );
           })}
-          {groupArr.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada data transaksi</div>}
+          {!shiftLogsLoading&&groupArr.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>
+            {filterOutlet!=="all"||filterShift!=="all"?"Tidak ada shift sesuai filter":"Belum ada data shift"}
+          </div>}
         </>)}
 
         {/* ── TAB BANK ── */}
