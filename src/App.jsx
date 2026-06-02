@@ -1,3 +1,4 @@
+// Ammar Cell App — build 20260602-1043
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
 
@@ -5319,6 +5320,7 @@ function DynRows({rows, setRows, color, placeholder="Keterangan..."}) {
 // CASHFLOW — LAPORAN KEUANGAN (v2 — identik lapkeu-v2.jsx)
 // ════════════════════════════════════════════════════════════════════════════
 
+const CO = "Ammar Cell"; // nama perusahaan untuk laporan keuangan
 const CF_KAT_NAMES_OUTLETS_DEFAULT = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 const BANKS_CF = ["BRI","BCA","BSI"];
 const APPS_CF  = ["Digipos","Dana","GoPay","OVO","ShopeePay"];
