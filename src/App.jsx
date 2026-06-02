@@ -1680,6 +1680,7 @@ const fromInputDate = s => { const [y,m,d]=s.split("-"); return new Date(+y,+m-1
 function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   const [chartMetric, setChartMetric] = useState("omset");
   const [period,      setPeriod]      = useState("daily");   // daily|monthly|yearly|custom
+  const [hoverIdx,    setHoverIdx]    = useState(null);
   // Default custom range: last 30 days
   const nowD = new Date();
   const thirtyAgo = new Date(nowD); thirtyAgo.setDate(nowD.getDate()-29);
@@ -1767,7 +1768,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   const rangedTx  = period==="custom" ? filteredTx : chartData.reduce((acc,_,i)=>{ /* use all */ return acc; }, filteredTx);
   const vals=chartData.map(p=>p[chartMetric]);
   const maxVal=Math.max(...vals,1);
-  const cW=600,cH=160,pL=42,pR=10,pT=10,pB=28,iW=cW-pL-pR,iH=cH-pT-pB,n=chartData.length;
+  const cW=640,cH=200,pL=52,pR=16,pT=16,pB=32,iW=cW-pL-pR,iH=cH-pT-pB,n=chartData.length;
   const pts2=chartData.map((p,i)=>({x:pL+(i/((n-1)||1))*iW,y:pT+(1-p[chartMetric]/maxVal)*iH,val:p[chartMetric],label:p.label}));
   const linePath=pts2.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
   const areaPath=pts2.length>1?`${linePath} L${pts2[pts2.length-1].x},${pT+iH} L${pts2[0].x},${pT+iH} Z`:"";
@@ -1856,30 +1857,149 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
               </div>
             </div>
           </div>
-          <div style={{overflowX:"auto"}}>
-            <svg width="100%" viewBox={`0 0 ${cW} ${cH}`} style={{display:"block",minWidth:320}}>
+          {/* ── Interactive Stock-style Chart ── */}
+          <div style={{overflowX:"auto",position:"relative"}}>
+            {/* Tooltip floating */}
+            {hoverIdx!==null&&pts2[hoverIdx]&&(()=>{
+              const p=pts2[hoverIdx];
+              const tipW=160, tipH=64;
+              // posisi tooltip: kiri/kanan tergantung posisi titik
+              const txPct = p.x/cW;
+              const tipLeft = txPct>0.7
+                ? `calc(${(p.x/cW*100).toFixed(1)}% - ${tipW+12}px)`
+                : `calc(${(p.x/cW*100).toFixed(1)}% + 12px)`;
+              // hitung perubahan dari titik sebelumnya
+              const prev = hoverIdx>0?pts2[hoverIdx-1]:null;
+              const diff = prev?p.val-prev.val:null;
+              const diffPct = prev&&prev.val>0?((diff/prev.val)*100).toFixed(1):null;
+              return (
+                <div style={{
+                  position:"absolute",top:0,left:tipLeft,
+                  background:"#fff",borderRadius:12,padding:"10px 14px",
+                  boxShadow:"0 4px 20px rgba(0,0,0,.18)",
+                  border:`2px solid ${tC}33`,
+                  pointerEvents:"none",zIndex:10,width:tipW,
+                  animation:"fadeUp .12s ease"
+                }}>
+                  <div style={{fontSize:11,fontWeight:800,color:"#555",marginBottom:3}}>{p.label}</div>
+                  <div style={{fontSize:16,fontWeight:900,color:tC}}>{fmtRp(p.val)}</div>
+                  {diff!==null&&(
+                    <div style={{fontSize:11,fontWeight:700,color:diff>=0?"#27ae60":"#e74c3c",marginTop:3,display:"flex",alignItems:"center",gap:3}}>
+                      {diff>=0?"▲":"▼"} {fmtRp(Math.abs(diff))} ({diff>=0?"+":""}{diffPct}%)
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            <svg
+              width="100%"
+              viewBox={`0 0 ${cW} ${cH}`}
+              style={{display:"block",minWidth:320,cursor:"crosshair"}}
+              onMouseLeave={()=>setHoverIdx(null)}
+              onMouseMove={e=>{
+                const rect=e.currentTarget.getBoundingClientRect();
+                const mx=(e.clientX-rect.left)*(cW/rect.width);
+                if(pts2.length===0){setHoverIdx(null);return;}
+                let best=0,bestD=Infinity;
+                pts2.forEach((p,i)=>{const d=Math.abs(p.x-mx);if(d<bestD){bestD=d;best=i;}});
+                setHoverIdx(best);
+              }}
+            >
               <defs>
                 <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={tC} stopOpacity="0.22"/><stop offset="100%" stopColor={tC} stopOpacity="0.01"/>
+                  <stop offset="0%" stopColor={tC} stopOpacity="0.28"/>
+                  <stop offset="100%" stopColor={tC} stopOpacity="0.02"/>
                 </linearGradient>
+                <filter id="chartShadow">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={tC} floodOpacity="0.18"/>
+                </filter>
               </defs>
+
+              {/* Grid lines & Y labels */}
               {yLabels2.map((yl,i)=>(
                 <g key={i}>
-                  <line x1={pL} y1={yl.y} x2={cW-pR} y2={yl.y} stroke="#e8f8f5" strokeWidth="1"/>
-                  <text x={pL-4} y={yl.y+4} textAnchor="end" fontSize="9" fill="#bbb" fontFamily="Nunito,sans-serif">{fmtS(yl.val)}</text>
+                  <line x1={pL} y1={yl.y} x2={cW-pR} y2={yl.y}
+                    stroke={i===0?"#e0f5f1":"#f0faf8"} strokeWidth={i===0?"1.5":"1"}
+                    strokeDasharray={i===0?"none":"4,4"}/>
+                  <text x={pL-6} y={yl.y+4} textAnchor="end" fontSize="11"
+                    fill="#aaa" fontFamily="Nunito,sans-serif" fontWeight="700">
+                    {fmtS(yl.val)}
+                  </text>
                 </g>
               ))}
+
+              {/* Area fill */}
               {pts2.length>1&&<path d={areaPath} fill={`url(#${gId})`}/>}
-              {pts2.length>1&&<path d={linePath} fill="none" stroke={tC} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>}
-              {pts2.map((p,i)=>(
-                <g key={i}>
-                  <circle cx={p.x} cy={p.y} r="4" fill="#fff" stroke={tC} strokeWidth="2.5"/>
-                  <text x={p.x} y={pT+iH+17} textAnchor="middle" fontSize="9" fill="#999" fontFamily="Nunito,sans-serif">{p.label}</text>
-                  {n<=8&&p.val>0&&<text x={p.x} y={p.y-8} textAnchor="middle" fontSize="9" fill={tC} fontWeight="700" fontFamily="Nunito,sans-serif">{fmtS(p.val)}</text>}
-                  <title>{p.label}: {fmtRp(p.val)}</title>
-                </g>
-              ))}
-              {pts2.length===0&&<text x={cW/2} y={cH/2} textAnchor="middle" fill="#ccc" fontSize="12">Belum ada data</text>}
+
+              {/* Main line */}
+              {pts2.length>1&&<path d={linePath} fill="none" stroke={tC} strokeWidth="2.5"
+                strokeLinejoin="round" strokeLinecap="round" filter="url(#chartShadow)"/>}
+
+              {/* Hover crosshair */}
+              {hoverIdx!==null&&pts2[hoverIdx]&&(()=>{
+                const p=pts2[hoverIdx];
+                return (
+                  <g>
+                    {/* Vertical crosshair line */}
+                    <line x1={p.x} y1={pT} x2={p.x} y2={pT+iH}
+                      stroke={tC} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.6"/>
+                    {/* Horizontal crosshair line */}
+                    <line x1={pL} y1={p.y} x2={cW-pR} y2={p.y}
+                      stroke={tC} strokeWidth="1" strokeDasharray="3,3" opacity="0.4"/>
+                    {/* Y axis value label */}
+                    <rect x={0} y={p.y-9} width={pL-2} height={18} rx="4" fill={tC}/>
+                    <text x={pL-5} y={p.y+4} textAnchor="end" fontSize="10"
+                      fill="#fff" fontFamily="Nunito,sans-serif" fontWeight="800">
+                      {fmtS(p.val)}
+                    </text>
+                  </g>
+                );
+              })()}
+
+              {/* Data points */}
+              {pts2.map((p,i)=>{
+                const isHover=hoverIdx===i;
+                const showLabel = n<=14 || isHover;
+                // X label: show every Nth to avoid clutter
+                const showX = n<=14 || i===0 || i===n-1 || i%Math.ceil(n/10)===0 || isHover;
+                return (
+                  <g key={i}>
+                    {/* Outer glow ring on hover */}
+                    {isHover&&<circle cx={p.x} cy={p.y} r="10" fill={tC} opacity="0.12"/>}
+                    {isHover&&<circle cx={p.x} cy={p.y} r="6.5" fill={tC} opacity="0.2"/>}
+                    {/* Main dot */}
+                    <circle cx={p.x} cy={p.y}
+                      r={isHover?5.5:3.5}
+                      fill={isHover?tC:"#fff"}
+                      stroke={tC}
+                      strokeWidth={isHover?0:2.5}
+                      style={{transition:"r .1s,fill .1s"}}
+                    />
+                    {/* X axis label */}
+                    {showX&&(
+                      <text x={p.x} y={pT+iH+16} textAnchor="middle" fontSize="10"
+                        fill={isHover?tC:"#999"} fontFamily="Nunito,sans-serif"
+                        fontWeight={isHover?"800":"600"}>
+                        {p.label}
+                      </text>
+                    )}
+                    {/* Value label above dot — always show if few points or on hover */}
+                    {(showLabel&&p.val>0)&&(
+                      <text x={p.x} y={p.y-(isHover?10:8)} textAnchor="middle" fontSize={isHover?"11":"9"}
+                        fill={tC} fontWeight="800" fontFamily="Nunito,sans-serif">
+                        {fmtS(p.val)}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+
+              {pts2.length===0&&(
+                <text x={cW/2} y={cH/2} textAnchor="middle" fill="#ccc"
+                  fontSize="13" fontFamily="Nunito,sans-serif">
+                  Belum ada data
+                </text>
+              )}
             </svg>
           </div>
           <div style={{display:"flex",gap:8,marginTop:10}}>
