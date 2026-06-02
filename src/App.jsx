@@ -4826,6 +4826,11 @@ function DashboardOverallPage({ transactions, outlets, onBack }) {
   const toInputDate = d => { const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
   const [dateFrom, setDateFrom] = useState(toInputDate(new Date(nowD.getFullYear(),nowD.getMonth(),1)));
   const [dateTo,   setDateTo]   = useState(toInputDate(nowD));
+  // Fast Moving tab state — harus di level komponen, tidak bisa di dalam IIFE
+  const [fmSort,    setFmSort]    = useState("qty_dsc");
+  const [fmSearch,  setFmSearch]  = useState("");
+  const [fmCatFlt,  setFmCatFlt]  = useState("Semua");
+  const [fmShowAll, setFmShowAll] = useState(false);
 
   const applyPreset = p => {
     const n=new Date();
@@ -4988,10 +4993,7 @@ function DashboardOverallPage({ transactions, outlets, onBack }) {
 
         {activeTab==="fastmoving"&&(()=>{
           // ── Semua produk terjual — dikelompokkan & disortir ─────────────────
-          const [fmSort,     setFmSort]     = React.useState("qty_dsc");
-          const [fmSearch,   setFmSearch]   = React.useState("");
-          const [fmCatFlt,   setFmCatFlt]   = React.useState("Semua");
-          const [fmShowAll,  setFmShowAll]  = React.useState(false);
+          // (fmSort, fmSearch, fmCatFlt, fmShowAll states declared at component level above)
 
           // Build full product sales map with omset + profit
           const fullSalesMap = {};
