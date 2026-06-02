@@ -5733,6 +5733,425 @@ function TabBukuBesar({log}) {
   );
 }
 
+// ── Tab Kalkulator Cash ──────────────────────────────────────────────────────
+const CF_SAVE_KEY = "ammar_cashflow_kalkulator";
+
+function KalIRow({r, color, placeholder, onChange, onDel}) {
+  const [focus,setFocus] = useState(false);
+  const v = toNumCF(r.val||r.nominal||"");
+  return (
+    <div style={{display:"flex",gap:6,marginBottom:7,alignItems:"center"}}>
+      <input value={r.label} onChange={e=>onChange("label",e.target.value)}
+        placeholder={placeholder||"Nama..."}
+        style={{flex:"0 0 145px",padding:"7px 10px",borderRadius:9,
+          border:`2px solid ${focus?"#b2ede6":"#e8f5f2"}`,fontSize:11,fontWeight:700,
+          outline:"none",fontFamily:"inherit",color:"#1a2e2a",background:"#fafefd",
+          transition:"border-color .15s"}}
+        onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)}/>
+      <div style={{flex:1,display:"flex",alignItems:"center",gap:5,
+        background:"#fafefd",borderRadius:9,
+        border:`2px solid ${v>0?color:focus?"#b2ede6":"#e8f5f2"}`,
+        padding:"0 10px",transition:"border-color .15s"}}>
+        <span style={{fontSize:10,fontWeight:800,color:"#aaa",flexShrink:0}}>Rp</span>
+        <input type="number" value={r.val||r.nominal||""} onChange={e=>onChange("val",e.target.value)}
+          onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)}
+          placeholder="0"
+          style={{flex:1,padding:"7px 0",border:"none",fontSize:12,fontWeight:800,
+            textAlign:"right",outline:"none",fontFamily:"inherit",
+            background:"transparent",color:v>0?color:"#888",minWidth:0}}/>
+      </div>
+      <button onClick={onDel}
+        style={{width:24,height:24,borderRadius:7,border:"none",
+          background:"#fff0f0",color:"#ff4757",cursor:"pointer",
+          fontSize:13,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}
+        onMouseEnter={e=>{e.currentTarget.style.background="#ff4757";e.currentTarget.style.color="#fff";}}
+        onMouseLeave={e=>{e.currentTarget.style.background="#fff0f0";e.currentTarget.style.color="#ff4757";}}>
+        ×
+      </button>
+    </div>
+  );
+}
+
+function KalSec({title,icon,color,bgLight,total,rows,setRows,placeholder,note}) {
+  const upd = (id,f,v) => setRows(p=>p.map(r=>r.id===id?{...r,[f]:v}:r));
+  const del = id => setRows(p=>p.filter(r=>r.id!==id));
+  const add = () => setRows(p=>[...p,{id:uid(),label:"",val:""}]);
+  return (
+    <div style={{background:"#fff",borderRadius:16,overflow:"hidden",
+      boxShadow:`0 2px 16px ${color}0e`,border:`2px solid ${color}18`}}>
+      <div style={{height:3,background:`linear-gradient(90deg,${color},${color}55)`}}/>
+      <div style={{padding:"12px 15px 0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:32,height:32,borderRadius:10,background:bgLight,
+              display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
+              {icon}
+            </div>
+            <div>
+              <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",lineHeight:1.2}}>{title}</div>
+              {note&&<div style={{fontSize:9,color:"#aaa",fontWeight:600,marginTop:1}}>{note}</div>}
+            </div>
+          </div>
+          <div style={{fontWeight:900,fontSize:15,color,
+            textShadow:total>0?`0 0 12px ${color}33`:"none",transition:"all .3s",flexShrink:0}}>
+            {fmtRp(total)}
+          </div>
+        </div>
+      </div>
+      <div style={{padding:"2px 15px 13px"}}>
+        {rows.map(r=>(
+          <KalIRow key={r.id} r={r} color={color} placeholder={placeholder}
+            onChange={(f,v)=>upd(r.id,f,v)} onDel={()=>del(r.id)}/>
+        ))}
+        <button onClick={add}
+          style={{width:"100%",padding:"6px",borderRadius:9,
+            border:`2px dashed ${color}44`,background:`${color}06`,
+            color,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",
+            transition:"all .15s",marginTop:2}}
+          onMouseEnter={e=>{e.currentTarget.style.background=`${color}14`;e.currentTarget.style.borderColor=color;}}
+          onMouseLeave={e=>{e.currentTarget.style.background=`${color}06`;e.currentTarget.style.borderColor=`${color}44`;}}>
+          + Tambah Baris
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function KalVRow({label,sub,sistem,input}) {
+  const sel = input - sistem;
+  const ok  = Math.abs(sel) < 1000;
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px 100px",
+      alignItems:"center",padding:"9px 16px",borderTop:"1px solid #f0faf8"}}
+      onMouseEnter={e=>e.currentTarget.style.background="#f8fffe"}
+      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+      <div>
+        <div style={{fontSize:12,fontWeight:700,color:"#1a2e2a"}}>{label}</div>
+        {sub&&<div style={{fontSize:10,color:"#aaa",marginTop:1}}>{sub}</div>}
+      </div>
+      <div style={{textAlign:"right",fontSize:12,fontWeight:800,color:"#3b82f6"}}>{fmtRp(sistem)}</div>
+      <div style={{textAlign:"right",fontSize:12,fontWeight:800,color:"#0d9488"}}>{fmtRp(input)}</div>
+      <div style={{textAlign:"right"}}>
+        <span style={{fontSize:11,fontWeight:800,padding:"3px 9px",borderRadius:20,display:"inline-block",
+          background:ok?"#dcfce7":sel>0?"#fefce8":"#fef2f2",
+          color:ok?"#16a34a":sel>0?"#ca8a04":"#dc2626",
+          border:`1px solid ${ok?"#86efac":sel>0?"#fde047":"#fca5a5"}`}}>
+          {ok?"✅ Sama":sel>0?`▲ +${fmtRp(sel)}`:`▼ -${fmtRp(Math.abs(sel))}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TabKalkulator({ transactions, outlets, log, onAddEntries }) {
+  const mkRows = (labels=[]) => labels.map(l=>({id:uid(),label:l,val:""}));
+  const outletNames = (outlets||[]).map(o=>o.nama);
+
+  // ── Load autosave ─────────────────────────────────────────────────────────
+  const loadSaved = () => { try{ const s=localStorage.getItem(CF_SAVE_KEY); return s?JSON.parse(s):null; }catch{return null;} };
+  const sv = loadSaved();
+
+  // ── State PAGI ────────────────────────────────────────────────────────────
+  const [pCash,  setPCash]  = useState(sv?.pCash  || mkRows(outletNames.length?outletNames:["Laci Kasir"]));
+  const [pBank,  setPBank]  = useState(sv?.pBank  || mkRows(["BRI","BCA","BSI"]));
+  const [pApps,  setPApps]  = useState(sv?.pApps  || mkRows(["Digipos","Dana","GoPay","OVO","ShopeePay"]));
+
+  // ── State MALAM ───────────────────────────────────────────────────────────
+  const [mOutlet,setMOutlet]= useState(sv?.mOutlet|| mkRows(outletNames.length?outletNames:["Outlet"]));
+  const [mBank,  setMBank]  = useState(sv?.mBank  || mkRows(["BRI","BCA","BSI"]));
+  const [mApps,  setMApps]  = useState(sv?.mApps  || mkRows(["Digipos","Dana","GoPay","OVO","ShopeePay"]));
+  const [mKeluar,setMKeluar]= useState(sv?.mKeluar|| mkRows(["Belanja stok","Operasional","Lain-lain"]));
+  const [mFisik, setMFisik] = useState(sv?.mFisik || mkRows(outletNames.length?outletNames:["Laci Kasir"]));
+
+  const [savedLog, setSavedLog] = useState(false);
+  const [lastSave, setLastSave] = useState(sv?.lastSave||null);
+  const saveTimer = useRef(null);
+
+  // ── Autosave setiap ada perubahan ─────────────────────────────────────────
+  useEffect(()=>{
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(()=>{
+      const ts = new Date().toLocaleTimeString("id-ID");
+      localStorage.setItem(CF_SAVE_KEY, JSON.stringify({pCash,pBank,pApps,mOutlet,mBank,mApps,mKeluar,mFisik,lastSave:ts}));
+      setLastSave(ts);
+    }, 600);
+  },[pCash,pBank,pApps,mOutlet,mBank,mApps,mKeluar,mFisik]);
+
+  // ── Totals ────────────────────────────────────────────────────────────────
+  const sumR = arr => arr.reduce((s,r)=>s+toNumCF(r.val||r.nominal||""),0);
+  const tPCash=sumR(pCash), tPBank=sumR(pBank), tPApps=sumR(pApps);
+  const tMOut=sumR(mOutlet), tMBank=sumR(mBank), tMApps=sumR(mApps);
+  const tMKel=sumR(mKeluar), tMFisik=sumR(mFisik);
+  const tPagi  = tPCash + tPBank + tPApps;
+  const tMalam = tMFisik + tMBank + tMApps;
+
+  // ── Versus Sistem ─────────────────────────────────────────────────────────
+  const todayStr = today();
+  const txHari   = transactions.filter(t=>t.date===todayStr);
+  const omsetSys = txHari.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+  const logMasuk = log.filter(e=>e.tgl===todayStr&&e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const sistemMasuk  = omsetSys + logMasuk;
+  const estimasiFisik= tPCash + tMOut - tMKel;
+  const selisihTotal = tMalam - (tPagi + tMOut - tMKel);
+  const balanced     = Math.abs(selisihTotal) < 5000;
+
+  // ── Kirim ke Log ──────────────────────────────────────────────────────────
+  const kirimKeLog = async () => {
+    const tglFmt = todayStr; // already "dd/mm/yyyy"
+    const entries = [];
+    mOutlet.filter(r=>r.label&&toNumCF(r.val||"")>0).forEach(r=>{
+      entries.push({id:uid(),tgl:tglFmt,jenis:"masuk",kat:"outlet",nama:`Setoran ${r.label}`,nominal:toNumCF(r.val||"")});
+    });
+    mKeluar.filter(r=>r.label&&toNumCF(r.val||"")>0).forEach(r=>{
+      entries.push({id:uid(),tgl:tglFmt,jenis:"keluar",kat:"operasional",nama:r.label,nominal:toNumCF(r.val||"")});
+    });
+    if(!entries.length) return;
+    if(onAddEntries) await onAddEntries(entries);
+    setSavedLog(true); setTimeout(()=>setSavedLog(false),2500);
+  };
+
+  const ColHeader = ({emoji,label,gradient,shadow}) => (
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+      <div style={{height:2,flex:1,background:`linear-gradient(90deg,${shadow} 40%,transparent)`}}/>
+      <div style={{background:gradient,borderRadius:20,padding:"5px 16px",
+        display:"flex",alignItems:"center",gap:7,boxShadow:`0 3px 12px ${shadow}22`}}>
+        <span style={{fontSize:16}}>{emoji}</span>
+        <span style={{fontWeight:900,fontSize:12,color:"#fff",letterSpacing:".5px"}}>{label}</span>
+      </div>
+      <div style={{height:2,flex:1,background:`linear-gradient(270deg,${shadow} 40%,transparent)`}}/>
+    </div>
+  );
+
+  const TotalCard = ({label,sub,value,gradient,shadow}) => (
+    <div style={{background:gradient,borderRadius:14,padding:"14px 18px",
+      display:"flex",justifyContent:"space-between",alignItems:"center",
+      boxShadow:`0 6px 22px ${shadow}30`,marginTop:4}}>
+      <div>
+        <div style={{fontSize:10,color:"rgba(255,255,255,.65)",fontWeight:700,
+          textTransform:"uppercase",letterSpacing:".5px"}}>{label}</div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:2}}>{sub}</div>
+      </div>
+      <div style={{fontWeight:900,fontSize:22,color:"#fff",
+        textShadow:"0 0 20px rgba(255,255,255,.25)"}}>{fmtRp(value)}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Autosave bar */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+        marginBottom:14,background:"#fff",borderRadius:11,padding:"8px 14px",
+        border:"2px solid #e0f5f1",boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,fontSize:11,color:"#555",fontWeight:600}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block",
+            boxShadow:"0 0 0 3px #22c55e33"}}/>
+          Autosave aktif — data tidak hilang saat refresh
+          {lastSave&&<span style={{color:"#aaa",fontWeight:600}}>· Tersimpan {lastSave}</span>}
+        </div>
+        <button onClick={()=>{localStorage.removeItem(CF_SAVE_KEY);window.location.reload();}}
+          style={{fontSize:11,color:"#aaa",background:"none",border:"1px solid #e0f5f1",
+            borderRadius:7,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",
+            transition:"all .15s"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="#ff4757";e.currentTarget.style.color="#ff4757";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.color="#aaa";}}>
+          🗑 Reset Form
+        </button>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+
+        {/* ══ PAGI ══ */}
+        <div>
+          <ColHeader emoji="🌅" label="PAGI — KONDISI AWAL"
+            gradient="linear-gradient(135deg,#1d4ed8,#3b82f6)"
+            shadow="#3b82f6"/>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <KalSec title="Cash Awal per Laci / Outlet" icon="💵" color="#3b82f6"
+              bgLight="#eff6ff" total={tPCash} rows={pCash} setRows={setPCash}
+              placeholder="Nama laci / outlet..."/>
+            <KalSec title="Saldo Rekening Bank" icon="🏛️" color="#7c3aed"
+              bgLight="#f5f3ff" total={tPBank} rows={pBank} setRows={setPBank}
+              placeholder="Nama bank..."/>
+            <KalSec title="Saldo Aplikasi Digital" icon="📱" color="#0d9488"
+              bgLight="#e0faf5" total={tPApps} rows={pApps} setRows={setPApps}
+              placeholder="Digipos, Dana, GoPay..."/>
+            <TotalCard label="Total Aset Pagi" sub="Cash + Bank + Apps"
+              value={tPagi}
+              gradient="linear-gradient(135deg,#1e3a8a,#1d4ed8,#3b82f6)"
+              shadow="#3b82f6"/>
+          </div>
+        </div>
+
+        {/* ══ MALAM ══ */}
+        <div>
+          <ColHeader emoji="🌙" label="MALAM — KONDISI AKHIR"
+            gradient="linear-gradient(135deg,#065f46,#059669,#10b981)"
+            shadow="#0d9488"/>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <KalSec title="Cash Diterima dari Outlet" icon="🏪" color="#16a34a"
+              bgLight="#f0fdf4" total={tMOut} rows={mOutlet} setRows={setMOutlet}
+              placeholder="Nama outlet..."/>
+            <KalSec title="Saldo Rekening Bank Akhir" icon="🏛️" color="#7c3aed"
+              bgLight="#f5f3ff" total={tMBank} rows={mBank} setRows={setMBank}
+              placeholder="Nama bank..."/>
+            <KalSec title="Saldo Aplikasi Digital Akhir" icon="📱" color="#0d9488"
+              bgLight="#e0faf5" total={tMApps} rows={mApps} setRows={setMApps}
+              placeholder="Digipos, Dana, GoPay..."/>
+            <KalSec title="Pengeluaran Hari Ini" icon="💸" color="#dc2626"
+              bgLight="#fff5f5" total={tMKel} rows={mKeluar} setRows={setMKeluar}
+              placeholder="Keterangan pengeluaran..."/>
+            <KalSec title="Cash Fisik Akhir (Hitung Manual)" icon="🔢" color="#d97706"
+              bgLight="#fffbeb" total={tMFisik} rows={mFisik} setRows={setMFisik}
+              note="Hitung fisik uang di laci sebelum tutup"
+              placeholder="Nama laci / outlet..."/>
+            <TotalCard label="Total Aset Malam" sub="Cash Fisik + Bank + Apps"
+              value={tMalam}
+              gradient="linear-gradient(135deg,#064e3b,#065f46,#059669)"
+              shadow="#0d9488"/>
+          </div>
+        </div>
+
+        {/* ══ VERSUS ══ */}
+        <div style={{gridColumn:"1 / -1"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <div style={{height:2,flex:1,background:"linear-gradient(90deg,#d97706 40%,transparent)"}}/>
+            <div style={{background:"linear-gradient(135deg,#78350f,#b45309,#d97706)",
+              borderRadius:20,padding:"5px 18px",display:"flex",alignItems:"center",gap:7,
+              boxShadow:"0 3px 14px #f59e0b22"}}>
+              <span style={{fontSize:16}}>⚖️</span>
+              <span style={{fontWeight:900,fontSize:12,color:"#fff",letterSpacing:".5px"}}>
+                VERSUS — INPUT KAMU vs SISTEM PENCATATAN
+              </span>
+            </div>
+            <div style={{height:2,flex:1,background:"linear-gradient(270deg,#d97706 40%,transparent)"}}/>
+          </div>
+
+          {/* Versus table */}
+          <div style={{background:"#fff",borderRadius:16,border:"2px solid #e0f5f1",
+            overflow:"hidden",marginBottom:14,boxShadow:"0 2px 16px rgba(0,0,0,.04)"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px 100px",
+              padding:"10px 16px",background:"#e0faf5",borderBottom:"2px solid #b2f5ea"}}>
+              {["Komponen","📊 Sistem","✏️ Input Kamu","Selisih"].map((h,i)=>(
+                <div key={h} style={{textAlign:i>0?"right":"left",fontWeight:900,fontSize:11,
+                  color:i===1?"#3b82f6":i===2?"#0d9488":"#555",
+                  textTransform:"uppercase",letterSpacing:".4px"}}>{h}</div>
+              ))}
+            </div>
+            <KalVRow label="Omset / Cash Masuk"
+              sub={`Sistem: transaksi kasir + log = ${fmtRp(sistemMasuk)}`}
+              sistem={sistemMasuk} input={tMOut}/>
+            <KalVRow label="Perubahan Saldo Bank"
+              sub="Δ Bank Malam − Bank Pagi"
+              sistem={0} input={tMBank-tPBank}/>
+            <KalVRow label="Perubahan Saldo Aplikasi"
+              sub="Δ Apps Malam − Apps Pagi"
+              sistem={0} input={tMApps-tPApps}/>
+            <KalVRow label="Cash Fisik vs Estimasi Sistem"
+              sub={`Estimasi: Cash Pagi + Masuk − Keluar = ${fmtRp(estimasiFisik)}`}
+              sistem={estimasiFisik} input={tMFisik}/>
+            {/* Total */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 130px 130px 100px",
+              padding:"11px 16px",
+              background:balanced?"#f0fdf4":selisihTotal>0?"#fefce8":"#fef2f2",
+              borderTop:"2px solid #e0f5f1"}}>
+              <div style={{fontWeight:900,fontSize:13,color:"#1a2e2a"}}>Total Keseluruhan</div>
+              <div style={{textAlign:"right",fontWeight:900,fontSize:13,color:"#3b82f6"}}>{fmtRp(tPagi+tMOut-tMKel)}</div>
+              <div style={{textAlign:"right",fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(tMalam)}</div>
+              <div style={{textAlign:"right",fontWeight:900,fontSize:14,
+                color:balanced?"#16a34a":selisihTotal>0?"#ca8a04":"#dc2626"}}>
+                {balanced?"✅ Balance":selisihTotal>0?`+${fmtRp(selisihTotal)}`:`-${fmtRp(Math.abs(selisihTotal))}`}
+              </div>
+            </div>
+          </div>
+
+          {/* Big result card */}
+          <div style={{
+            background: balanced
+              ? "linear-gradient(135deg,#064e3b,#065f46,#059669,#10b981)"
+              : selisihTotal>0
+                ? "linear-gradient(135deg,#78350f,#92400e,#b45309,#d97706)"
+                : "linear-gradient(135deg,#7f1d1d,#991b1b,#dc2626,#ef4444)",
+            borderRadius:18,padding:"22px 26px",position:"relative",overflow:"hidden",
+            boxShadow:`0 8px 36px ${balanced?"rgba(16,185,129,.3)":selisihTotal>0?"rgba(245,158,11,.3)":"rgba(239,68,68,.3)"}`,
+          }}>
+            {[{r:-50,t:-50,s:200},{r:80,b:-80,s:240},{l:200,t:0,s:160}].map((b,i)=>(
+              <div key={i} style={{position:"absolute",width:b.s,height:b.s,borderRadius:"50%",
+                background:"rgba(255,255,255,.05)",pointerEvents:"none",
+                right:b.r,bottom:b.b,top:b.t,left:b.l}}/>
+            ))}
+            <div style={{display:"flex",gap:18,alignItems:"center",flexWrap:"wrap",position:"relative",zIndex:1}}>
+              <div style={{fontSize:52,filter:"drop-shadow(0 4px 12px rgba(0,0,0,.2))"}}>
+                {balanced?"✅":selisihTotal>0?"📈":"📉"}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:900,fontSize:20,color:"#fff",marginBottom:6,
+                  textShadow:"0 2px 12px rgba(0,0,0,.2)"}}>
+                  {balanced
+                    ? "Keuangan Balance — Mantap! 🎉"
+                    : selisihTotal>0
+                      ? `Cash Lebih ${fmtRp(selisihTotal)} — Periksa Input`
+                      : `Cash Kurang ${fmtRp(Math.abs(selisihTotal))} — Perlu Diperiksa`}
+                </div>
+                <div style={{fontSize:12,color:"rgba(255,255,255,.7)",lineHeight:1.9}}>
+                  <span style={{marginRight:14}}>🌅 Aset Pagi <b style={{color:"#fff"}}>{fmtRp(tPagi)}</b></span>
+                  <span style={{marginRight:14}}>⬇ Masuk <b style={{color:"#fff"}}>{fmtRp(tMOut)}</b></span>
+                  <span style={{marginRight:14}}>⬆ Keluar <b style={{color:"#fff"}}>{fmtRp(tMKel)}</b></span>
+                  <span>🌙 Aset Malam <b style={{color:"#fff"}}>{fmtRp(tMalam)}</b></span>
+                </div>
+                {!balanced&&(
+                  <div style={{marginTop:10,padding:"8px 14px",borderRadius:10,
+                    background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",
+                    fontSize:11,color:"rgba(255,255,255,.85)",lineHeight:1.6}}>
+                    💡 {selisihTotal>0
+                      ? "Kemungkinan: ada setoran yang belum tercatat di sistem, atau ada input ganda."
+                      : "Kemungkinan: ada pengeluaran yang belum dicatat, atau uang kurang dihitung."}
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
+                <button onClick={kirimKeLog}
+                  style={{background:savedLog?"rgba(255,255,255,.35)":"rgba(255,255,255,.18)",
+                    border:"2px solid rgba(255,255,255,.35)",borderRadius:11,
+                    padding:"10px 20px",color:"#fff",fontWeight:800,fontSize:12,
+                    cursor:"pointer",fontFamily:"inherit",backdropFilter:"blur(4px)",
+                    transition:"all .2s",textAlign:"center",whiteSpace:"nowrap"}}>
+                  {savedLog?"✅ Terkirim ke Log!":"📋 Kirim ke Log Harian"}
+                </button>
+                <button onClick={()=>{localStorage.removeItem(CF_SAVE_KEY);window.location.reload();}}
+                  style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",
+                    borderRadius:11,padding:"8px 20px",color:"rgba(255,255,255,.75)",fontWeight:700,
+                    fontSize:11,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+                  🗑 Reset Form
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tips row */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:12}}>
+            {[
+              {icon:"💡",t:"Cara Pakai",d:"Isi kolom PAGI dulu saat buka outlet, lalu isi MALAM setelah tutup."},
+              {icon:"🔒",t:"Data Aman",d:"Semua input tersimpan otomatis. Tidak hilang walau refresh atau tekan kembali."},
+              {icon:"📋",t:"Kirim ke Log",d:"Klik 'Kirim ke Log' untuk memasukkan setoran & pengeluaran ke riwayat harian."},
+            ].map(t=>(
+              <div key={t.t} style={{background:"#fff",borderRadius:12,padding:"12px 14px",
+                border:"2px solid #e0f5f1",display:"flex",gap:10,alignItems:"flex-start"}}>
+                <span style={{fontSize:18,flexShrink:0}}>{t.icon}</span>
+                <div>
+                  <div style={{fontWeight:800,fontSize:12,color:"#0d9488",marginBottom:3}}>{t.t}</div>
+                  <div style={{fontSize:11,color:"#888",lineHeight:1.5}}>{t.d}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 const INIT=[
   {id:"1",tgl:"29/05/2026",jenis:"masuk",kat:"m",nama:"Pemasukan Merpati",nominal:2800000},
@@ -5744,7 +6163,7 @@ const INIT=[
 
 
 function CashflowPage({ transactions, outlets, onBack, notify }) {
-  const [tab, setTab] = useState("log");
+  const [tab, setTab] = useState("kalkulator");
   const [log, setLog] = useState([]);
 
   // Load from Supabase on mount
@@ -5798,7 +6217,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
           ))}
         </div>
         <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)",overflowX:"auto"}}>
-          {[{k:"log",l:"📋 Log Harian"},{k:"besar",l:"📚 Buku Besar"},{k:"labarugi",l:"📊 Laba Rugi"},{k:"analisis",l:"🎯 Analisis"}].map(t=>(
+          {[{k:"kalkulator",l:"🧮 Kalkulator Cash"},{k:"log",l:"📋 Log Harian"},{k:"besar",l:"📚 Buku Besar"},{k:"labarugi",l:"📊 Laba Rugi"},{k:"analisis",l:"🎯 Analisis"}].map(t=>(
             <button key={t.k} onClick={()=>setTab(t.k)}
               style={{padding:"10px 16px",border:"none",borderBottom:`3px solid ${tab===t.k?"#fff":"transparent"}`,background:"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.55)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
               {t.l}
@@ -5807,6 +6226,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
         </div>
       </div>
       <div style={{padding:"14px 20px",maxWidth:1000,margin:"0 auto"}}>
+        {tab==="kalkulator"&& <TabKalkulator transactions={transactions} outlets={outlets} log={log} onAddEntries={addEntries}/>}
         {tab==="log"      && <TabLog       log={log} setLog={setLog} onAddEntries={addEntries} onDelete={deleteEntry}/>}
         {tab==="besar"    && <TabBukuBesar  log={log}/>}
         {tab==="labarugi" && <TabLabaRugi   log={log}/>}
