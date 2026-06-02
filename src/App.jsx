@@ -5341,7 +5341,7 @@ const OUTLETS = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 const BANKS   = ["BRI","BCA","BSI"];
 const APPS    = ["Digipos","Dana","GoPay","OVO","ShopeePay"];
 const cfMkRows  = ls => ls.map(l=>({id:uid(),label:l,val:""}));
-const cfSumR    = rows => rows.reduce((s,r)=>s+toNum(r.val),0);
+const cfSumR    = rows => rows.reduce((s,r)=>s+toNumCF(r.val),0);
 
 
 // ── CSV download ──────────────────────────────────────────────────────────────
@@ -5396,7 +5396,7 @@ function CfKPI({items}) {
 // TAB 1: KALKULATOR CASH
 // ════════════════════════════════════════════════════════
 function CfIRow({r,color,placeholder,onChange,onDel}) {
-  const v=toNum(r.val);
+  const v=toNumCF(r.val);
   return (
     <div style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
       <input value={r.label} onChange={e=>onChange("label",e.target.value)}
@@ -5510,10 +5510,10 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const kirimKeLog=()=>{
     const tglHari=today();
     const entries=[];
-    mOut.filter(r=>r.label&&toNum(r.val)>0).forEach(r=>
-      entries.push({id:uid(),tgl:tglHari,jenis:"masuk",kat:"setoran",nama:`Setoran ${r.label}`,nominal:toNum(r.val)}));
-    mKel.filter(r=>r.label&&toNum(r.val)>0).forEach(r=>
-      entries.push({id:uid(),tgl:tglHari,jenis:"keluar",kat:"operasional",nama:r.label,nominal:toNum(r.val)}));
+    mOut.filter(r=>r.label&&toNumCF(r.val)>0).forEach(r=>
+      entries.push({id:uid(),tgl:tglHari,jenis:"masuk",kat:"setoran",nama:`Setoran ${r.label}`,nominal:toNumCF(r.val)}));
+    mKel.filter(r=>r.label&&toNumCF(r.val)>0).forEach(r=>
+      entries.push({id:uid(),tgl:tglHari,jenis:"keluar",kat:"operasional",nama:r.label,nominal:toNumCF(r.val)}));
     if(entries.length>0){setLog(p=>[...entries,...p]);setKirimOk(true);setTimeout(()=>setKirimOk(false),2500);}
   };
 
@@ -5639,7 +5639,7 @@ function CfTabJurnal({log,setLog,onDelete}) {
   const [srch,setSrch]=useState(""); const [fltr,setFltr]=useState("semua"); const [saved,setSaved]=useState(false);
   const save=()=>{
     if(!form.nama.trim()||!form.nominal) return;
-    const newEntry={id:uid(),...form,nominal:toNum(form.nominal)};
+    const newEntry={id:uid(),...form,nominal:toNumCF(form.nominal)};
     if(typeof setLog==="function") setLog([newEntry]);
     setForm(p=>({...p,nama:"",nominal:""}));
     setSaved(true); setTimeout(()=>setSaved(false),1400);
