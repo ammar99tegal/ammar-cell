@@ -2369,11 +2369,14 @@ function LaporanPage({ transactions, outlets, onBack }) {
   // Deklarasi shiftLogs di sini agar bisa dipakai di groupArr di bawah
   const [shiftLogs,        setShiftLogs]        = useState({});
   const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [refreshTrigger,   setRefreshTrigger]   = useState(0);
+  const [freshTransactions,setFreshTransactions] = useState(null); // null = belum load
 
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
 
-  const filtered = transactions.filter(t=>
+  // Gunakan freshTransactions (dari Supabase realtime) atau fallback ke prop
+  const txSource = freshTransactions !== null ? freshTransactions : (transactions||[]);
+  const filtered = txSource.filter(t=>
     (filterOutlet==="all"||t.outletId===filterOutlet)&&
     (filterShift==="all"||(filterShift==="noshift"?!t.shiftId:t.shiftId===filterShift))
   );
@@ -2381,24 +2384,23 @@ function LaporanPage({ transactions, outlets, onBack }) {
   const groups = {};
   filtered.forEach(t=>{
     const key=t.shiftId||"no-shift";
-    const label=t.shiftNama||"Tanpa Shift";
-    const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||"—";
+    const logEntry=shiftLogs[t.shiftId];
+    const label=logEntry?.namaShift||t.shiftNama||t.kasir||"Tanpa Shift";
+    const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||t.outletId||"—";
     if(!groups[key]) groups[key]={key,label,outletNama,outletId:t.outletId,items:[]};
     groups[key].items.push(t);
   });
-  // Tambahkan shift dari shift_logs yang belum ada di transactions (shift 0 transaksi / ditutup tapi belum load)
+  // KRITIS: Tambahkan shift dari shift_logs yang belum ada di txSource
+  // Menangani: shift baru ditutup tapi transactions belum reload
   Object.entries(shiftLogs).forEach(([k,v])=>{
-    // Skip key format outlet_date (bukan shiftId murni)
-    if(k.includes('_') && !k.startsWith('S')) return;
-    if(groups[k]) return; // sudah ada dari transactions
-    if(v.type!=="closed" && v.type!=="open") return;
-    const oId = v.outletId || '';
-    // Cek filter outlet
-    if(filterOutlet!=="all" && oId && oId!==filterOutlet) return;
-    // Cek filter shift
-    if(filterShift!=="all" && k!==filterShift) return;
-    const outletNama=outlets.find(o=>o.id===oId)?.nama||"—";
-    groups[k]={key:k,label:v.namaShift||k,outletNama,outletId:oId,items:[]};
+    if(k.length>32) return; // skip outlet_date composite keys
+    if(groups[k]) return;   // sudah ada
+    if(v.type!=="closed"&&v.type!=="open") return;
+    const oId=v.outletId||'';
+    if(filterOutlet!=="all"&&oId&&oId!==filterOutlet) return;
+    if(filterShift!=="all"&&k!==filterShift) return;
+    const outletNama=outlets.find(o=>o.id===oId)?.nama||oId||"—";
+    groups[k]={key:k,label:v.namaShift||"Shift",outletNama,outletId:oId,items:[]};
   });
   const groupArr=Object.values(groups).sort((a,b)=>{
     // Sort by waktu tutup/buka terbaru di atas
@@ -2429,6 +2431,27 @@ function LaporanPage({ transactions, outlets, onBack }) {
     setShiftLogsLoading(true);
     const loadLogs = async () => {
       try {
+        // Reload transactions langsung dari Supabase agar selalu fresh
+        // (tidak bergantung pada prop transactions yang mungkin stale)
+        let freshTx = [];
+        try {
+          const {data:txData} = await supabase
+            .from('transactions')
+            .select('id,shift_id,outlet_id,total,date,kasir,items')
+            .order('created_at',{ascending:false})
+            .limit(2000);
+          freshTx = (txData||[]).map(t=>({
+            id:     t.id,
+            shiftId:t.shift_id,
+            outletId:t.outlet_id,
+            total:  t.total||0,
+            date:   t.date,
+            kasir:  t.kasir,
+            items:  typeof t.items==='string'?JSON.parse(t.items||'[]'):t.items||[],
+          }));
+        } catch(txErr){ freshTx = transactions||[]; }
+        setFreshTransactions(freshTx);
+
         // Load closed shifts dari shift_logs
         const logs = await dbShift.getShiftLogs();
         const m={};
@@ -2533,19 +2556,23 @@ function LaporanPage({ transactions, outlets, onBack }) {
       setShiftLogsLoading(false);
     };
     loadLogs();
-    // Reload setiap 10 detik — lebih responsif
-    const iv = setInterval(loadLogs, 10000);
+    // Reload setiap 5 detik — lebih responsif
+    const iv = setInterval(loadLogs, 5000);
 
-    // Realtime: reload saat ada perubahan shift atau transaksi bank baru
-    const ch = supabase.channel('laporan-shift-rt')
+    // Realtime komprehensif — semua event yang bisa mengubah laporan shift
+    const ch = supabase.channel('laporan-shift-rt-v2')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'active_shifts'},()=>{ loadLogs(); })
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'active_shifts'},()=>{ loadLogs(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'transactions'},()=>{ loadLogs(); })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},()=>{ loadLogs(); })
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'bank_transactions'},()=>{ loadLogs(); })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_shift_logs'},()=>{ loadLogs(); })
       .subscribe();
-        return ()=>{ clearInterval(iv); supabase.removeChannel(ch); };
+    return ()=>{ clearInterval(iv); supabase.removeChannel(ch); };
   },[refreshTrigger]);const getShiftSaldo = (shiftId) => {
     // Prioritas 1: Supabase shift_logs by shift ID
     if(shiftLogs[shiftId]) return shiftLogs[shiftId];
@@ -3070,7 +3097,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
             </select>
           )}
           {mainTab==="kasir"&&(
-            <button onClick={()=>setRefreshTrigger(p=>p+1)}
+            <button onClick={()=>{ setFreshTransactions(null); setShiftLogsLoading(true); setRefreshTrigger(p=>p+1); }}
               style={{background:"#f0faf8",border:"2px solid #b2ede6",borderRadius:9,padding:"5px 12px",fontSize:11,fontWeight:700,color:"#0d9488",cursor:"pointer",fontFamily:"inherit",marginLeft:"auto"}}>
               🔄 Refresh
             </button>
