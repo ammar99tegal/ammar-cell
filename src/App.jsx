@@ -2460,6 +2460,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
             </div>
           )}
           {saldo&&(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+            {/* SALDO AWAL */}
+            <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
+                🟢 Saldo Awal (Buka Shift)
                 <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"—"}</div>
               </div>
               {saldo?.saldoApps && Object.keys(saldo.saldoApps).length>0 ? (
