@@ -777,6 +777,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   const [sortProd,    setSortProd]    = useState("default");
   const dragProdIdx  = useRef(null);
   const [draggingProd, setDraggingProd] = useState(null);
+  const [dragOverProd, setDragOverProd] = useState(null); // index target drop
   const saveOrderTimer = useRef(null);
 
   // Load urutan produk dari Supabase + realtime
@@ -928,15 +929,6 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         <div style={{padding:"0 18px",minHeight:50,display:"flex",alignItems:"center",gap:8}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
           <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>📦 Produk & Stok</div>
-          {mainTab==="produk"&&(
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              <button onClick={()=>setEditCats(p=>!p)} style={{background:editCats?"#fff":"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:editCats?"#0d9488":"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Kategori</button>
-              <button onClick={startBulkEdit} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📝 Edit Massal</button>
-              <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📥 Import</button>
-              <button onClick={exportCSV} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:9,padding:"5px 10px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>📤 Export</button>
-              <button onClick={openAdd} style={{background:"linear-gradient(135deg,#fff,#e0faf5)",border:"none",borderRadius:9,padding:"5px 12px",color:"#0d9488",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Tambah</button>
-            </div>
-          )}
         </div>
         {/* Outlet selector — hanya tab stok */}
         {["opname","masuk","keluar","transfer","aktif","log"].includes(mainTab)&&(
@@ -1053,8 +1045,34 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           </div>
         )}
 
-        <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
-          <div style={{position:"relative",flex:1}}>
+        {/* ── Action Toolbar ── */}
+        <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap",alignItems:"center",background:"#fff",borderRadius:13,padding:"10px 14px",border:"2px solid #e0f5f1",boxShadow:"0 1px 6px rgba(13,148,136,.06)"}}>
+          <button onClick={openAdd}
+            style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"7px 16px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 8px rgba(13,148,136,.3)"}}>
+            {Ic.PlusCirc(15)} + Tambah Produk
+          </button>
+          <div style={{width:1,height:28,background:"#e0f5f1",margin:"0 2px"}}/>
+          <button onClick={()=>setEditCats(p=>!p)}
+            style={{background:editCats?"#e0faf5":"#f8fffe",border:`2px solid ${editCats?"#0d9488":"#e0f5f1"}`,borderRadius:9,padding:"6px 13px",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            {Ic.Edit(13)} Kategori
+          </button>
+          <button onClick={startBulkEdit}
+            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📝 Edit Massal
+          </button>
+          <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}}
+            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📥 Import
+          </button>
+          <button onClick={exportCSV}
+            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📤 Export
+          </button>
+        </div>
+
+        {/* ── Search + Category Filter ── */}
+        <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{position:"relative",flex:1,minWidth:200}}>
             <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari nama / barcode..."
               style={{width:"100%",padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
@@ -1096,26 +1114,64 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
               ))}
             </tr></thead>
             <tbody>
-              {fp.map((p,i)=>(
+              {fp.map((p,i)=>{
+                const isDragging = draggingProd===i;
+                const isOver = dragOverProd===i && draggingProd!==null && draggingProd!==i;
+                return (
                 <tr key={p.id}
                   draggable
-                  onDragStart={()=>{ dragProdIdx.current=i; setDraggingProd(i); }}
-                  onDragEnter={()=>{
+                  onDragStart={(e)=>{
+                    dragProdIdx.current=i;
+                    setDraggingProd(i);
+                    setDragOverProd(null);
+                    e.dataTransfer.effectAllowed="move";
+                  }}
+                  onDragOver={(e)=>{
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect="move";
                     if(dragProdIdx.current===null||dragProdIdx.current===i) return;
+                    setDragOverProd(i);
+                  }}
+                  onDragEnter={(e)=>{
+                    e.preventDefault();
+                    if(dragProdIdx.current===null||dragProdIdx.current===i) return;
+                    setDragOverProd(i);
+                  }}
+                  onDragLeave={()=>{ setDragOverProd(null); }}
+                  onDrop={(e)=>{
+                    e.preventDefault();
+                    if(dragProdIdx.current===null||dragProdIdx.current===i) {
+                      setDragOverProd(null); return;
+                    }
                     const next=[...fp];
                     const [moved]=next.splice(dragProdIdx.current,1);
-                    next.splice(i,0,moved);
-                    dragProdIdx.current=i;
+                    // Determine insert position: above or below based on mouse Y
+                    const rect=e.currentTarget.getBoundingClientRect();
+                    const midY=rect.top+rect.height/2;
+                    const insertAt = e.clientY < midY ? i : i+1;
+                    // Adjust insertAt for removed element
+                    const adjInsert = dragProdIdx.current < insertAt ? insertAt-1 : insertAt;
+                    next.splice(adjInsert,0,moved);
+                    dragProdIdx.current=adjInsert;
                     setSortProd("default");
-                    saveProdOrder(next.map(p=>String(p.id)));
+                    saveProdOrder(next.map(x=>String(x.id)));
+                    setDragOverProd(null);
                   }}
-                  onDragOver={e=>e.preventDefault()}
-                  onDragEnd={()=>{ dragProdIdx.current=null; setDraggingProd(null); }}
-                  style={{borderTop:"1px solid #f0faf8",background:draggingProd===i?"#d0f5ee":i%2===0?"#fff":"#fafffe",cursor:"grab",opacity:draggingProd===i?0.7:1,boxShadow:draggingProd===i?"0 4px 12px rgba(13,148,136,.2)":"none",transition:"background .1s"}}
+                  onDragEnd={()=>{ dragProdIdx.current=null; setDraggingProd(null); setDragOverProd(null); }}
+                  style={{
+                    borderTop: isOver ? `3px solid #0d9488` : "1px solid #f0faf8",
+                    borderBottom: isOver ? "none" : undefined,
+                    background: isDragging?"#d0f5ee":isOver?"#e8fdf8":i%2===0?"#fff":"#fafffe",
+                    cursor: isDragging?"grabbing":"grab",
+                    opacity: isDragging?0.5:1,
+                    boxShadow: isDragging?"0 6px 18px rgba(13,148,136,.25)":"none",
+                    transform: isDragging?"scale(1.01)":"none",
+                    transition:"background .08s,opacity .08s,transform .08s",
+                  }}
                   onMouseEnter={e=>{ if(draggingProd===null) e.currentTarget.style.background="#f0fdfb"; }}
                   onMouseLeave={e=>{ if(draggingProd===null) e.currentTarget.style.background=i%2===0?"#fff":"#fafffe"; }}>
                   <td style={{padding:"9px 12px",color:"#ccc",fontWeight:600}}>{i+1}</td>
-                  <td style={{padding:"9px 6px",color:"#b2ede6",fontSize:16,cursor:"grab",userSelect:"none",textAlign:"center"}}>⠿</td>
+                  <td style={{padding:"9px 6px",color:isDragging?"#0d9488":"#b2ede6",fontSize:18,cursor:isDragging?"grabbing":"grab",userSelect:"none",textAlign:"center",transition:"color .15s"}} title="Drag untuk atur urutan">⠿</td>
                   <td style={{padding:"9px 12px",fontWeight:800}}>{p.name}</td>
                   <td style={{padding:"9px 12px",color:"#888",fontFamily:"monospace",fontSize:11}}>{p.barcode||"—"}</td>
                   <td style={{padding:"9px 12px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 8px",borderRadius:6}}>{p.category}</span></td>
@@ -1128,7 +1184,8 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {fp.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:30,fontSize:13}}>Tidak ada produk</div>}
