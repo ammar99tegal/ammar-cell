@@ -5315,24 +5315,6 @@ function DynRows({rows, setRows, color, placeholder="Keterangan..."}) {
 // Alur: Kalkulator Cash → Jurnal → Buku Besar → Laba Rugi → Neraca → Analisis
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const CF_CO = "Ammar Cell";
-
-// Kategori standar akuntansi UMKM
-const CF_KAT = {
-  pendapatan:  {label:"Pendapatan Penjualan", color:"#16a34a", bg:"#f0fdf4", icon:"💰"},
-  setoran:     {label:"Setoran Outlet",        color:"#059669", bg:"#ecfdf5", icon:"🏪"},
-  hpp:         {label:"Harga Pokok Penjualan", color:"#dc2626", bg:"#fff5f5", icon:"📦"},
-  operasional: {label:"Beban Operasional",     color:"#d97706", bg:"#fffbeb", icon:"⚙️"},
-  gaji:        {label:"Beban Gaji/Upah",       color:"#7c3aed", bg:"#f5f3ff", icon:"👷"},
-  marketing:   {label:"Beban Pemasaran",       color:"#0891b2", bg:"#ecfeff", icon:"📣"},
-  aset:        {label:"Penambahan Aset",        color:"#1d4ed8", bg:"#eff6ff", icon:"🏗️"},
-  modal:       {label:"Modal / Investasi",      color:"#6d28d9", bg:"#f5f3ff", icon:"💎"},
-  lainnya:     {label:"Lain-lain",              color:"#6b7280", bg:"#f9fafb", icon:"📝"},
-};
-const KAT_MASUK  = ["pendapatan","setoran","modal","lainnya"];
-const KAT_KELUAR = ["hpp","operasional","gaji","marketing","aset","lainnya"];
-
 // ════════════════════════════════════════════════════════════════════════════
 // CASHFLOW — LAPORAN KEUANGAN (v2 — identik lapkeu-v2.jsx)
 // ════════════════════════════════════════════════════════════════════════════
