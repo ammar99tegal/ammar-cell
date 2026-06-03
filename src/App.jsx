@@ -4198,16 +4198,36 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   useEffect(()=>{
     const load = async () => {
       try {
+        // Tampilkan dari localStorage dulu saat loading agar tidak blank
+        try{
+          const sLocal=localStorage.getItem(`bank_shift_${selectedOutlet}`);
+          if(sLocal) setShiftState(JSON.parse(sLocal));
+        }catch{}
+
         const [trxs, activeShift] = await Promise.all([
           dbBank.getTransactions(),
           dbBank.getActiveShift(selectedOutlet, user.username),
         ]);
         setTrxList(trxs.filter(t=>t.outletId===selectedOutlet));
-        if(activeShift) setShiftState(activeShift);
+
+        // Supabase adalah sumber kebenaran
+        if(activeShift) {
+          // Shift aktif di Supabase → pakai itu, update localStorage
+          setShiftState(activeShift);
+          try{ localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(activeShift)); }catch{}
+        } else {
+          // Tidak ada di Supabase → shift sudah tutup, clear state & localStorage
+          setShiftState(null);
+          try{ localStorage.removeItem(`bank_shift_${selectedOutlet}`); }catch{}
+        }
+
         try{ const b=localStorage.getItem(`bank_balance_${selectedOutlet}`); if(b) setLastBalance(JSON.parse(b)); }catch{}
-        // Load shift dari localStorage juga sebagai fallback
-        try{ const s=localStorage.getItem(`bank_shift_${selectedOutlet}`); if(s&&!activeShift) setShiftState(JSON.parse(s)); }catch{}
-      } catch(e){ console.error(e); }
+      } catch(e){
+        console.error('BankPage load error:', e);
+        // Jika network error, pakai localStorage sebagai fallback sementara
+        // TAPI jangan terlalu percaya — tambahkan warning
+        console.warn('Menggunakan data lokal karena network error');
+      }
       setLoading(false);
     };
     load();
@@ -4229,7 +4249,25 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
       }).subscribe();
     const chShift = supabase.channel(`bank-shift-${selectedOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},(payload)=>{
-        if(payload.eventType==='DELETE') { setShiftState(null); try{localStorage.removeItem(`bank_shift_${selectedOutlet}`);}catch{} }
+        if(payload.eventType==='DELETE') {
+          // PENTING: hanya clear state jika yang dihapus adalah shift outlet INI
+          // payload.old?.outlet_id bisa null jika REPLICA IDENTITY tidak FULL
+          // Gunakan ID matching sebagai fallback
+          const deletedId = payload.old?.id;
+          const deletedOutlet = payload.old?.outlet_id;
+          setShiftState(prev => {
+            if(!prev) return null;
+            // Jika bisa match by outlet_id, gunakan itu
+            if(deletedOutlet && deletedOutlet !== selectedOutlet) return prev; // bukan shift kita
+            // Jika bisa match by id, gunakan itu
+            if(deletedId && deletedId !== prev.id) return prev; // bukan shift kita
+            // Kalau tidak bisa identifikasi, cek Supabase dulu
+            dbBank.getActiveShift(selectedOutlet, user.username).then(active=>{
+              if(!active) { setShiftState(null); try{localStorage.removeItem(`bank_shift_${selectedOutlet}`);}catch{} }
+            }).catch(()=>{});
+            return prev; // sementara pertahankan state sampai cek selesai
+          });
+        }
         else if(payload.new?.outlet_id===selectedOutlet){
           const s=payload.new;
           const shiftData={id:s.id,nama:s.nama,start:s.start_time,...(s.saldo_data||{})};
@@ -6735,7 +6773,7 @@ export default function App() {
       const dateStr = now.toLocaleDateString("id-ID");
 
       // Jam 23:00 - 23:05 dan belum reset hari ini
-      if(h === 23 && lastResetDate !== dateStr) {
+      if(h === 23 && new Date().getHours() === 23 && lastResetDate !== dateStr) {
         lastResetDate = dateStr;
         try {
           // Ambil semua shift aktif
@@ -6793,12 +6831,9 @@ export default function App() {
         } catch(e) { console.warn('autoReset error:', e); }
       }
 
-      // Cleanup shift > 24 jam sebagai fallback
-      try {
-        const cutoff = new Date(Date.now() - 24*60*60*1000).toISOString();
-        await supabase.from('active_shifts').delete().lt('created_at', cutoff);
-        await supabase.from('bank_shifts').delete().lt('created_at', cutoff);
-      } catch(e) { console.warn('cleanup:', e); }
+      // DISABLED: Cleanup otomatis berdasarkan created_at DIHAPUS
+      // karena timezone mismatch bisa hapus shift yang baru dibuka
+      // Cleanup hanya dilakukan manual oleh admin atau saat tutup shift
     };
 
     // Cek setiap menit
@@ -7035,10 +7070,15 @@ export default function App() {
   // ── Realtime active_shifts — laporan admin update otomatis ────────────────
   useEffect(()=>{
     const ch = supabase.channel('realtime-shifts')
-      .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},()=>{
-        // Trigger reload data
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{
+        // Shift baru dibuka — reload transactions saja
         reloadData();
       })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'active_shifts'},()=>{
+        reloadData();
+      })
+      // DELETE active_shifts TIDAK trigger reloadData karena bisa mengganggu kasir aktif
+      // Setiap kasir handle shift delete sendiri via dbShift.getActiveShift()
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{
         reloadData();
       })
