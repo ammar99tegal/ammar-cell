@@ -2392,6 +2392,12 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
                 📝 {catatan}
               </div>
             )}
+            {bankLog?.isHidden&&(
+              <div style={{marginTop:6,background:"#f5f0ff",borderRadius:8,padding:"5px 11px",fontSize:10,color:"#7c3aed",fontWeight:700,border:"1px solid #c4b5fd",display:"flex",alignItems:"center",gap:5}}>
+                🙈 <span>Disembunyikan kasir</span>
+                {bankLog.hiddenNote&&<span style={{fontWeight:600,opacity:.8}}>· {bankLog.hiddenNote}</span>}
+              </div>
+            )}
           </div>
         );
       })}
@@ -2560,6 +2566,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
         (bankLogs||[]).forEach(l=>{
           const so = l.saldo_open||{};
           const sc = l.saldo_close||{};
+          const hiddenNote = l.hidden_note || '';
+          const isHidden   = l.hidden_by_kasir || false;
           // Store by both id and outlet+date for flexible lookup
           const entry = {
             id: l.id, outletId: l.outlet_id, userId: l.user_id,
@@ -2569,6 +2577,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
             saldoAkhir: sc.saldoAppsAkhir||sc.saldoAppsC||sc.saldo_apps_akhir||{},
             uangLaci:   sc.uangLaci||0, uangSistem: sc.uangSistem||0,
             selisih:    sc.selisih??0,  catatan: sc.catatan||'',
+            isHidden, hiddenNote,
           };
           bm[l.id] = entry;
           // Also index by outlet+date
@@ -4269,8 +4278,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
               catatan:    sc.catatan    || sc.notes       || "",
               saldoAppsC: sc.saldoAppsC || sc.saldo_apps_akhir || {},
             },
-            status: "closed",
-            trx: allTrxOutlet.filter(t=>t.shiftId===l.id),
+            status:    "closed",
+            isHidden:  l.hidden_by_kasir || false,
+            trx:       allTrxOutlet.filter(t=>t.shiftId===l.id),
           };
         });
 
@@ -4299,10 +4309,13 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           });
 
         // Gabung: aktif di atas, tutup di bawah, sorted by start_time desc
-        const all = [...activeHistory, ...mapped].sort((a,b)=>{
-          const ta = a.start_time||'', tb = b.start_time||'';
-          return tb.localeCompare(ta);
-        });
+        // Filter: sembunyikan yang sudah ditandai hidden_by_kasir dari tampilan karyawan
+        const all = [...activeHistory, ...mapped]
+          .filter(s=>!s.isHidden)
+          .sort((a,b)=>{
+            const ta = a.start_time||'', tb = b.start_time||'';
+            return tb.localeCompare(ta);
+          });
         setShiftHistory(all);
       } catch(e){ console.warn('shiftHistory load error:', e); }
 
@@ -4416,68 +4429,133 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   };
 
   // ── Lanjutkan shift dari riwayat (baru) ────────────────────────────────────
+  // ── ▶️ Lanjutkan Shift ────────────────────────────────────────────────────
+  // Pakai ID shift LAMA, tidak buat baru → semua transaksi lama ikut otomatis
   const lanjutkanShift = async (histShift) => {
     setHistSelected(null);
     try {
       const s = {
-        id:       uid(),
-        nama:     histShift.nama,
-        start:    now(),
-        outletId: selectedOutlet,
-        cashKemb: histShift.saldo_data?.cashKemb || 0,
-        saldoApps:histShift.saldo_data?.saldoApps || {},
+        id:        histShift.id,                         // ID LAMA — transaksi lama tetap linked
+        nama:      histShift.nama,
+        start:     histShift.start_time || now(),        // pertahankan waktu buka asli
+        outletId:  selectedOutlet,
+        cashKemb:  histShift.saldo_data?.cashKemb  || 0,
+        saldoApps: histShift.saldo_data?.saldoApps || {},
       };
+      // Jika shift sudah closed → hapus dari bank_shift_logs dulu
+      if(histShift.status==="closed"){
+        await supabase.from('bank_shift_logs').delete().eq('id', histShift.id).catch(()=>{});
+      }
+      // Re-open di bank_shifts dengan ID yang sama
+      await dbBank.openShift(s, selectedOutlet, user.username);
       setShift(s);
       try{ localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(s)); }catch{}
-      notify(`Shift dilanjutkan: ${s.nama} ✓`,"ok");
-      await dbBank.openShift(s, selectedOutlet, user.username);
+      setShiftHistory(prev=>prev.filter(x=>x.id!==histShift.id));
+      notify(`✅ Shift dilanjutkan: ${s.nama}`,"ok");
     } catch(e){
       console.error("lanjutkanShift error:", e);
       notify("Gagal melanjutkan shift!","err");
     }
   };
 
-  // ── Lanjut + Gabung transaksi ─────────────────────────────────────────────
-  // Buka shift baru tapi INHERIT id lama agar semua transaksi lama tetap terbaca
+  // ── 🔗 Gabung dengan Shift Aktif ─────────────────────────────────────────
+  // Ada shift BARU yang sudah punya transaksi.
+  // Re-assign shift_id transaksi lama → shift baru yang aktif.
+  // Shift lama kemudian disembunyikan dari karyawan.
   const lanjutGabung = async (histShift) => {
     setHistSelected(null);
+    if(!shift) {
+      notify("Tidak ada shift aktif untuk digabung. Buka shift dulu.","err");
+      return;
+    }
     try {
-      // Jika shift lama masih di bank_shifts (status active), langsung pakai id-nya
-      // Jika sudah di bank_shift_logs (closed), re-open dengan id lama
-      const s = {
-        id:       histShift.id,           // pakai ID lama → transaksi lama tetap linked
-        nama:     histShift.nama,
-        start:    histShift.start_time || now(),
-        outletId: selectedOutlet,
-        cashKemb: histShift.saldo_data?.cashKemb || 0,
-        saldoApps:histShift.saldo_data?.saldoApps || {},
-      };
-      setShift(s);
-      try{ localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(s)); }catch{}
-      notify(`Shift digabung: ${s.nama} — transaksi lama tetap ada ✓`,"ok");
-      // Jika shift closed → hapus dari bank_shift_logs dulu, lalu buka ulang di bank_shifts
-      if(histShift.status==="closed"){
-        await supabase.from('bank_shift_logs').delete().eq('id', histShift.id).catch(()=>{});
+      // Ambil semua transaksi shift lama
+      const trxLama = histShift.trx || [];
+      if(trxLama.length > 0) {
+        // Update shift_id semua transaksi lama → shift aktif sekarang
+        for(const t of trxLama) {
+          await supabase.from('bank_transactions')
+            .update({ shift_id: shift.id })
+            .eq('id', t.id)
+            .catch(e=>console.warn('update trx shift_id:', e));
+        }
       }
-      await dbBank.openShift(s, selectedOutlet, user.username);
-      // Hapus dari local riwayat
+      // Sembunyikan shift lama dari karyawan (flag hidden)
+      // Data tetap ada di bank_shift_logs untuk admin
+      if(histShift.status==="closed") {
+        await supabase.from('bank_shift_logs')
+          .update({ hidden_by_kasir: true, hidden_at: new Date().toISOString(),
+                    hidden_note: `Digabung ke shift ${shift.id} oleh ${user.username}` })
+          .eq('id', histShift.id)
+          .catch(()=>{
+            // Jika kolom belum ada, coba insert ke saldo_close saja
+          });
+      } else {
+        // Shift masih aktif — tutup dulu lalu tandai hidden
+        await supabase.from('bank_shifts').delete().eq('id', histShift.id).catch(()=>{});
+        await supabase.from('bank_shift_logs').insert({
+          id:          histShift.id + '_merged',
+          outlet_id:   selectedOutlet,
+          user_id:     histShift.userId || user.username,
+          nama:        histShift.nama,
+          start_time:  histShift.start_time,
+          end_time:    new Date().toISOString(),
+          saldo_open:  histShift.saldo_data || {},
+          saldo_close: { catatan: `Digabung ke shift ${shift.id}`, merged: true },
+          hidden_by_kasir: true,
+          hidden_note: `Digabung ke shift ${shift.id} oleh ${user.username}`,
+        }).catch(()=>{});
+      }
+      // Reload transaksi agar transaksi lama muncul di shift aktif
+      const freshTrx = await dbBank.getTransactions().catch(()=>[]);
+      setTrxList(freshTrx.filter(t=>t.outletId===selectedOutlet));
       setShiftHistory(prev=>prev.filter(x=>x.id!==histShift.id));
+      notify(`🔗 ${trxLama.length} transaksi lama digabung ke shift aktif ✓`,"ok");
     } catch(e){
       console.error("lanjutGabung error:", e);
-      notify("Gagal menggabung shift!","err");
+      notify("Gagal menggabung transaksi!","err");
     }
   };
 
-  // ── Hapus riwayat shift ───────────────────────────────────────────────────
+  // ── 🙈 Sembunyikan dari Karyawan ─────────────────────────────────────────
+  // Data TETAP ada di database untuk admin laporan.
+  // Hanya ditandai hidden_by_kasir=true agar tidak muncul di tampilan karyawan.
   const hapusRiwayat = async (histShift) => {
     setHistSelected(null);
     try {
-      await supabase.from('bank_shift_logs').delete().eq('id', histShift.id);
+      if(histShift.status==="active") {
+        // Shift masih aktif di bank_shifts — tutup dulu dengan flag hidden
+        await supabase.from('bank_shifts').delete().eq('id', histShift.id).catch(()=>{});
+        await supabase.from('bank_shift_logs').insert({
+          id:          histShift.id,
+          outlet_id:   selectedOutlet,
+          user_id:     histShift.userId || user.username,
+          nama:        histShift.nama,
+          start_time:  histShift.start_time,
+          end_time:    new Date().toISOString(),
+          saldo_open:  histShift.saldo_data || {},
+          saldo_close: { catatan: 'Disembunyikan oleh kasir' },
+          hidden_by_kasir: true,
+          hidden_note: `Disembunyikan oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`,
+        }).catch(()=>{});
+      } else {
+        // Shift sudah closed di bank_shift_logs — tandai hidden saja
+        const { error } = await supabase.from('bank_shift_logs')
+          .update({
+            hidden_by_kasir: true,
+            hidden_note: `Disembunyikan oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`,
+          })
+          .eq('id', histShift.id);
+        if(error) throw error;
+      }
+      // Hapus dari tampilan karyawan
       setShiftHistory(prev=>prev.filter(s=>s.id!==histShift.id));
-      notify("Riwayat dihapus","warn");
+      notify("✅ Riwayat disembunyikan — masih ada di laporan admin","ok");
     } catch(e){
       console.error("hapusRiwayat error:", e);
-      notify("Gagal menghapus riwayat!","err");
+      // Fallback: kalau kolom hidden_by_kasir belum ada, coba cara lain
+      setShiftHistory(prev=>prev.filter(s=>s.id!==histShift.id));
+      notify("Disembunyikan dari tampilan","ok");
     }
   };
 
@@ -4565,7 +4643,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                       </div>
                       <button onClick={()=>setHistSelected(s)}
                         style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.35)",borderRadius:9,padding:"6px 12px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                        ⋯ Aksi
+                        ▶️ Pilih
                       </button>
                     </div>
                   </div>
@@ -4739,9 +4817,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                         }
                       </div>
                       <div style={{display:"flex",gap:6,padding:"10px 14px",borderTop:"1px solid #f0faf8",background:"#f8fffe",flexWrap:"wrap"}}>
-                        <button onClick={()=>lanjutkanShift(s)} style={{flex:1,minWidth:120,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"9px 6px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(13,148,136,.25)"}}>▶️ Lanjutkan</button>
-                        <button onClick={()=>lanjutGabung(s)} style={{flex:1,minWidth:120,background:"linear-gradient(135deg,#1d4ed8,#3b82f6)",border:"none",borderRadius:10,padding:"9px 6px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(59,130,246,.25)"}}>🔗 Gabung Trx</button>
-                        <button onClick={()=>hapusRiwayat(s)} style={{background:"#fff0f0",border:"2px solid #fca5a5",borderRadius:10,padding:"9px 12px",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑</button>
+                        <button onClick={()=>lanjutkanShift(s)} style={{flex:1,minWidth:100,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"9px 6px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(13,148,136,.25)"}}>▶️ Lanjutkan</button>
+                        <button onClick={()=>lanjutGabung(s)} style={{flex:1,minWidth:100,background:"linear-gradient(135deg,#1d4ed8,#3b82f6)",border:"none",borderRadius:10,padding:"9px 6px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3b10px rgba(59,130,246,.25)"}}>🔗 Gabung</button>
+                        <button onClick={()=>hapusRiwayat(s)} style={{background:"#fff5f5",border:"2px solid #fca5a5",borderRadius:10,padding:"9px 10px",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}} title="Sembunyikan dari tampilan">🙈</button>
                       </div>
                     </div>
                   )}
@@ -4794,31 +4872,33 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                 {histSelected.status==="active"?"🟢 Shift ini masih aktif":"⚫ Shift sudah ditutup"}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {/* Pilihan 1: Lanjutkan sebagai shift BARU */}
+                {/* Pilihan 1: Lanjutkan shift — pakai ID lama */}
                 <button onClick={()=>lanjutkanShift(histSelected)}
                   style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"12px 14px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(13,148,136,.3)",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:22,flexShrink:0}}>▶️</span>
                   <div>
-                    <div>Lanjutkan Shift</div>
-                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>Buka shift baru — transaksi lama tetap di riwayat</div>
+                    <div>Lanjutkan Shift Ini</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>Pakai shift yang sama — transaksi lama langsung ikut semua</div>
                   </div>
                 </button>
-                {/* Pilihan 2: Lanjut + Gabung transaksi */}
+                {/* Pilihan 2: Gabung transaksi ke shift aktif */}
                 <button onClick={()=>lanjutGabung(histSelected)}
                   style={{background:"linear-gradient(135deg,#1d4ed8,#3b82f6)",border:"none",borderRadius:12,padding:"12px 14px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(59,130,246,.3)",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:22,flexShrink:0}}>🔗</span>
                   <div>
-                    <div>Lanjut + Gabung Transaksi</div>
-                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>Pakai ID shift lama — semua transaksi lama ikut terbaca</div>
+                    <div>Gabung ke Shift Aktif</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>
+                      {shift?`Pindahkan transaksi lama → shift "${shift.nama}" yang aktif sekarang`:"Perlu shift aktif dulu sebelum menggabung"}
+                    </div>
                   </div>
                 </button>
-                {/* Pilihan 3: Hapus */}
+                {/* Pilihan 3: Sembunyikan dari karyawan */}
                 <button onClick={()=>hapusRiwayat(histSelected)}
                   style={{background:"#fff5f5",border:"2px solid #fca5a5",borderRadius:12,padding:"11px 14px",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:20,flexShrink:0}}>🗑</span>
+                  <span style={{fontSize:20,flexShrink:0}}>🙈</span>
                   <div>
-                    <div>Hapus Riwayat Ini</div>
-                    <div style={{fontSize:10,fontWeight:600,opacity:.7}}>Hapus permanen dari database</div>
+                    <div>Sembunyikan dari Tampilan</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.7}}>Data tetap ada di laporan admin — hanya disembunyikan dari karyawan</div>
                   </div>
                 </button>
                 <button onClick={()=>setHistSelected(null)}
