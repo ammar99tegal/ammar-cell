@@ -2392,7 +2392,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
                 📝 {catatan}
               </div>
             )}
-            {bankLog?.isHidden&&(
+            {(bankLog?.isHidden||bankLog?.saldo_close?.disembunyikan||bankLog?.saldo_close?.digabung)&&(
               <div style={{marginTop:6,background:"#f5f0ff",borderRadius:8,padding:"5px 11px",fontSize:10,color:"#7c3aed",fontWeight:700,border:"1px solid #c4b5fd",display:"flex",alignItems:"center",gap:5}}>
                 🙈 <span>Disembunyikan kasir</span>
                 {bankLog.hiddenNote&&<span style={{fontWeight:600,opacity:.8}}>· {bankLog.hiddenNote}</span>}
@@ -4279,7 +4279,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
               saldoAppsC: sc.saldoAppsC || sc.saldo_apps_akhir || {},
             },
             status:    "closed",
-            isHidden:  l.hidden_by_kasir || false,
+            isHidden:  (l.hidden_by_kasir || l.saldo_close?.disembunyikan || false),
             trx:       allTrxOutlet.filter(t=>t.shiftId===l.id),
           };
         });
@@ -4311,7 +4311,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         // Gabung: aktif di atas, tutup di bawah, sorted by start_time desc
         // Filter: sembunyikan yang sudah ditandai hidden_by_kasir dari tampilan karyawan
         const all = [...activeHistory, ...mapped]
-          .filter(s=>!s.isHidden)
+          .filter(s=>!s.isHidden && !s.saldo_close?.disembunyikan)
           .sort((a,b)=>{
             const ta = a.start_time||'', tb = b.start_time||'';
             return tb.localeCompare(ta);
@@ -4459,52 +4459,69 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   };
 
   // ── 🔗 Gabung dengan Shift Aktif ─────────────────────────────────────────
-  // Ada shift BARU yang sudah punya transaksi.
-  // Re-assign shift_id transaksi lama → shift baru yang aktif.
-  // Shift lama kemudian disembunyikan dari karyawan.
   const lanjutGabung = async (histShift) => {
     setHistSelected(null);
     if(!shift) {
-      notify("Tidak ada shift aktif untuk digabung. Buka shift dulu.","err");
+      notify("Tidak ada shift aktif. Buka shift dulu sebelum menggabung.","err");
       return;
     }
     try {
-      // Ambil semua transaksi shift lama
-      const trxLama = histShift.trx || [];
-      if(trxLama.length > 0) {
-        // Update shift_id semua transaksi lama → shift aktif sekarang
-        for(const t of trxLama) {
-          try{ await supabase.from('bank_transactions').update({ shift_id: shift.id }).eq('id', t.id); }catch(e2){ console.warn('update trx:',e2); }
-        }
+      // 1. Ambil FRESH transaksi shift lama langsung dari Supabase (bukan dari state)
+      const { data: trxRaw } = await supabase
+        .from('bank_transactions')
+        .select('id')
+        .eq('shift_id', histShift.id);
+      const trxIds = (trxRaw||[]).map(t=>t.id);
+
+      // 2. Update shift_id semua transaksi lama → shift aktif sekarang
+      let berhasil = 0;
+      for(const id of trxIds) {
+        try{
+          const { error } = await supabase
+            .from('bank_transactions')
+            .update({ shift_id: shift.id })
+            .eq('id', id);
+          if(!error) berhasil++;
+        }catch(e2){ console.warn('update trx:',e2); }
       }
-      // Sembunyikan shift lama dari karyawan (flag hidden)
-      // Data tetap ada di bank_shift_logs untuk admin
+
+      // 3. Sembunyikan shift lama dari karyawan
+      // Simpan ke saldo_close.catatan (kolom yang sudah ada) agar tidak 400 error
+      const catatanGabung = `[DIGABUNG] ke shift ${shift.nama||shift.id} oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`;
       if(histShift.status==="closed") {
-        await supabase.from('bank_shift_logs')
-          .update({ hidden_by_kasir: true, hidden_at: new Date().toISOString(),
-                    hidden_note: `Digabung ke shift ${shift.id} oleh ${user.username}` })
-          .eq('id', histShift.id);
+        // Update saldo_close.catatan saja — tidak butuh kolom baru
+        const existing = histShift.saldo_close || {};
+        try{
+          await supabase.from('bank_shift_logs')
+            .update({ saldo_close: { ...existing, catatan: catatanGabung, digabung: true } })
+            .eq('id', histShift.id);
+        }catch(e2){ console.warn('update log catatan:',e2); }
       } else {
-        // Shift masih aktif — tutup dulu lalu tandai hidden
+        // Shift masih aktif di bank_shifts — hapus dari sana
         try{ await supabase.from('bank_shifts').delete().eq('id', histShift.id); }catch(e2){ console.warn('del shift:',e2); }
-        try{ await supabase.from('bank_shift_logs').insert({
-          id:          histShift.id + '_merged',
-          outlet_id:   selectedOutlet,
-          user_id:     histShift.userId || user.username,
-          nama:        histShift.nama,
-          start_time:  histShift.start_time,
-          end_time:    new Date().toISOString(),
-          saldo_open:  histShift.saldo_data || {},
-          saldo_close: { catatan: `Digabung ke shift ${shift.id}`, merged: true },
-          hidden_by_kasir: true,
-          hidden_note: `Digabung ke shift ${shift.id} oleh ${user.username}`,
-        }); }catch(e2){ console.warn('insert merged log:',e2); }
+        // Insert ke bank_shift_logs dengan catatan gabung (tanpa kolom hidden yang mungkin belum ada)
+        try{
+          await supabase.from('bank_shift_logs').insert({
+            id:          histShift.id,
+            outlet_id:   selectedOutlet,
+            user_id:     histShift.userId || user.username,
+            nama:        histShift.nama,
+            start_time:  histShift.start_time,
+            end_time:    new Date().toISOString(),
+            saldo_open:  histShift.saldo_data || {},
+            saldo_close: { catatan: catatanGabung, digabung: true },
+          });
+        }catch(e2){ console.warn('insert gabung log:',e2); }
       }
-      // Reload transaksi agar transaksi lama muncul di shift aktif
+
+      // 4. Reload transaksi fresh dari Supabase
       const freshTrx = await dbBank.getTransactions().catch(()=>[]);
       setTrxList(freshTrx.filter(t=>t.outletId===selectedOutlet));
+
+      // 5. Hapus dari tampilan riwayat
       setShiftHistory(prev=>prev.filter(x=>x.id!==histShift.id));
-      notify(`🔗 ${trxLama.length} transaksi lama digabung ke shift aktif ✓`,"ok");
+
+      notify(`🔗 ${berhasil} transaksi digabung ke shift "${shift.nama}" ✓`,"ok");
     } catch(e){
       console.error("lanjutGabung error:", e);
       notify("Gagal menggabung transaksi!","err");
@@ -4512,42 +4529,41 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   };
 
   // ── 🙈 Sembunyikan dari Karyawan ─────────────────────────────────────────
-  // Data TETAP ada di database untuk admin laporan.
-  // Hanya ditandai hidden_by_kasir=true agar tidak muncul di tampilan karyawan.
+  // Data TETAP ada di database untuk admin. Tandai di saldo_close.catatan.
   const hapusRiwayat = async (histShift) => {
     setHistSelected(null);
+    const catatanHidden = `[DISEMBUNYIKAN] oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`;
     try {
       if(histShift.status==="active") {
-        // Shift masih aktif di bank_shifts — tutup dulu dengan flag hidden
+        // Shift aktif di bank_shifts — pindah ke bank_shift_logs dengan catatan
         try{ await supabase.from('bank_shifts').delete().eq('id', histShift.id); }catch(e2){ console.warn(e2); }
-        try{ await supabase.from('bank_shift_logs').insert({
-          id:          histShift.id,
-          outlet_id:   selectedOutlet,
-          user_id:     histShift.userId || user.username,
-          nama:        histShift.nama,
-          start_time:  histShift.start_time,
-          end_time:    new Date().toISOString(),
-          saldo_open:  histShift.saldo_data || {},
-          saldo_close: { catatan: 'Disembunyikan oleh kasir' },
-          hidden_by_kasir: true,
-          hidden_note: `Disembunyikan oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`,
-        }); }catch(e2){ console.warn('insert hidden log:',e2); }
+        try{
+          await supabase.from('bank_shift_logs').insert({
+            id:          histShift.id,
+            outlet_id:   selectedOutlet,
+            user_id:     histShift.userId || user.username,
+            nama:        histShift.nama,
+            start_time:  histShift.start_time,
+            end_time:    new Date().toISOString(),
+            saldo_open:  histShift.saldo_data || {},
+            saldo_close: { catatan: catatanHidden, disembunyikan: true },
+          });
+        }catch(e2){ console.warn('insert hidden log:',e2); }
       } else {
-        // Shift sudah closed di bank_shift_logs — tandai hidden saja
-        const { error } = await supabase.from('bank_shift_logs')
-          .update({
-            hidden_by_kasir: true,
-            hidden_note: `Disembunyikan oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`,
-          })
-          .eq('id', histShift.id);
-        if(error) throw error;
+        // Shift sudah closed — update saldo_close.catatan saja (kolom yang sudah ada)
+        const existing = histShift.saldo_close || {};
+        try{
+          await supabase.from('bank_shift_logs')
+            .update({ saldo_close: { ...existing, catatan: catatanHidden, disembunyikan: true } })
+            .eq('id', histShift.id);
+        }catch(e2){ console.warn('update catatan hidden:',e2); }
       }
-      // Hapus dari tampilan karyawan
+      // Hapus dari tampilan karyawan (filter lokal)
       setShiftHistory(prev=>prev.filter(s=>s.id!==histShift.id));
-      notify("✅ Riwayat disembunyikan — masih ada di laporan admin","ok");
+      notify("🙈 Riwayat disembunyikan — masih ada di laporan admin","ok");
     } catch(e){
       console.error("hapusRiwayat error:", e);
-      // Fallback: kalau kolom hidden_by_kasir belum ada, coba cara lain
+      // Fallback: sembunyikan dari tampilan walau Supabase error
       setShiftHistory(prev=>prev.filter(s=>s.id!==histShift.id));
       notify("Disembunyikan dari tampilan","ok");
     }
