@@ -4514,11 +4514,21 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         }catch(e2){ console.warn('insert gabung log:',e2); }
       }
 
-      // 4. Reload transaksi fresh dari Supabase
-      const freshTrx = await dbBank.getTransactions().catch(()=>[]);
-      setTrxList(freshTrx.filter(t=>t.outletId===selectedOutlet));
+      // 4. Update state lokal LANGSUNG (tanpa tunggu Supabase reload)
+      // Ubah shiftId semua transaksi lama di state → shift aktif
+      setTrxList(prev => prev.map(t =>
+        trxIds.includes(t.id) ? { ...t, shiftId: shift.id } : t
+      ));
 
-      // 5. Hapus dari tampilan riwayat
+      // 5. Reload fresh dari Supabase sebagai verifikasi (async, tidak blocking UI)
+      setTimeout(async () => {
+        try {
+          const freshTrx = await dbBank.getTransactions();
+          setTrxList(freshTrx.filter(t=>t.outletId===selectedOutlet));
+        } catch(e2) { console.warn('reload after gabung:', e2); }
+      }, 800);
+
+      // 6. Hapus dari tampilan riwayat
       setShiftHistory(prev=>prev.filter(x=>x.id!==histShift.id));
 
       notify(`🔗 ${berhasil} transaksi digabung ke shift "${shift.nama}" ✓`,"ok");
@@ -4888,7 +4898,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                   <span style={{fontSize:22,flexShrink:0}}>▶️</span>
                   <div>
                     <div>Lanjutkan Shift Ini</div>
-                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>Pakai shift yang sama — transaksi lama langsung ikut semua</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>
+                      Pakai ID shift lama — cocok saat shift baru belum ada transaksi
+                    </div>
                   </div>
                 </button>
                 {/* Pilihan 2: Gabung transaksi ke shift aktif */}
@@ -4898,7 +4910,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                   <div>
                     <div>Gabung ke Shift Aktif</div>
                     <div style={{fontSize:10,fontWeight:600,opacity:.8}}>
-                      {shift?`Pindahkan transaksi lama → shift "${shift.nama}" yang aktif sekarang`:"Perlu shift aktif dulu sebelum menggabung"}
+                      {shift
+                        ? `Transaksi lama pindah ke "${shift.nama}" — total masuk/keluar ikut terjumlah`
+                        : "⚠ Buka shift dulu sebelum menggabung"}
                     </div>
                   </div>
                 </button>
