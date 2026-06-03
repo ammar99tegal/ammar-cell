@@ -4222,33 +4222,88 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         try{ localStorage.removeItem(`bank_shift_${selectedOutlet}`); }catch{}
       }
 
-      // Load riwayat shift dari bank_shift_logs — hanya outlet ini
+      // Load riwayat shift: bank_shift_logs (tutup) + bank_shifts lain (aktif selain shift kita)
       try {
+        const allTrxOutlet = trxs.filter(t=>t.outletId===selectedOutlet);
+
+        // Helper format tanggal aman
+        const safeFmt = (v) => {
+          if(!v) return null;
+          // Coba berbagai format
+          const d = new Date(v);
+          if(!isNaN(d.getTime())) return d.toISOString();
+          // format dd/mm/yyyy HH:MM
+          const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
+          if(m) {
+            const d2 = new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}${m[4]||'T00:00:00'}`);
+            if(!isNaN(d2.getTime())) return d2.toISOString();
+          }
+          return null;
+        };
+
+        // Load closed shifts dari bank_shift_logs
         const { data: logs } = await supabase
           .from('bank_shift_logs')
           .select('*')
           .eq('outlet_id', selectedOutlet)
           .order('created_at', { ascending: false })
-          .limit(30);
-        if(logs) {
-          // Map ke format yang mudah digunakan
-          const mapped = logs.map(l => ({
+          .limit(50);
+
+        const mapped = (logs||[]).map(l => {
+          const so = l.saldo_open  || {};
+          const sc = l.saldo_close || {};
+          // nama: coba dari saldo_open, lalu user_id, lalu nama field
+          const nama = so.namaShift || l.nama || l.user_id || "Shift";
+          return {
             id:         l.id,
-            nama:       l.nama || l.user_id || "—",
+            nama,
+            userId:     l.user_id || "",
             outletId:   l.outlet_id,
-            start_time: l.start_time,
-            end_time:   l.end_time,
-            saldo_data: l.saldo_open  || {},
-            saldo_close:l.saldo_close || {},
-          }));
-          // Untuk setiap shift, ambil transaksinya dari trxList
-          const allTrx = trxs.filter(t=>t.outletId===selectedOutlet);
-          const withTrx = mapped.map(s=>({
-            ...s,
-            trx: allTrx.filter(t=>t.shiftId===s.id),
-          }));
-          setShiftHistory(withTrx);
-        }
+            start_time: safeFmt(l.start_time),
+            end_time:   safeFmt(l.end_time || l.created_at),
+            saldo_data: so,
+            saldo_close: {
+              uangLaci:   sc.uangLaci   || sc.uang_laci   || 0,
+              uangSistem: sc.uangSistem || sc.uang_sistem || 0,
+              selisih:    sc.selisih    ?? sc.selisih_kas ?? null,
+              catatan:    sc.catatan    || sc.notes       || "",
+              saldoAppsC: sc.saldoAppsC || sc.saldo_apps_akhir || {},
+            },
+            status: "closed",
+            trx: allTrxOutlet.filter(t=>t.shiftId===l.id),
+          };
+        });
+
+        // Load juga dari bank_shifts (semua shift aktif di outlet ini — bukan hanya milik user ini)
+        // Ini untuk menampilkan shift orang lain yang mungkin overlap
+        const { data: activeAll } = await supabase
+          .from('bank_shifts')
+          .select('*')
+          .eq('outlet_id', selectedOutlet);
+        const activeHistory = (activeAll||[])
+          .filter(s=>s.id !== activeShift?.id) // exclude shift kita sendiri
+          .map(s=>{
+            const sd = s.saldo_data||{};
+            return {
+              id:         s.id,
+              nama:       sd.namaShift || s.nama || s.user_id || "Shift Aktif",
+              userId:     s.user_id || "",
+              outletId:   s.outlet_id,
+              start_time: safeFmt(s.start_time),
+              end_time:   null,
+              saldo_data: sd,
+              saldo_close:{},
+              status:     "active",
+              trx:        allTrxOutlet.filter(t=>t.shiftId===s.id),
+            };
+          });
+
+        // Gabung: aktif di atas, tutup di bawah, sorted by start_time desc
+        const all = [...activeHistory, ...mapped].sort((a,b)=>{
+          const ta = a.start_time||'', tb = b.start_time||'';
+          return tb.localeCompare(ta);
+        });
+        setShiftHistory(all);
       } catch(e){ console.warn('shiftHistory load error:', e); }
 
       try{ const b=localStorage.getItem(`bank_balance_${selectedOutlet}`); if(b) setLastBalance(JSON.parse(b)); }catch{}
@@ -4360,11 +4415,10 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     setTimeout(()=>loadAll(false), 600);
   };
 
-  // ── Lanjutkan shift dari riwayat ──────────────────────────────────────────
+  // ── Lanjutkan shift dari riwayat (baru) ────────────────────────────────────
   const lanjutkanShift = async (histShift) => {
     setHistSelected(null);
     try {
-      // Buat shift baru berdasarkan data shift lama
       const s = {
         id:       uid(),
         nama:     histShift.nama,
@@ -4380,6 +4434,37 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     } catch(e){
       console.error("lanjutkanShift error:", e);
       notify("Gagal melanjutkan shift!","err");
+    }
+  };
+
+  // ── Lanjut + Gabung transaksi ─────────────────────────────────────────────
+  // Buka shift baru tapi INHERIT id lama agar semua transaksi lama tetap terbaca
+  const lanjutGabung = async (histShift) => {
+    setHistSelected(null);
+    try {
+      // Jika shift lama masih di bank_shifts (status active), langsung pakai id-nya
+      // Jika sudah di bank_shift_logs (closed), re-open dengan id lama
+      const s = {
+        id:       histShift.id,           // pakai ID lama → transaksi lama tetap linked
+        nama:     histShift.nama,
+        start:    histShift.start_time || now(),
+        outletId: selectedOutlet,
+        cashKemb: histShift.saldo_data?.cashKemb || 0,
+        saldoApps:histShift.saldo_data?.saldoApps || {},
+      };
+      setShift(s);
+      try{ localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(s)); }catch{}
+      notify(`Shift digabung: ${s.nama} — transaksi lama tetap ada ✓`,"ok");
+      // Jika shift closed → hapus dari bank_shift_logs dulu, lalu buka ulang di bank_shifts
+      if(histShift.status==="closed"){
+        await supabase.from('bank_shift_logs').delete().eq('id', histShift.id).catch(()=>{});
+      }
+      await dbBank.openShift(s, selectedOutlet, user.username);
+      // Hapus dari local riwayat
+      setShiftHistory(prev=>prev.filter(x=>x.id!==histShift.id));
+    } catch(e){
+      console.error("lanjutGabung error:", e);
+      notify("Gagal menggabung shift!","err");
     }
   };
 
@@ -4469,14 +4554,18 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                       <div>
                         <div style={{fontWeight:800,fontSize:13,color:"#fff"}}>{s.nama}</div>
                         <div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:2}}>
-                          {s.end_time?new Date(s.end_time).toLocaleDateString("id-ID",{day:"2-digit",month:"short"})+" "+new Date(s.end_time).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"}):"—"}
+                          {(()=>{
+                            const dt=s.end_time?new Date(s.end_time):s.start_time?new Date(s.start_time):null;
+                            if(!dt||isNaN(dt)) return s.status==="active"?"🟢 Shift Aktif":"—";
+                            return (s.status==="active"?"🟢 Aktif · ":"") + dt.toLocaleDateString("id-ID",{day:"2-digit",month:"short"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+                          })()}
                           {sel===0&&<span style={{marginLeft:6,color:"#4ade80",fontWeight:700}}>✅ Balance</span>}
                           {sel!==null&&sel<0&&<span style={{marginLeft:6,color:"#fca5a5",fontWeight:700}}>📉 {fmtRp(Math.abs(sel))}</span>}
                         </div>
                       </div>
-                      <button onClick={()=>lanjutkanShift(s)}
+                      <button onClick={()=>setHistSelected(s)}
                         style={{background:"rgba(255,255,255,.2)",border:"1px solid rgba(255,255,255,.35)",borderRadius:9,padding:"6px 12px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                        ▶️ Lanjut
+                        ⋯ Aksi
                       </button>
                     </div>
                   </div>
@@ -4587,7 +4676,16 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                           {selisih!==null&&selisih<0&&<span style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"#fff0f0",padding:"1px 7px",borderRadius:20}}>📉 -{fmtRp(Math.abs(selisih))}</span>}
                         </div>
                         <div style={{fontSize:10,color:"#aaa",marginTop:2}}>
-                          {s.end_time?new Date(s.end_time).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})+" "+new Date(s.end_time).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"}):"—"}
+                          {(()=>{
+                            if(s.status==="active") return <span style={{color:"#22c55e",fontWeight:700}}>🟢 Shift Aktif</span>;
+                            const dt = s.end_time?new Date(s.end_time):null;
+                            if(!dt||isNaN(dt)) {
+                              const ds = s.start_time?new Date(s.start_time):null;
+                              if(ds&&!isNaN(ds)) return "Dibuka "+ds.toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"});
+                              return "—";
+                            }
+                            return "Tutup "+dt.toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+                          })()}
                         </div>
                         <div style={{display:"flex",gap:10,marginTop:4,fontSize:11,fontWeight:700}}>
                           <span style={{color:"#0d9488"}}>+{fmtRp(masuk)}</span>
@@ -4640,9 +4738,10 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                           ))
                         }
                       </div>
-                      <div style={{display:"flex",gap:8,padding:"10px 14px",borderTop:"1px solid #f0faf8",background:"#f8fffe"}}>
-                        <button onClick={()=>lanjutkanShift(s)} style={{flex:1,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"9px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(13,148,136,.25)"}}>▶️ Lanjutkan Shift</button>
-                        <button onClick={()=>hapusRiwayat(s)} style={{background:"#fff0f0",border:"2px solid #fca5a5",borderRadius:10,padding:"9px 14px",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🗑 Hapus</button>
+                      <div style={{display:"flex",gap:6,padding:"10px 14px",borderTop:"1px solid #f0faf8",background:"#f8fffe",flexWrap:"wrap"}}>
+                        <button onClick={()=>lanjutkanShift(s)} style={{flex:1,minWidth:120,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"9px 6px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(13,148,136,.25)"}}>▶️ Lanjutkan</button>
+                        <button onClick={()=>lanjutGabung(s)} style={{flex:1,minWidth:120,background:"linear-gradient(135deg,#1d4ed8,#3b82f6)",border:"none",borderRadius:10,padding:"9px 6px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(59,130,246,.25)"}}>🔗 Gabung Trx</button>
+                        <button onClick={()=>hapusRiwayat(s)} style={{background:"#fff0f0",border:"2px solid #fca5a5",borderRadius:10,padding:"9px 12px",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑</button>
                       </div>
                     </div>
                   )}
@@ -4660,7 +4759,12 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
             <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",padding:"16px 20px"}}>
               <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>📋 {histSelected.nama}</div>
               <div style={{fontSize:11,color:"rgba(255,255,255,.75)",marginTop:2}}>
-                {histSelected.end_time?new Date(histSelected.end_time).toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"}):"—"}
+                {(()=>{
+                  if(histSelected.status==="active") return "🟢 Sedang Aktif";
+                  const dt=histSelected.end_time?new Date(histSelected.end_time):histSelected.start_time?new Date(histSelected.start_time):null;
+                  if(!dt||isNaN(dt)) return "—";
+                  return dt.toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+                })()}
               </div>
             </div>
             <div style={{padding:"14px 18px"}}>
@@ -4685,14 +4789,37 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
               {histSelected.saldo_close?.catatan&&(
                 <div style={{background:"#fffbe6",borderRadius:9,padding:"8px 11px",marginBottom:12,fontSize:11,color:"#b7770d",fontWeight:600}}>📝 {histSelected.saldo_close.catatan}</div>
               )}
+              {/* Info status */}
+              <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 12px",marginBottom:12,fontSize:11,color:"#0d9488",fontWeight:600,textAlign:"center"}}>
+                {histSelected.status==="active"?"🟢 Shift ini masih aktif":"⚫ Shift sudah ditutup"}
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {/* Pilihan 1: Lanjutkan sebagai shift BARU */}
                 <button onClick={()=>lanjutkanShift(histSelected)}
-                  style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"13px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(13,148,136,.3)"}}>
-                  ▶️ Lanjutkan Shift Ini
+                  style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"12px 14px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(13,148,136,.3)",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:22,flexShrink:0}}>▶️</span>
+                  <div>
+                    <div>Lanjutkan Shift</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>Buka shift baru — transaksi lama tetap di riwayat</div>
+                  </div>
                 </button>
+                {/* Pilihan 2: Lanjut + Gabung transaksi */}
+                <button onClick={()=>lanjutGabung(histSelected)}
+                  style={{background:"linear-gradient(135deg,#1d4ed8,#3b82f6)",border:"none",borderRadius:12,padding:"12px 14px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(59,130,246,.3)",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:22,flexShrink:0}}>🔗</span>
+                  <div>
+                    <div>Lanjut + Gabung Transaksi</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.8}}>Pakai ID shift lama — semua transaksi lama ikut terbaca</div>
+                  </div>
+                </button>
+                {/* Pilihan 3: Hapus */}
                 <button onClick={()=>hapusRiwayat(histSelected)}
-                  style={{background:"#fff5f5",border:"2px solid #fca5a5",borderRadius:12,padding:"11px",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                  🗑 Hapus Riwayat Ini
+                  style={{background:"#fff5f5",border:"2px solid #fca5a5",borderRadius:12,padding:"11px 14px",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:20,flexShrink:0}}>🗑</span>
+                  <div>
+                    <div>Hapus Riwayat Ini</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.7}}>Hapus permanen dari database</div>
+                  </div>
                 </button>
                 <button onClick={()=>setHistSelected(null)}
                   style={{background:"#f9fafb",border:"2px solid #e5e7eb",borderRadius:12,padding:"10px",color:"#6b7280",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
