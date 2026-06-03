@@ -4444,7 +4444,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
       };
       // Jika shift sudah closed → hapus dari bank_shift_logs dulu
       if(histShift.status==="closed"){
-        await supabase.from('bank_shift_logs').delete().eq('id', histShift.id).catch(()=>{});
+        try{ await supabase.from('bank_shift_logs').delete().eq('id', histShift.id); }catch(e2){ console.warn('del log:',e2); }
       }
       // Re-open di bank_shifts dengan ID yang sama
       await dbBank.openShift(s, selectedOutlet, user.username);
@@ -4474,10 +4474,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
       if(trxLama.length > 0) {
         // Update shift_id semua transaksi lama → shift aktif sekarang
         for(const t of trxLama) {
-          await supabase.from('bank_transactions')
-            .update({ shift_id: shift.id })
-            .eq('id', t.id)
-            .catch(e=>console.warn('update trx shift_id:', e));
+          try{ await supabase.from('bank_transactions').update({ shift_id: shift.id }).eq('id', t.id); }catch(e2){ console.warn('update trx:',e2); }
         }
       }
       // Sembunyikan shift lama dari karyawan (flag hidden)
@@ -4486,14 +4483,11 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         await supabase.from('bank_shift_logs')
           .update({ hidden_by_kasir: true, hidden_at: new Date().toISOString(),
                     hidden_note: `Digabung ke shift ${shift.id} oleh ${user.username}` })
-          .eq('id', histShift.id)
-          .catch(()=>{
-            // Jika kolom belum ada, coba insert ke saldo_close saja
-          });
+          .eq('id', histShift.id);
       } else {
         // Shift masih aktif — tutup dulu lalu tandai hidden
-        await supabase.from('bank_shifts').delete().eq('id', histShift.id).catch(()=>{});
-        await supabase.from('bank_shift_logs').insert({
+        try{ await supabase.from('bank_shifts').delete().eq('id', histShift.id); }catch(e2){ console.warn('del shift:',e2); }
+        try{ await supabase.from('bank_shift_logs').insert({
           id:          histShift.id + '_merged',
           outlet_id:   selectedOutlet,
           user_id:     histShift.userId || user.username,
@@ -4504,7 +4498,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           saldo_close: { catatan: `Digabung ke shift ${shift.id}`, merged: true },
           hidden_by_kasir: true,
           hidden_note: `Digabung ke shift ${shift.id} oleh ${user.username}`,
-        }).catch(()=>{});
+        }); }catch(e2){ console.warn('insert merged log:',e2); }
       }
       // Reload transaksi agar transaksi lama muncul di shift aktif
       const freshTrx = await dbBank.getTransactions().catch(()=>[]);
@@ -4525,8 +4519,8 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     try {
       if(histShift.status==="active") {
         // Shift masih aktif di bank_shifts — tutup dulu dengan flag hidden
-        await supabase.from('bank_shifts').delete().eq('id', histShift.id).catch(()=>{});
-        await supabase.from('bank_shift_logs').insert({
+        try{ await supabase.from('bank_shifts').delete().eq('id', histShift.id); }catch(e2){ console.warn(e2); }
+        try{ await supabase.from('bank_shift_logs').insert({
           id:          histShift.id,
           outlet_id:   selectedOutlet,
           user_id:     histShift.userId || user.username,
@@ -4537,7 +4531,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           saldo_close: { catatan: 'Disembunyikan oleh kasir' },
           hidden_by_kasir: true,
           hidden_note: `Disembunyikan oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`,
-        }).catch(()=>{});
+        }); }catch(e2){ console.warn('insert hidden log:',e2); }
       } else {
         // Shift sudah closed di bank_shift_logs — tandai hidden saja
         const { error } = await supabase.from('bank_shift_logs')
