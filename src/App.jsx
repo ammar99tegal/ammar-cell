@@ -2427,7 +2427,6 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
     </div>
   </div>
 );
-  );
 }
 
 
