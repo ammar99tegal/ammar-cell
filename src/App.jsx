@@ -1770,9 +1770,10 @@ const fromInputDate = s => { const [y,m,d]=s.split("-"); return new Date(+y,+m-1
 // DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
-  const [chartMetric, setChartMetric] = useState("omset");
-  const [period,      setPeriod]      = useState("daily");   // daily|monthly|yearly|custom
-  const [hoverIdx,    setHoverIdx]    = useState(null);
+  const [chartMetric,  setChartMetric]  = useState("omset");
+  const [period,       setPeriod]       = useState("daily");   // daily|monthly|yearly|custom
+  const [hoverIdx,     setHoverIdx]     = useState(null);
+  const [filterOutlet, setFilterOutlet] = useState("semua"); // filter outlet
   // Default custom range: last 30 days
   const nowD = new Date();
   const thirtyAgo = new Date(nowD); thirtyAgo.setDate(nowD.getDate()-29);
@@ -1796,8 +1797,9 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
     return true;
   };
 
-  const filteredTx = period === "custom" ? transactions.filter(isInRange) : transactions;
-  const todayTrx   = transactions.filter(t=>t.date===today());
+  const txByOutlet  = filterOutlet==="semua" ? transactions : transactions.filter(t=>t.outletId===filterOutlet);
+  const filteredTx  = period === "custom" ? txByOutlet.filter(isInRange) : txByOutlet;
+  const todayTrx   = txByOutlet.filter(t=>t.date===today());
   const omsetHari  = calcOmset(todayTrx);
   const profitHari = calcProfit(todayTrx);
   const totalItems = todayTrx.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
@@ -1826,7 +1828,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
           const dt=new Date(from);dt.setDate(from.getDate()+d);
           const dateStr=dt.toLocaleDateString("id-ID");
           const label=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});
-          const list=transactions.filter(t=>t.date===dateStr);
+          const list=txByOutlet.filter(t=>t.date===dateStr);
           const ic=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
           pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:ic});
         }
@@ -1836,7 +1838,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
         while(cur<=to){
           const yr=cur.getFullYear(),mo=cur.getMonth();
           const label=cur.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});
-          const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo&&td>=from&&td<=to;});
+          const list=txByOutlet.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo&&td>=from&&td<=to;});
           const icm=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
           pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:icm});
           cur.setMonth(cur.getMonth()+1);
@@ -1844,7 +1846,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
       } else {
         // yearly
         for(let y=from.getFullYear();y<=to.getFullYear();y++){
-          const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===y&&td>=from&&td<=to;});
+          const list=txByOutlet.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===y&&td>=from&&td<=to;});
           const icy=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
           pts.push({label:String(y),omset:calcOmset(list),profit:calcProfit(list),item:icy});
         }
@@ -1852,9 +1854,9 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
     } else if(period==="daily"){
       for(let d=13;d>=0;d--){const dt=new Date(now);dt.setDate(now.getDate()-d);const label=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});const dateStr=dt.toLocaleDateString("id-ID");const list=transactions.filter(t=>t.date===dateStr);const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
     } else if(period==="monthly"){
-      for(let m=11;m>=0;m--){const dt=new Date(now.getFullYear(),now.getMonth()-m,1);const yr=dt.getFullYear(),mo=dt.getMonth();const label=dt.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo;});const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
+      for(let m=11;m>=0;m--){const dt=new Date(now.getFullYear(),now.getMonth()-m,1);const yr=dt.getFullYear(),mo=dt.getMonth();const label=dt.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});const list=txByOutlet.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo;});const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
     } else {
-      for(let y=4;y>=0;y--){const yr=now.getFullYear()-y;const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr;});const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label:String(yr),omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
+      for(let y=4;y>=0;y--){const yr=now.getFullYear()-y;const list=txByOutlet.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr;});const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label:String(yr),omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
     }
     return pts;
   };
@@ -1881,7 +1883,19 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <SubHeader title="📊 Dashboard" onBack={onBack}/>
+      <SubHeader title="📊 Dashboard" onBack={onBack}
+        right={
+          <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
+            style={{padding:"5px 11px",borderRadius:20,border:"1px solid rgba(255,255,255,.35)",
+              background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,
+              outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
+            <option value="semua" style={{color:"#000",background:"#fff"}}>Semua Outlet</option>
+            {(outlets||[]).map(o=>(
+              <option key={o.id} value={o.id} style={{color:"#000",background:"#fff"}}>{o.nama}</option>
+            ))}
+          </select>
+        }
+      />
       <div style={{padding:"14px 20px",maxWidth:980,margin:"0 auto"}}>
 
         {/* KPI */}
