@@ -25,6 +25,7 @@ const useDevice = () => {
 
 const fmt   = n => new Intl.NumberFormat("id-ID").format(n??0);
 const fmtRp = n => `Rp ${fmt(n)}`;
+const fmtS  = n => n>=1000000?`${(n/1000000).toFixed(1)}jt`:n>=1000?`${(n/1000).toFixed(0)}rb`:String(Math.round(n));
 const now   = () => new Date().toLocaleString("id-ID");
 const uid   = () => Math.random().toString(36).substr(2,8).toUpperCase();
 const today = () => new Date().toLocaleDateString("id-ID");
@@ -1871,7 +1872,6 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   const tC=trend==="up"?"#0d9488":"#ff4757";
   const gId=`g${chartMetric}${trend}`;
   const yLabels2=[0,.25,.5,.75,1].map(f=>({y:pT+iH*(1-f),val:maxVal*f}));
-  const fmtS=n=>n>=1000000?`${(n/1000000).toFixed(1)}jt`:n>=1000?`${(n/1000).toFixed(0)}rb`:String(Math.round(n));
 
   const salesMap={},profitMap={};
   filteredTx.forEach(t=>t.items.filter(i=>!i.refunded).forEach(i=>{salesMap[i.name]=(salesMap[i.name]||0)+i.qty;profitMap[i.name]=(profitMap[i.name]||0)+(i.price-(i.modal||0))*i.qty;}));
