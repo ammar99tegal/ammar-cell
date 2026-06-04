@@ -7551,6 +7551,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
 
   const [clock,       setClock]      = useState(now());
   const [kasirShifts, setKasirShifts]= useState([]);
+  const [bankShifts,  setBankShifts] = useState([]);   // shift bank aktif
   const [bankTrxList, setBankTrxList]= useState([]);
   const [resetLog,    setResetLog]   = useState([]);
   const [filterOutlet,setFilterOutlet]= useState("semua");
@@ -7568,6 +7569,9 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
         if(!error) setKasirShifts(shifts||[]);
         const allBankTrx = await dbBank.getTransactions();
         setBankTrxList(allBankTrx);
+        // Load active bank shifts
+        const {data:bShifts} = await supabase.from('bank_shifts').select('*');
+        setBankShifts(bShifts||[]);
         // Load reset logs
         try {
           const {data:rlogs} = await supabase.from('reset_logs').select('*')
@@ -7581,11 +7585,12 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
 
     const chShift = supabase.channel('monitor-shifts')
       .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},async()=>{
-        try{
-          const {data} = await supabase.from('active_shifts').select('*');
-          setKasirShifts(data||[]);
-        }catch{}
-      }).subscribe();
+        try{ const {data} = await supabase.from('active_shifts').select('*'); setKasirShifts(data||[]); }catch{}
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},async()=>{
+        try{ const {data} = await supabase.from('bank_shifts').select('*'); setBankShifts(data||[]); }catch{}
+      })
+      .subscribe();
 
     const chTrx = supabase.channel('monitor-trx')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'transactions'},()=>{
@@ -7615,12 +7620,30 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
   };
   const calcTrxShift = (shiftId) => transactions.filter(t=>t.shiftId===shiftId).length;
 
-  // Hitung uang sistem bank per outlet (dari semua transaksi, bukan hanya hari ini)
+  // Hitung uang sistem bank per outlet — hanya dari shift yang AKTIF sekarang
   const getBankStats = (outletId) => {
-    const list = bankTrxList.filter(t=>t.outletId===outletId);
+    // Ambil semua shift aktif di outlet ini
+    const activeShiftIds = bankShifts
+      .filter(s=>s.outlet_id===outletId)
+      .map(s=>s.id);
+    // Kalau ada shift aktif, filter transaksi dari shift itu saja
+    // Kalau tidak ada shift aktif, tampilkan 0 (bukan semua history)
+    const list = activeShiftIds.length>0
+      ? bankTrxList.filter(t=>t.outletId===outletId && activeShiftIds.includes(t.shiftId))
+      : [];
     const masuk  = list.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
     const keluar = list.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-    return { uangSistem:masuk-keluar, totalMasuk:masuk, totalKeluar:keluar, trx:list.length, list };
+    // Tambahkan cashKemb dari setiap shift aktif
+    const cashKemb = bankShifts
+      .filter(s=>s.outlet_id===outletId)
+      .reduce((s,sh)=>s+(sh.saldo_data?.cashKemb||sh.saldo_data?.cashKembalian||0),0);
+    return {
+      uangSistem: cashKemb+masuk-keluar,
+      cashKemb, totalMasuk:masuk, totalKeluar:keluar,
+      trx:list.length, list,
+      activeShifts: bankShifts.filter(s=>s.outlet_id===outletId),
+      activeShiftCount: activeShiftIds.length,
+    };
   };
 
   // Transaksi kasir hari ini terurut terbaru
@@ -7705,15 +7728,16 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
           const shifts = kasirShifts.filter(s=>String(s.outlet_id)===String(outlet.id));
           const bank   = getBankStats(outlet.id);
           const oc     = outletColor(outlet.id);
-          if(shifts.length===0&&bank.trx===0) return null;
+          if(shifts.length===0&&bank.activeShiftCount===0&&bank.trx===0) return null;
           return (
             <div key={outlet.id} style={{marginBottom:16}}>
               {/* Outlet header */}
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"7px 14px",background:oc+"12",borderRadius:10,border:`1px solid ${oc}25`}}>
                 <div style={{width:10,height:10,borderRadius:"50%",background:oc}}/>
                 <div style={{fontWeight:800,fontSize:13,color:oc}}>{outlet.nama}</div>
-                <div style={{fontSize:11,color:"#888",marginLeft:"auto"}}>
-                  {shifts.length} kasir aktif
+                <div style={{fontSize:11,color:"#888",marginLeft:"auto",display:"flex",gap:10}}>
+                  <span>{shifts.length} kasir aktif</span>
+                  {bank.activeShiftCount>0&&<span style={{color:"#2980b9",fontWeight:700}}>· {bank.activeShiftCount} shift bank aktif</span>}
                 </div>
               </div>
 
@@ -7763,31 +7787,46 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                   );
                 })}
 
-                {/* Bank card */}
-                {bank.trx>0&&(
-                  <div style={{background:"#fff",borderRadius:14,padding:"14px 16px",border:`2px solid #e0f5f1`,position:"relative",overflow:"hidden"}}>
-                    <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,#1a2e2a,#2d4a44)"}}/>
-                    <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:10}}>🏦 Bank — {outlet.nama.replace("Ammar Cell ","")}</div>
+                {/* Bank cards — per shift aktif */}
+                {bank.activeShifts.map(bsh=>{
+                  const sd    = bsh.saldo_data||{};
+                  const shTrx = bankTrxList.filter(t=>t.shiftId===bsh.id);
+                  const sMasuk  = shTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+                  const sKeluar = shTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+                  const cashKemb = sd.cashKemb||sd.cashKembalian||0;
+                  const uangSistemShift = cashKemb + sMasuk - sKeluar;
+                  return (
+                  <div key={bsh.id} style={{background:"#fff",borderRadius:14,padding:"14px 16px",border:`2px solid #dde8f0`,position:"relative",overflow:"hidden"}}>
+                    <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,#1a2e2a,#2980b9)"}}/>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
+                      <PulseDotM color="#2980b9" size={6}/>
+                      <div>
+                        <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>🏦 Bank — {sd.namaShift||bsh.nama||bsh.user_id||"Shift"}</div>
+                        <div style={{fontSize:10,color:"#aaa"}}>Buka {fmtT(bsh.start_time)} · {shTrx.length} trx</div>
+                      </div>
+                    </div>
                     <div style={{background:"linear-gradient(135deg,#1a2e2a,#2d4a44)",borderRadius:11,padding:"11px 14px",marginBottom:10}}>
                       <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.6)",marginBottom:3}}>UANG SISTEM</div>
-                      <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(bank.uangSistem)}</div>
+                      <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(uangSistemShift)}</div>
+                      {cashKemb>0&&<div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:2}}>Cash kemb {fmtRp(cashKemb)} + net trx</div>}
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7}}>
                       <div style={{background:"#e8f8f0",borderRadius:9,padding:"7px 9px"}}>
                         <div style={{fontSize:9,color:"#27ae60",fontWeight:700}}>MASUK</div>
-                        <div style={{fontWeight:800,fontSize:11,color:"#27ae60"}}>{fmtRp(bank.totalMasuk)}</div>
+                        <div style={{fontWeight:800,fontSize:11,color:"#27ae60"}}>{fmtRp(sMasuk)}</div>
                       </div>
                       <div style={{background:"#fff0f0",borderRadius:9,padding:"7px 9px"}}>
                         <div style={{fontSize:9,color:"#e74c3c",fontWeight:700}}>KELUAR</div>
-                        <div style={{fontWeight:800,fontSize:11,color:"#e74c3c"}}>{fmtRp(bank.totalKeluar)}</div>
+                        <div style={{fontWeight:800,fontSize:11,color:"#e74c3c"}}>{fmtRp(sKeluar)}</div>
                       </div>
                       <div style={{background:"#f0faf8",borderRadius:9,padding:"7px 9px"}}>
                         <div style={{fontSize:9,color:"#aaa",fontWeight:700}}>TRX</div>
-                        <div style={{fontWeight:800,fontSize:11,color:"#1a2e2a"}}>{bank.trx}</div>
+                        <div style={{fontWeight:800,fontSize:11,color:"#1a2e2a"}}>{shTrx.length}</div>
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })}
               </div>
             </div>
           );
