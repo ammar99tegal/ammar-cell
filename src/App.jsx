@@ -1895,7 +1895,10 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <SubHeader title="📊 Dashboard" onBack={onBack}
         right={
-          <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
+          <button onClick={loadData} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}} title="Refresh data">
+          {loading?"⏳":"🔄"}
+        </button>
+      <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
             style={{padding:"5px 11px",borderRadius:20,border:"1px solid rgba(255,255,255,.35)",
               background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,
               outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
@@ -7181,26 +7184,116 @@ function BankChart({ data, metric, color }) {
 
 
 function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
-  const [metric,   setMetric]   = useState("masuk");   // masuk|keluar|saldo|trx
-  const [period,   setPeriod]   = useState("daily");
-  const [dateFrom, setDateFrom] = useState(()=>{const d=new Date();d.setDate(d.getDate()-13);return d.toISOString().split("T")[0];});
-  const [dateTo,   setDateTo]   = useState(()=>new Date().toISOString().split("T")[0]);
-  const [filterOutlet, setFilterOutlet] = useState("semua");
-  const [tab, setTab] = useState("grafik");
+  const [metric,      setMetric]      = useState("masuk");
+  const [period,      setPeriod]      = useState("daily");
+  const [dateFrom,    setDateFrom]    = useState(()=>{const d=new Date();d.setDate(d.getDate()-13);return d.toISOString().split("T")[0];});
+  const [dateTo,      setDateTo]      = useState(()=>new Date().toISOString().split("T")[0]);
+  const [filterOutlet,setFilterOutlet]= useState("semua");
+  const [tab,         setTab]         = useState("grafik");
+  const [localTrx,    setLocalTrx]    = useState(null); // null = belum load
+  const [loading,     setLoading]     = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
-  const bankTrx = rawBankTrx || [];
+  // ── Load langsung dari Supabase ─────────────────────────────────────────
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from('bank_transactions')
+        .select('id,tgl,waktu,shift_id,nama,jenis,fee,nominal,net_nominal,outlet_id,created_at')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      const mapped = (data||[]).map(r => ({
+        id:         r.id,
+        tgl:        r.tgl || (r.created_at ? new Date(r.created_at).toLocaleDateString('id-ID') : ''),
+        waktu:      r.waktu || r.created_at,
+        shiftId:    r.shift_id,
+        nama:       r.nama,
+        jenis:      r.jenis,
+        fee:        r.fee   || 0,
+        nominal:    r.nominal || 0,
+        netNominal: r.net_nominal || 0,
+        outletId:   r.outlet_id,
+      }));
+      setLocalTrx(mapped);
+      setLastRefresh(new Date().toLocaleTimeString('id-ID'));
+    } catch(e) { console.error('BankDashboard load:', e); }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadData();
+    const iv = setInterval(loadData, 30000); // reload tiap 30 detik
+    const ch = supabase.channel('bankdash-rt')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},(p) => {
+        const r = p.new;
+        if(!r) return;
+        const t = {
+          id:r.id, tgl:r.tgl||(r.created_at?new Date(r.created_at).toLocaleDateString('id-ID'):''),
+          waktu:r.waktu||r.created_at, shiftId:r.shift_id, nama:r.nama, jenis:r.jenis,
+          fee:r.fee||0, nominal:r.nominal||0, netNominal:r.net_nominal||0, outletId:r.outlet_id,
+        };
+        setLocalTrx(prev => (prev||[]).find(x=>x.id===t.id) ? (prev||[]) : [t,...(prev||[])]);
+        setLastRefresh(new Date().toLocaleTimeString('id-ID'));
+      })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'bank_transactions'},(p) => {
+        setLocalTrx(prev => (prev||[]).filter(x=>x.id!==p.old?.id));
+      })
+      .subscribe();
+    return () => { clearInterval(iv); supabase.removeChannel(ch); };
+  }, []);
+
+  // Gunakan localTrx (fresh dari Supabase) atau fallback ke prop
+  const bankTrx = localTrx !== null ? localTrx : (rawBankTrx || []);
   const outletNames = (outlets||[]).map(o=>o.nama);
 
   // Filter by outlet
   const filtered = filterOutlet==="semua" ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
 
-  // KPI hari ini
+  // KPI hari ini — match format tgl dari Supabase
   const todayStr = today();
-  const todayTrx = filtered.filter(t=>t.tgl===todayStr);
+  const todayISO = new Date().toISOString().split('T')[0]; // 2026-06-04
+  const todayTrx = filtered.filter(t => {
+    if(!t.tgl) return false;
+    // Cek berbagai format: "04/06/2026" atau "2026-06-04" atau "4/6/2026"
+    if(t.tgl === todayStr) return true;
+    if(t.tgl === todayISO) return true;
+    // Normalize: jika format d/m/yyyy
+    const parts = t.tgl.split('/');
+    if(parts.length===3) {
+      const iso = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+      return iso === todayISO;
+    }
+    return false;
+  });
   const masukHari  = todayTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
   const keluarHari = todayTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
   const saldoHari  = masukHari - keluarHari;
   const feeHari    = todayTrx.reduce((s,t)=>s+t.fee,0);
+
+  // ── Normalize tgl dari berbagai format ──────────────────────────────────
+  const normTglBD = tgl => {
+    if(!tgl) return '';
+    if(/^\d{4}-\d{2}-\d{2}$/.test(tgl)) {
+      // ISO: 2026-06-04 → convert ke id-ID format
+      const [y,m,d] = tgl.split('-');
+      return `${+d}/${+m}/${y}`;
+    }
+    // Sudah dalam format d/m/yyyy
+    return tgl;
+  };
+  const tglToISO = tgl => {
+    const n = normTglBD(tgl);
+    const p = n.split('/');
+    if(p.length===3) return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
+    return tgl;
+  };
+  const matchTgl = (t, dateStr) => {
+    // dateStr bisa berupa id-ID string atau ISO
+    const tNorm = normTglBD(t.tgl);
+    const dNorm = normTglBD(dateStr);
+    return tNorm === dNorm || t.tgl === dateStr || tglToISO(t.tgl) === dateStr;
+  };
 
   // Chart data builder
   const parseISO = s => new Date(s);
@@ -7221,7 +7314,8 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
           const dt=new Date(from); dt.setDate(from.getDate()+d);
           const str=dt.toLocaleDateString("id-ID");
           const lbl=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});
-          addPt(lbl, filtered.filter(t=>t.tgl===str));
+          const isoStr=dt.toISOString().split("T")[0];
+          addPt(lbl, filtered.filter(t=>t.tgl===str||t.tgl===isoStr||normTglBD(t.tgl)===str));
         }
       } else {
         const cur=new Date(from.getFullYear(),from.getMonth(),1);
@@ -7235,7 +7329,9 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
     } else if(period==="daily"){
       for(let d=13;d>=0;d--){
         const dt=new Date(now);dt.setDate(now.getDate()-d);
-        addPt(dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"}), filtered.filter(t=>t.tgl===dt.toLocaleDateString("id-ID")));
+        const str=dt.toLocaleDateString("id-ID");
+        const iso=dt.toISOString().split("T")[0];
+        addPt(dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"}), filtered.filter(t=>t.tgl===str||t.tgl===iso||normTglBD(t.tgl)===str));
       }
     } else {
       for(let m=11;m>=0;m--){
