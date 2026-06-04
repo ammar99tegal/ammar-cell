@@ -1895,10 +1895,11 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <SubHeader title="📊 Dashboard" onBack={onBack}
         right={
+<div style={{display:"flex",gap:6,alignItems:"center"}}>
           <button onClick={loadData} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}} title="Refresh data">
-          {loading?"⏳":"🔄"}
-        </button>
-      <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
+            {loading?"⏳":"🔄"}
+          </button>
+          <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
             style={{padding:"5px 11px",borderRadius:20,border:"1px solid rgba(255,255,255,.35)",
               background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,
               outline:"none",fontFamily:"inherit",cursor:"pointer"}}>
@@ -1907,6 +1908,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
               <option key={o.id} value={o.id} style={{color:"#000",background:"#fff"}}>{o.nama}</option>
             ))}
           </select>
+        </div>
         }
       />
       <div style={{padding:"14px 20px",maxWidth:980,margin:"0 auto"}}>
@@ -7405,6 +7407,8 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
       <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"0 20px",minHeight:50,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100,boxShadow:"0 3px 16px rgba(13,148,136,.35)"}}>
         <><button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",marginRight:8}}>← Menu</button><div style={{fontWeight:900,fontSize:16,color:"#fff"}}>🏦 Dashboard Bank</div></>
         <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+<button onClick={loadData} style={{background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.25)",borderRadius:20,padding:"5px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}} title="Refresh">{loading?"⏳":"🔄"}</button>
+          {lastRefresh&&<span style={{fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:600}}>{lastRefresh}</span>}
           <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
             style={{padding:"5px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",fontWeight:700,fontSize:11,outline:"none",fontFamily:"inherit"}}>
             <option value="semua" style={{color:"#000"}}>Semua Outlet</option>
