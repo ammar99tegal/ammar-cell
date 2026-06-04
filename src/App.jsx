@@ -6325,22 +6325,41 @@ function CfVersusRow({label,sub,sistem,input}) {
 }
 
 function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
-  const saveTimer=useRef(null);
-  const [lastSave,setLastSave]=useState(null);
-  const [kirimOk,setKirimOk]=useState(false);
+  const SAVE_KEY = 'ammar_cf_kalkulator_v2';
+  const saveTimer = useRef(null);
+  const [lastSave, setLastSave] = useState(null);
+  const [kirimOk,  setKirimOk]  = useState(false);
 
-  const [pCash, setPCash]=useState(cfMkRows(outletNames&&outletNames.length?outletNames:OUTLETS));
-  const [pBank, setPBank]=useState(cfMkRows(BANKS));
-  const [pApps, setPApps]=useState(cfMkRows(APPS));
-  const [mOut,  setMOut] =useState(cfMkRows(outletNames&&outletNames.length?outletNames:OUTLETS));
-  const [mBank, setMBank]=useState(cfMkRows(BANKS));
-  const [mApps, setMApps]=useState(cfMkRows(APPS));
-  const [mKel,  setMKel] =useState(cfMkRows(["Belanja stok","Operasional","Transfer owner"]));
-  const [mFisik,setMFisik]=useState(cfMkRows(outletNames&&outletNames.length?outletNames:OUTLETS));
+  // ── Load dari localStorage saat pertama mount ──────────────────────────────
+  const loadSaved = () => {
+    try {
+      const s = localStorage.getItem(SAVE_KEY);
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  };
+  const sv = loadSaved();
+  const defOutlets = outletNames&&outletNames.length ? outletNames : OUTLETS;
 
+  const [pCash, setPCash] = useState(sv?.pCash  || cfMkRows(defOutlets));
+  const [pBank, setPBank] = useState(sv?.pBank  || cfMkRows(BANKS_CF));
+  const [pApps, setPApps] = useState(sv?.pApps  || cfMkRows(APPS_CF));
+  const [mOut,  setMOut]  = useState(sv?.mOut   || cfMkRows(defOutlets));
+  const [mBank, setMBank] = useState(sv?.mBank  || cfMkRows(BANKS_CF));
+  const [mApps, setMApps] = useState(sv?.mApps  || cfMkRows(APPS_CF));
+  const [mKel,  setMKel]  = useState(sv?.mKel   || cfMkRows(["Belanja stok","Operasional","Transfer owner"]));
+  const [mFisik,setMFisik]= useState(sv?.mFisik || cfMkRows(defOutlets));
+
+  // ── Autosave ke localStorage setiap ada perubahan ─────────────────────────
   useEffect(()=>{
     if(saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current=setTimeout(()=>setLastSave(new Date().toLocaleTimeString("id-ID")),600);
+    saveTimer.current = setTimeout(()=>{
+      try {
+        const data = {pCash,pBank,pApps,mOut,mBank,mApps,mKel,mFisik,savedAt:new Date().toISOString()};
+        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+        setLastSave(new Date().toLocaleTimeString("id-ID"));
+      } catch(e) { console.warn('autosave error:',e); }
+    }, 600);
+    return ()=>{ if(saveTimer.current) clearTimeout(saveTimer.current); };
   },[pCash,pBank,pApps,mOut,mBank,mApps,mKel,mFisik]);
 
   const tPC=cfSumR(pCash),tPB=cfSumR(pBank),tPA=cfSumR(pApps);
@@ -6392,9 +6411,22 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
         marginBottom:12,background:"#fff",borderRadius:11,padding:"8px 14px",border:"2px solid #e0f5f1"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:600,color:"#555"}}>
           <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block",boxShadow:"0 0 0 3px #22c55e33"}}/>
-          Autosave aktif
-          {lastSave&&<span style={{color:"#aaa"}}>· Tersimpan {lastSave}</span>}
+          Autosave aktif — data aman saat balik menu
+          {lastSave&&<span style={{color:"#aaa",marginLeft:2}}>· Tersimpan {lastSave}</span>}
         </div>
+        <button onClick={()=>{
+          if(!window.confirm("Reset semua isian? Data belum tersimpan ke jurnal akan hilang.")) return;
+          try{localStorage.removeItem(SAVE_KEY);}catch{}
+          const def=outletNames&&outletNames.length?outletNames:OUTLETS;
+          setPCash(cfMkRows(def));setPBank(cfMkRows(BANKS_CF));setPApps(cfMkRows(APPS_CF));
+          setMOut(cfMkRows(def));setMBank(cfMkRows(BANKS_CF));setMApps(cfMkRows(APPS_CF));
+          setMKel(cfMkRows(["Belanja stok","Operasional","Transfer owner"]));
+          setMFisik(cfMkRows(def));setLastSave(null);
+        }} style={{fontSize:11,color:"#aaa",background:"none",border:"1px solid #e0f5f1",borderRadius:7,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit"}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="#ff4757";e.currentTarget.style.color="#ff4757";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor="#e0f5f1";e.currentTarget.style.color="#aaa";}}>
+          🗑 Reset
+        </button>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
