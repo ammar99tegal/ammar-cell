@@ -26,6 +26,16 @@ const useDevice = () => {
 const fmt   = n => new Intl.NumberFormat("id-ID").format(n??0);
 const fmtRp = n => `Rp ${fmt(n)}`;
 const fmtS  = n => n>=1000000?`${(n/1000000).toFixed(1)}jt`:n>=1000?`${(n/1000).toFixed(0)}rb`:String(Math.round(n));
+const safeDt = v => {
+  if(!v) return null;
+  const d = new Date(v);
+  if(!isNaN(d)) return d;
+  const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m){ const d2=new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`); if(!isNaN(d2)) return d2; }
+  return null;
+};
+const fmtDT = v => { const d=safeDt(v); if(!d) return '—'; return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
+const fmtT  = v => { const d=safeDt(v); if(!d) return '—'; return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
 const now   = () => new Date().toLocaleString("id-ID");
 const uid   = () => Math.random().toString(36).substr(2,8).toUpperCase();
 const today = () => new Date().toLocaleDateString("id-ID");
@@ -2472,17 +2482,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
     return()=>{ clearInterval(iv); supabase.removeChannel(ch); };
   },[]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const safeDt = v => {
-    if(!v) return null;
-    const d = new Date(v);
-    if(!isNaN(d)) return d;
-    const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if(m){ const d2=new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`); if(!isNaN(d2)) return d2; }
-    return null;
-  };
-  const fmtDT = v => { const d=safeDt(v); if(!d) return '—'; return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
-  const fmtT  = v => { const d=safeDt(v); if(!d) return '—'; return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
+
 
   // ── Build outlet → shift → trx structure ─────────────────────────────────
   const filteredTrx = filterOutlet==='all' ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
