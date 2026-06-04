@@ -2244,6 +2244,193 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // LAPORAN (per outlet + per shift)
 // ══════════════════════════════════════════════════════════════════════════════
+// ── Bank Shift Detail Modal ───────────────────────────────────────────────────
+function BankShiftDetailModal({ shift: sh, onClose }) {
+  const [modalTab, setModalTab] = useState('ringkasan');
+  const masuk  = sh.trx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+  const keluar = sh.trx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+  const fee    = sh.trx.reduce((s,t)=>s+(t.fee||0),0);
+  const sc     = sh.saldo_close||{}, so = sh.saldo_open||{};
+  const sel    = sc.selisih??null;
+  const isAct  = sh.status==='active';
+  const sistemAkhir = (so.cashKemb||0)+masuk-keluar;
+  return (
+  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:999,fontFamily:"'Nunito',sans-serif"}}
+    onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={{background:'#fff',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:600,maxHeight:'92vh',overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 -8px 40px rgba(0,0,0,.25)'}}>
+      {/* Modal header */}
+      <div style={{background:isAct?'linear-gradient(135deg,#065f46,#059669)':'linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)',padding:'16px 20px',flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <span style={{fontWeight:900,fontSize:18,color:'#fff'}}>{sh.nama}</span>
+              <span style={{fontSize:11,fontWeight:700,padding:'2px 10px',borderRadius:20,background:'rgba(0,0,0,.18)',color:'#fff'}}>{isAct?'🟢 Aktif':'⚫ Tutup'}</span>
+            </div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,.75)'}}>
+              {fmtDT(sh.start_time)}{sh.end_time&&` → ${fmtDT(sh.end_time)}`}
+            </div>
+          </div>
+          <button onClick={()=>onClose()} style={{background:'rgba(255,255,255,.2)',border:'none',borderRadius:20,padding:'5px 12px',color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>✕</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:12}}>
+          {[{l:'Masuk',v:fmtRp(masuk),c:'#a7f3d0'},{l:'Keluar',v:fmtRp(keluar),c:'#fca5a5'},{l:'Fee',v:fmtRp(fee),c:'#fcd34d'},{l:'Trx',v:`${sh.trx.length}x`,c:'#e0e7ff'}].map(k=>(
+            <div key={k.l} style={{textAlign:'center',background:'rgba(255,255,255,.12)',borderRadius:9,padding:'7px 4px',border:'1px solid rgba(255,255,255,.2)'}}>
+              <div style={{fontWeight:900,fontSize:12,color:k.c}}>{k.v}</div>
+              <div style={{fontSize:9,color:'rgba(255,255,255,.55)',fontWeight:700}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Tabs */}
+      <div style={{display:'flex',borderBottom:'2px solid #e0f5f1',background:'#fff',flexShrink:0}}>
+        {[{k:'ringkasan',l:'📊 Ringkasan'},{k:'saldo',l:'💰 Saldo'},{k:`transaksi`,l:`💳 Trx (${sh.trx.length})`}].map(t=>(
+          <button key={t.k} onClick={()=>setModalTab(t.k)} style={{flex:1,padding:'10px 4px',border:'none',borderBottom:`3px solid ${modalTab===t.k?'#0d9488':'transparent'}`,background:'transparent',color:modalTab===t.k?'#0d9488':'#aaa',fontWeight:700,fontSize:11,cursor:'pointer',fontFamily:'inherit',transition:'all .15s'}}>{t.l}</button>
+        ))}
+      </div>
+      {/* Content */}
+      <div style={{overflowY:'auto',flex:1,padding:'16px 20px'}}>
+        {/* ── Ringkasan ── */}
+        {modalTab==='ringkasan'&&(
+          <div>
+            {!isAct&&sel!==null&&(
+              <div style={{background:sel===0?'linear-gradient(135deg,#065f46,#059669)':sel>0?'linear-gradient(135deg,#78350f,#b45309)':'linear-gradient(135deg,#7f1d1d,#dc2626)',borderRadius:16,padding:'16px 18px',marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
+                <div style={{fontSize:36}}>{sel===0?'✅':sel>0?'📈':'📉'}</div>
+                <div>
+                  <div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{sel===0?'Kas Balance — Mantap!':sel>0?`Kelebihan ${fmtRp(sel)}`:`Kekurangan ${fmtRp(Math.abs(sel))}`}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,.75)',marginTop:2}}>Sistem: {fmtRp(sistemAkhir)} · Fisik: {fmtRp(sc.uangLaci||0)}</div>
+                </div>
+              </div>
+            )}
+            {isAct&&<div style={{background:'linear-gradient(135deg,#065f46,#059669)',borderRadius:14,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}><div style={{fontSize:28}}>🟢</div><div style={{fontWeight:800,fontSize:14,color:'#fff'}}>Shift Sedang Aktif — Belum Tutup</div></div>}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+              {[{l:'Total Masuk',v:fmtRp(masuk),c:'#0d9488',bg:'#e0faf5'},{l:'Total Keluar',v:fmtRp(keluar),c:'#e74c3c',bg:'#fff0f0'},{l:'Total Fee',v:fmtRp(fee),c:'#d97706',bg:'#fffbeb'},{l:'Uang Sistem',v:fmtRp(sistemAkhir),c:'#555',bg:'#f9fafb'}].map(k=>(
+                <div key={k.l} style={{background:k.bg,borderRadius:12,padding:'12px 14px',border:`1px solid ${k.c}22`}}>
+                  <div style={{fontSize:10,fontWeight:700,color:k.c,marginBottom:4,textTransform:'uppercase',letterSpacing:'.3px'}}>{k.l}</div>
+                  <div style={{fontWeight:900,fontSize:16,color:k.c}}>{k.v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:'#f8fffe',borderRadius:12,padding:'12px 14px',border:'1px solid #e0f5f1',marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:12,color:'#0d9488',marginBottom:8}}>⏱ Info Shift</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                {[{l:'Nama',v:sh.nama},{l:'Kasir',v:sh.userId||'—'},{l:'Buka',v:fmtDT(sh.start_time)},{l:'Tutup',v:sh.end_time?fmtDT(sh.end_time):'Belum tutup'}].map(r=>(
+                  <div key={r.l}><div style={{fontSize:10,color:'#aaa',fontWeight:600}}>{r.l}</div><div style={{fontSize:12,fontWeight:700,color:'#1a2e2a',marginTop:1}}>{r.v}</div></div>
+                ))}
+              </div>
+            </div>
+            {sc.catatan&&(
+              <div style={{background:'#fffbe6',borderRadius:12,padding:'12px 14px',border:'2px solid #fde68a',marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:12,color:'#b45309',marginBottom:5}}>📝 Catatan</div>
+                <div style={{fontSize:13,color:'#92400e',fontWeight:600,lineHeight:1.6}}>{sc.catatan}</div>
+              </div>
+            )}
+            {Object.keys(so.saldoApps||{}).length>0&&(
+              <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',overflow:'hidden'}}>
+                <div style={{padding:'10px 14px',background:'#e0faf5',borderBottom:'1px solid #b2f5ea',fontWeight:700,fontSize:12,color:'#0d9488'}}>📱 Saldo Aplikasi</div>
+                {Object.entries(so.saldoApps||{}).map(([app,val],i)=>{
+                  const akhir=sc.saldoAppsAkhir?.[app]; const delta=akhir!=null?akhir-val:null;
+                  return(<div key={app} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid #f0faf8':'none',background:i%2===0?'#fff':'#fafffe'}}>
+                    <div style={{flex:1,fontWeight:700,fontSize:12}}>{app}</div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize:11,color:'#aaa'}}>Awal: {fmtRp(val)}</div>
+                      {akhir!=null&&<div style={{fontSize:12,fontWeight:800,color:'#0d9488'}}>Akhir: {fmtRp(akhir)}{delta!=null&&<span style={{marginLeft:6,fontSize:10,color:delta>=0?'#22c55e':'#e74c3c',fontWeight:700}}>({delta>=0?'+':''}{fmtRp(delta)})</span>}</div>}
+                    </div>
+                  </div>);
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {/* ── Saldo ── */}
+        {modalTab==='saldo'&&(
+          <div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+              <div style={{background:'#e0faf5',borderRadius:12,padding:'13px 15px',border:'1px solid #b2f5ea',textAlign:'center'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#0d9488',marginBottom:5}}>💻 UANG SISTEM</div>
+                <div style={{fontWeight:900,fontSize:20,color:'#0d9488'}}>{fmtRp(sistemAkhir)}</div>
+                <div style={{fontSize:10,color:'#aaa',marginTop:3}}>Cash awal + net trx</div>
+              </div>
+              <div style={{background:!isAct?'#f0fdf4':'#f9fafb',borderRadius:12,padding:'13px 15px',border:`1px solid ${!isAct?'#86efac':'#e5e7eb'}`,textAlign:'center'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#16a34a',marginBottom:5}}>🪙 UANG FISIK</div>
+                <div style={{fontWeight:900,fontSize:20,color:!isAct?'#16a34a':'#ccc'}}>{sc.uangLaci!=null?fmtRp(sc.uangLaci):'Belum dihitung'}</div>
+              </div>
+            </div>
+            {sel!==null&&(
+              <div style={{background:sel===0?'#f0fdf4':sel>0?'#fffbeb':'#fff5f5',borderRadius:12,padding:'14px 16px',marginBottom:14,border:`2px solid ${sel===0?'#86efac':sel>0?'#fde047':'#fca5a5'}`}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:14,color:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626'}}>{sel===0?'✅ Kas Balance':sel>0?'📈 Kelebihan':'📉 Kekurangan'}</div>
+                    <div style={{fontSize:11,color:'#888',marginTop:2}}>Selisih fisik vs sistem</div>
+                  </div>
+                  <div style={{fontWeight:900,fontSize:22,color:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626'}}>{sel===0?'Rp 0':(sel>0?'+':'-')+fmtRp(Math.abs(sel))}</div>
+                </div>
+              </div>
+            )}
+            <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',padding:'14px 16px',marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:11,color:'#0d9488',marginBottom:8,textTransform:'uppercase',letterSpacing:'.3px'}}>Rincian Perhitungan</div>
+              {[{l:'Cash Kembalian Awal',v:so.cashKemb||0,c:'#0d9488'},{l:'+ Total Masuk',v:masuk,c:'#16a34a'},{l:'− Total Keluar',v:-keluar,c:'#dc2626'},{l:'= Uang Sistem',v:sistemAkhir,c:'#0d9488',bold:true},{l:'Uang Fisik (hitung)',v:sc.uangLaci??null,c:'#555'},{l:'Selisih',v:sel,c:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626',bold:true}].map((r,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:i>0?'1px dotted #f0f0f0':'none',fontWeight:r.bold?800:600,fontSize:r.bold?13:12}}>
+                  <span style={{color:'#555'}}>{r.l}</span>
+                  <span style={{color:r.c}}>{r.v===null?'—':fmtRp(Math.abs(r.v||0))}</span>
+                </div>
+              ))}
+            </div>
+            {Object.keys(so.saldoApps||{}).length>0&&(
+              <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',overflow:'hidden'}}>
+                <div style={{padding:'10px 14px',background:'#e0faf5',borderBottom:'1px solid #b2f5ea',fontWeight:700,fontSize:12,color:'#0d9488'}}>📱 Perubahan Saldo Aplikasi</div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead><tr style={{background:'#f8fffe'}}>{['Aplikasi','Awal','Akhir','Δ'].map(h=><th key={h} style={{padding:'8px 13px',textAlign:'left',fontWeight:700,color:'#0d9488',fontSize:11}}>{h}</th>)}</tr></thead>
+                  <tbody>{Object.entries(so.saldoApps||{}).map(([app,awal],i)=>{
+                    const akhir=sc.saldoAppsAkhir?.[app]; const delta=akhir!=null?akhir-awal:null;
+                    return(<tr key={app} style={{borderTop:'1px solid #f0faf8',background:i%2===0?'#fff':'#fafffe'}}>
+                      <td style={{padding:'8px 13px',fontWeight:700}}>{app}</td>
+                      <td style={{padding:'8px 13px',color:'#888'}}>{fmtRp(awal)}</td>
+                      <td style={{padding:'8px 13px',fontWeight:700,color:'#0d9488'}}>{akhir!=null?fmtRp(akhir):'—'}</td>
+                      <td style={{padding:'8px 13px',fontWeight:800,color:delta==null?'#ccc':delta>=0?'#16a34a':'#dc2626'}}>{delta==null?'—':(delta>=0?'+':'')+fmtRp(delta)}</td>
+                    </tr>);
+                  })}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+        {/* ── Transaksi ── */}
+        {modalTab==='transaksi'&&(
+          <div>
+            {sh.trx.length===0?<div style={{textAlign:'center',color:'#ccc',padding:32}}>Belum ada transaksi</div>
+            :sh.trx.sort((a,b)=>new Date(b.waktu)-new Date(a.waktu)).map((t,i)=>(
+              <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:i>0?'1px solid #f0faf8':'none'}}>
+                <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:t.netNominal>0?'#e0faf5':'#fff0f0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>{t.netNominal>0?'⬇':'⬆'}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.nama}</div>
+                  <div style={{fontSize:10,color:'#aaa',marginTop:2,display:'flex',gap:8}}>
+                    <span>{fmtDT(t.waktu)}</span>
+                    {(t.fee||0)>0&&<span style={{color:'#d97706',fontWeight:600}}>+fee {fmtRp(t.fee)}</span>}
+                  </div>
+                </div>
+                <div style={{fontWeight:900,fontSize:14,flexShrink:0,color:t.netNominal>0?'#0d9488':'#dc2626'}}>{t.netNominal>0?'+':''}{fmtRp(Math.abs(t.netNominal))}</div>
+              </div>
+            ))}
+            {sh.trx.length>0&&(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:14,paddingTop:14,borderTop:'2px solid #e0f5f1'}}>
+                {[{l:'Masuk',v:fmtRp(masuk),c:'#0d9488',bg:'#e0faf5'},{l:'Keluar',v:fmtRp(keluar),c:'#dc2626',bg:'#fff0f0'},{l:'Fee',v:fmtRp(fee),c:'#d97706',bg:'#fffbeb'}].map(k=>(
+                  <div key={k.l} style={{background:k.bg,borderRadius:10,padding:'9px 12px',textAlign:'center',border:`1px solid ${k.c}22`}}>
+                    <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
+                    <div style={{fontSize:9,fontWeight:700,color:k.c,opacity:.8,marginTop:2}}>{k.l}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
+  );
+}
+
+
 // ── Laporan Bank List (realtime) — per outlet + per shift accordion ─────────
 function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filterOutlet, onSelectShift }) {
   const [bankTrx,       setBankTrx]       = useState([]);
@@ -2468,190 +2655,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
       })}
 
       {/* ── Shift Detail Modal ── */}
-      {selShift&&(()=>{
-        const sh = selShift;
-        const [modalTab, setModalTab] = useState('ringkasan');
-        const masuk  = sh.trx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
-        const keluar = sh.trx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-        const fee    = sh.trx.reduce((s,t)=>s+(t.fee||0),0);
-        const sc     = sh.saldo_close||{}, so = sh.saldo_open||{};
-        const sel    = sc.selisih??null;
-        const isAct  = sh.status==='active';
-        const sistemAkhir = (so.cashKemb||0)+masuk-keluar;
-        return (
-          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:999,fontFamily:"'Nunito',sans-serif"}}
-            onClick={e=>{if(e.target===e.currentTarget)setSelShift(null);}}>
-            <div style={{background:'#fff',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:600,maxHeight:'92vh',overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 -8px 40px rgba(0,0,0,.25)'}}>
-              {/* Modal header */}
-              <div style={{background:isAct?'linear-gradient(135deg,#065f46,#059669)':'linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)',padding:'16px 20px',flexShrink:0}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-                  <div>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                      <span style={{fontWeight:900,fontSize:18,color:'#fff'}}>{sh.nama}</span>
-                      <span style={{fontSize:11,fontWeight:700,padding:'2px 10px',borderRadius:20,background:'rgba(0,0,0,.18)',color:'#fff'}}>{isAct?'🟢 Aktif':'⚫ Tutup'}</span>
-                    </div>
-                    <div style={{fontSize:11,color:'rgba(255,255,255,.75)'}}>
-                      {fmtDT(sh.start_time)}{sh.end_time&&` → ${fmtDT(sh.end_time)}`}
-                    </div>
-                  </div>
-                  <button onClick={()=>setSelShift(null)} style={{background:'rgba(255,255,255,.2)',border:'none',borderRadius:20,padding:'5px 12px',color:'#fff',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>✕</button>
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:12}}>
-                  {[{l:'Masuk',v:fmtRp(masuk),c:'#a7f3d0'},{l:'Keluar',v:fmtRp(keluar),c:'#fca5a5'},{l:'Fee',v:fmtRp(fee),c:'#fcd34d'},{l:'Trx',v:`${sh.trx.length}x`,c:'#e0e7ff'}].map(k=>(
-                    <div key={k.l} style={{textAlign:'center',background:'rgba(255,255,255,.12)',borderRadius:9,padding:'7px 4px',border:'1px solid rgba(255,255,255,.2)'}}>
-                      <div style={{fontWeight:900,fontSize:12,color:k.c}}>{k.v}</div>
-                      <div style={{fontSize:9,color:'rgba(255,255,255,.55)',fontWeight:700}}>{k.l}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* Tabs */}
-              <div style={{display:'flex',borderBottom:'2px solid #e0f5f1',background:'#fff',flexShrink:0}}>
-                {[{k:'ringkasan',l:'📊 Ringkasan'},{k:'saldo',l:'💰 Saldo'},{k:`transaksi`,l:`💳 Trx (${sh.trx.length})`}].map(t=>(
-                  <button key={t.k} onClick={()=>setModalTab(t.k)} style={{flex:1,padding:'10px 4px',border:'none',borderBottom:`3px solid ${modalTab===t.k?'#0d9488':'transparent'}`,background:'transparent',color:modalTab===t.k?'#0d9488':'#aaa',fontWeight:700,fontSize:11,cursor:'pointer',fontFamily:'inherit',transition:'all .15s'}}>{t.l}</button>
-                ))}
-              </div>
-              {/* Content */}
-              <div style={{overflowY:'auto',flex:1,padding:'16px 20px'}}>
-                {/* ── Ringkasan ── */}
-                {modalTab==='ringkasan'&&(
-                  <div>
-                    {!isAct&&sel!==null&&(
-                      <div style={{background:sel===0?'linear-gradient(135deg,#065f46,#059669)':sel>0?'linear-gradient(135deg,#78350f,#b45309)':'linear-gradient(135deg,#7f1d1d,#dc2626)',borderRadius:16,padding:'16px 18px',marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
-                        <div style={{fontSize:36}}>{sel===0?'✅':sel>0?'📈':'📉'}</div>
-                        <div>
-                          <div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{sel===0?'Kas Balance — Mantap!':sel>0?`Kelebihan ${fmtRp(sel)}`:`Kekurangan ${fmtRp(Math.abs(sel))}`}</div>
-                          <div style={{fontSize:11,color:'rgba(255,255,255,.75)',marginTop:2}}>Sistem: {fmtRp(sistemAkhir)} · Fisik: {fmtRp(sc.uangLaci||0)}</div>
-                        </div>
-                      </div>
-                    )}
-                    {isAct&&<div style={{background:'linear-gradient(135deg,#065f46,#059669)',borderRadius:14,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}><div style={{fontSize:28}}>🟢</div><div style={{fontWeight:800,fontSize:14,color:'#fff'}}>Shift Sedang Aktif — Belum Tutup</div></div>}
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
-                      {[{l:'Total Masuk',v:fmtRp(masuk),c:'#0d9488',bg:'#e0faf5'},{l:'Total Keluar',v:fmtRp(keluar),c:'#e74c3c',bg:'#fff0f0'},{l:'Total Fee',v:fmtRp(fee),c:'#d97706',bg:'#fffbeb'},{l:'Uang Sistem',v:fmtRp(sistemAkhir),c:'#555',bg:'#f9fafb'}].map(k=>(
-                        <div key={k.l} style={{background:k.bg,borderRadius:12,padding:'12px 14px',border:`1px solid ${k.c}22`}}>
-                          <div style={{fontSize:10,fontWeight:700,color:k.c,marginBottom:4,textTransform:'uppercase',letterSpacing:'.3px'}}>{k.l}</div>
-                          <div style={{fontWeight:900,fontSize:16,color:k.c}}>{k.v}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{background:'#f8fffe',borderRadius:12,padding:'12px 14px',border:'1px solid #e0f5f1',marginBottom:14}}>
-                      <div style={{fontWeight:700,fontSize:12,color:'#0d9488',marginBottom:8}}>⏱ Info Shift</div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                        {[{l:'Nama',v:sh.nama},{l:'Kasir',v:sh.userId||'—'},{l:'Buka',v:fmtDT(sh.start_time)},{l:'Tutup',v:sh.end_time?fmtDT(sh.end_time):'Belum tutup'}].map(r=>(
-                          <div key={r.l}><div style={{fontSize:10,color:'#aaa',fontWeight:600}}>{r.l}</div><div style={{fontSize:12,fontWeight:700,color:'#1a2e2a',marginTop:1}}>{r.v}</div></div>
-                        ))}
-                      </div>
-                    </div>
-                    {sc.catatan&&(
-                      <div style={{background:'#fffbe6',borderRadius:12,padding:'12px 14px',border:'2px solid #fde68a',marginBottom:14}}>
-                        <div style={{fontWeight:700,fontSize:12,color:'#b45309',marginBottom:5}}>📝 Catatan</div>
-                        <div style={{fontSize:13,color:'#92400e',fontWeight:600,lineHeight:1.6}}>{sc.catatan}</div>
-                      </div>
-                    )}
-                    {Object.keys(so.saldoApps||{}).length>0&&(
-                      <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',overflow:'hidden'}}>
-                        <div style={{padding:'10px 14px',background:'#e0faf5',borderBottom:'1px solid #b2f5ea',fontWeight:700,fontSize:12,color:'#0d9488'}}>📱 Saldo Aplikasi</div>
-                        {Object.entries(so.saldoApps||{}).map(([app,val],i)=>{
-                          const akhir=sc.saldoAppsAkhir?.[app]; const delta=akhir!=null?akhir-val:null;
-                          return(<div key={app} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid #f0faf8':'none',background:i%2===0?'#fff':'#fafffe'}}>
-                            <div style={{flex:1,fontWeight:700,fontSize:12}}>{app}</div>
-                            <div style={{textAlign:'right'}}>
-                              <div style={{fontSize:11,color:'#aaa'}}>Awal: {fmtRp(val)}</div>
-                              {akhir!=null&&<div style={{fontSize:12,fontWeight:800,color:'#0d9488'}}>Akhir: {fmtRp(akhir)}{delta!=null&&<span style={{marginLeft:6,fontSize:10,color:delta>=0?'#22c55e':'#e74c3c',fontWeight:700}}>({delta>=0?'+':''}{fmtRp(delta)})</span>}</div>}
-                            </div>
-                          </div>);
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* ── Saldo ── */}
-                {modalTab==='saldo'&&(
-                  <div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
-                      <div style={{background:'#e0faf5',borderRadius:12,padding:'13px 15px',border:'1px solid #b2f5ea',textAlign:'center'}}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#0d9488',marginBottom:5}}>💻 UANG SISTEM</div>
-                        <div style={{fontWeight:900,fontSize:20,color:'#0d9488'}}>{fmtRp(sistemAkhir)}</div>
-                        <div style={{fontSize:10,color:'#aaa',marginTop:3}}>Cash awal + net trx</div>
-                      </div>
-                      <div style={{background:!isAct?'#f0fdf4':'#f9fafb',borderRadius:12,padding:'13px 15px',border:`1px solid ${!isAct?'#86efac':'#e5e7eb'}`,textAlign:'center'}}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#16a34a',marginBottom:5}}>🪙 UANG FISIK</div>
-                        <div style={{fontWeight:900,fontSize:20,color:!isAct?'#16a34a':'#ccc'}}>{sc.uangLaci!=null?fmtRp(sc.uangLaci):'Belum dihitung'}</div>
-                      </div>
-                    </div>
-                    {sel!==null&&(
-                      <div style={{background:sel===0?'#f0fdf4':sel>0?'#fffbeb':'#fff5f5',borderRadius:12,padding:'14px 16px',marginBottom:14,border:`2px solid ${sel===0?'#86efac':sel>0?'#fde047':'#fca5a5'}`}}>
-                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                          <div>
-                            <div style={{fontWeight:800,fontSize:14,color:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626'}}>{sel===0?'✅ Kas Balance':sel>0?'📈 Kelebihan':'📉 Kekurangan'}</div>
-                            <div style={{fontSize:11,color:'#888',marginTop:2}}>Selisih fisik vs sistem</div>
-                          </div>
-                          <div style={{fontWeight:900,fontSize:22,color:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626'}}>{sel===0?'Rp 0':(sel>0?'+':'-')+fmtRp(Math.abs(sel))}</div>
-                        </div>
-                      </div>
-                    )}
-                    <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',padding:'14px 16px',marginBottom:14}}>
-                      <div style={{fontWeight:700,fontSize:11,color:'#0d9488',marginBottom:8,textTransform:'uppercase',letterSpacing:'.3px'}}>Rincian Perhitungan</div>
-                      {[{l:'Cash Kembalian Awal',v:so.cashKemb||0,c:'#0d9488'},{l:'+ Total Masuk',v:masuk,c:'#16a34a'},{l:'− Total Keluar',v:-keluar,c:'#dc2626'},{l:'= Uang Sistem',v:sistemAkhir,c:'#0d9488',bold:true},{l:'Uang Fisik (hitung)',v:sc.uangLaci??null,c:'#555'},{l:'Selisih',v:sel,c:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626',bold:true}].map((r,i)=>(
-                        <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:i>0?'1px dotted #f0f0f0':'none',fontWeight:r.bold?800:600,fontSize:r.bold?13:12}}>
-                          <span style={{color:'#555'}}>{r.l}</span>
-                          <span style={{color:r.c}}>{r.v===null?'—':fmtRp(Math.abs(r.v||0))}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {Object.keys(so.saldoApps||{}).length>0&&(
-                      <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',overflow:'hidden'}}>
-                        <div style={{padding:'10px 14px',background:'#e0faf5',borderBottom:'1px solid #b2f5ea',fontWeight:700,fontSize:12,color:'#0d9488'}}>📱 Perubahan Saldo Aplikasi</div>
-                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                          <thead><tr style={{background:'#f8fffe'}}>{['Aplikasi','Awal','Akhir','Δ'].map(h=><th key={h} style={{padding:'8px 13px',textAlign:'left',fontWeight:700,color:'#0d9488',fontSize:11}}>{h}</th>)}</tr></thead>
-                          <tbody>{Object.entries(so.saldoApps||{}).map(([app,awal],i)=>{
-                            const akhir=sc.saldoAppsAkhir?.[app]; const delta=akhir!=null?akhir-awal:null;
-                            return(<tr key={app} style={{borderTop:'1px solid #f0faf8',background:i%2===0?'#fff':'#fafffe'}}>
-                              <td style={{padding:'8px 13px',fontWeight:700}}>{app}</td>
-                              <td style={{padding:'8px 13px',color:'#888'}}>{fmtRp(awal)}</td>
-                              <td style={{padding:'8px 13px',fontWeight:700,color:'#0d9488'}}>{akhir!=null?fmtRp(akhir):'—'}</td>
-                              <td style={{padding:'8px 13px',fontWeight:800,color:delta==null?'#ccc':delta>=0?'#16a34a':'#dc2626'}}>{delta==null?'—':(delta>=0?'+':'')+fmtRp(delta)}</td>
-                            </tr>);
-                          })}</tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* ── Transaksi ── */}
-                {modalTab==='transaksi'&&(
-                  <div>
-                    {sh.trx.length===0?<div style={{textAlign:'center',color:'#ccc',padding:32}}>Belum ada transaksi</div>
-                    :sh.trx.sort((a,b)=>new Date(b.waktu)-new Date(a.waktu)).map((t,i)=>(
-                      <div key={t.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:i>0?'1px solid #f0faf8':'none'}}>
-                        <div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:t.netNominal>0?'#e0faf5':'#fff0f0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>{t.netNominal>0?'⬇':'⬆'}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontWeight:700,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.nama}</div>
-                          <div style={{fontSize:10,color:'#aaa',marginTop:2,display:'flex',gap:8}}>
-                            <span>{fmtDT(t.waktu)}</span>
-                            {(t.fee||0)>0&&<span style={{color:'#d97706',fontWeight:600}}>+fee {fmtRp(t.fee)}</span>}
-                          </div>
-                        </div>
-                        <div style={{fontWeight:900,fontSize:14,flexShrink:0,color:t.netNominal>0?'#0d9488':'#dc2626'}}>{t.netNominal>0?'+':''}{fmtRp(Math.abs(t.netNominal))}</div>
-                      </div>
-                    ))}
-                    {sh.trx.length>0&&(
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginTop:14,paddingTop:14,borderTop:'2px solid #e0f5f1'}}>
-                        {[{l:'Masuk',v:fmtRp(masuk),c:'#0d9488',bg:'#e0faf5'},{l:'Keluar',v:fmtRp(keluar),c:'#dc2626',bg:'#fff0f0'},{l:'Fee',v:fmtRp(fee),c:'#d97706',bg:'#fffbeb'}].map(k=>(
-                          <div key={k.l} style={{background:k.bg,borderRadius:10,padding:'9px 12px',textAlign:'center',border:`1px solid ${k.c}22`}}>
-                            <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
-                            <div style={{fontSize:9,fontWeight:700,color:k.c,opacity:.8,marginTop:2}}>{k.l}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {selShift&&<BankShiftDetailModal shift={selShift} onClose={()=>setSelShift(null)}/>}
     </div>
   );
 }
