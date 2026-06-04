@@ -2338,7 +2338,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
               <div style={{background:'#fff',borderRadius:12,border:'2px solid #e0f5f1',overflow:'hidden'}}>
                 <div style={{padding:'10px 14px',background:'#e0faf5',borderBottom:'1px solid #b2f5ea',fontWeight:700,fontSize:12,color:'#0d9488'}}>📱 Saldo Aplikasi</div>
                 {Object.entries(so.saldoApps||{}).map(([app,val],i)=>{
-                  const akhir=sc.saldoAppsAkhir?.[app]; const delta=akhir!=null?akhir-val:null;
+                  const sAkhirMap=sc.saldoAppsAkhir||{}; const akhir=sAkhirMap[app]??sAkhirMap[app.toLowerCase()]??null; const delta=akhir!=null?akhir-val:null;
                   return(<div key={app} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 14px',borderTop:i>0?'1px solid #f0faf8':'none',background:i%2===0?'#fff':'#fafffe'}}>
                     <div style={{flex:1,fontWeight:700,fontSize:12}}>{app}</div>
                     <div style={{textAlign:'right'}}>
@@ -2391,7 +2391,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead><tr style={{background:'#f8fffe'}}>{['Aplikasi','Awal','Akhir','Δ'].map(h=><th key={h} style={{padding:'8px 13px',textAlign:'left',fontWeight:700,color:'#0d9488',fontSize:11}}>{h}</th>)}</tr></thead>
                   <tbody>{Object.entries(so.saldoApps||{}).map(([app,awal],i)=>{
-                    const akhir=sc.saldoAppsAkhir?.[app]; const delta=akhir!=null?akhir-awal:null;
+                    const saldoAkhirMap=sc.saldoAppsAkhir||{}; const akhir=saldoAkhirMap[app]??saldoAkhirMap[app.toLowerCase()]??null; const delta=akhir!=null?akhir-awal:null;
                     return(<tr key={app} style={{borderTop:'1px solid #f0faf8',background:i%2===0?'#fff':'#fafffe'}}>
                       <td style={{padding:'8px 13px',fontWeight:700}}>{app}</td>
                       <td style={{padding:'8px 13px',color:'#888'}}>{fmtRp(awal)}</td>
@@ -2498,11 +2498,15 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
         const trxList = filteredTrx.filter(t=>t.shiftId===l.id);
         return { id:l.id, nama:nm, userId:l.user_id||'', outletId,
           start_time:l.start_time, end_time:l.end_time||l.created_at,
-          status:'closed', saldo_open:so, saldo_close:{
+          status:'closed', saldo_open:{
+              cashKemb:  so.cashKemb||so.cashKembalian||0,
+              saldoApps: so.saldoApps||so.saldo_apps||{},
+              namaShift: so.namaShift||'',
+            }, saldo_close:{
             uangLaci:sc.uangLaci||sc.uang_laci||0,
             uangSistem:sc.uangSistem||sc.uang_sistem||0,
             selisih:sc.selisih??null, catatan:sc.catatan||'',
-            saldoAppsAkhir:sc.saldoAppsAkhir||sc.saldo_apps_akhir||{},
+            saldoAppsAkhir:sc.saldoAppsC||sc.saldoAppsAkhir||sc.saldo_apps_akhir||sc.saldo_close_apps||{},
           }, trx:trxList };
       });
     const active = activeShifts
