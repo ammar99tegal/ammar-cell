@@ -252,7 +252,8 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"produk",   icon:Ic.Produk(),   label:"Produk & Stok",      desc:"Produk, stok, opname & aktif",color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"outlet",   icon:Ic.Outlet(),   label:"Manajemen Outlet",   desc:"Kelola outlet & kasir",        color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
     {id:"saldo",    icon:Ic.Cash(22),   label:"Saldo Aplikasi",     desc:"Setting saldo kasir & bank",   color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
-    {id:"dashboard",icon:Ic.Dashboard(),label:"Dashboard",          desc:"Pantau omset & performa",      color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
+    {id:"dashboard",    icon:Ic.Dashboard(),label:"Dashboard",        desc:"Pantau omset & performa",      color:"#e67e22", bg:"#fef5e7", roles:["admin"]},
+    {id:"dashboardbank", icon:Ic.Chart(),    label:"Dashboard Bank",     desc:"Pantau transaksi keuangan bank",color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
     {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"laporan",  icon:Ic.Laporan(),  label:"Laporan",            desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
   ];
@@ -1824,7 +1825,8 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
           const dateStr=dt.toLocaleDateString("id-ID");
           const label=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});
           const list=transactions.filter(t=>t.date===dateStr);
-          pts.push({label,omset:calcOmset(list),profit:calcProfit(list)});
+          const ic=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
+          pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:ic});
         }
       } else if(diffDays<=366){
         // monthly
@@ -1833,22 +1835,24 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
           const yr=cur.getFullYear(),mo=cur.getMonth();
           const label=cur.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});
           const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo&&td>=from&&td<=to;});
-          pts.push({label,omset:calcOmset(list),profit:calcProfit(list)});
+          const icm=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
+          pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:icm});
           cur.setMonth(cur.getMonth()+1);
         }
       } else {
         // yearly
         for(let y=from.getFullYear();y<=to.getFullYear();y++){
           const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===y&&td>=from&&td<=to;});
-          pts.push({label:String(y),omset:calcOmset(list),profit:calcProfit(list)});
+          const icy=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
+          pts.push({label:String(y),omset:calcOmset(list),profit:calcProfit(list),item:icy});
         }
       }
     } else if(period==="daily"){
-      for(let d=13;d>=0;d--){const dt=new Date(now);dt.setDate(now.getDate()-d);const label=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});const dateStr=dt.toLocaleDateString("id-ID");const list=transactions.filter(t=>t.date===dateStr);pts.push({label,omset:calcOmset(list),profit:calcProfit(list)});}
+      for(let d=13;d>=0;d--){const dt=new Date(now);dt.setDate(now.getDate()-d);const label=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});const dateStr=dt.toLocaleDateString("id-ID");const list=transactions.filter(t=>t.date===dateStr);const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
     } else if(period==="monthly"){
-      for(let m=11;m>=0;m--){const dt=new Date(now.getFullYear(),now.getMonth()-m,1);const yr=dt.getFullYear(),mo=dt.getMonth();const label=dt.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo;});pts.push({label,omset:calcOmset(list),profit:calcProfit(list)});}
+      for(let m=11;m>=0;m--){const dt=new Date(now.getFullYear(),now.getMonth()-m,1);const yr=dt.getFullYear(),mo=dt.getMonth();const label=dt.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr&&td.getMonth()===mo;});const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label,omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
     } else {
-      for(let y=4;y>=0;y--){const yr=now.getFullYear()-y;const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr;});pts.push({label:String(yr),omset:calcOmset(list),profit:calcProfit(list)});}
+      for(let y=4;y>=0;y--){const yr=now.getFullYear()-y;const list=transactions.filter(t=>{const td=parseDate(t.date);return td&&td.getFullYear()===yr;});const itemCount=list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);pts.push({label:String(yr),omset:calcOmset(list),profit:calcProfit(list),item:itemCount});}
     }
     return pts;
   };
@@ -1898,7 +1902,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
         <div style={{background:"#fff",borderRadius:16,padding:"16px 18px",border:"2px solid #e0f5f1",marginBottom:14}}>
           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
             <div>
-              <span style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{trend==="up"?"📈":"📉"} Grafik {chartMetric==="omset"?"Omset":"Profit"}</span>
+              <span style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{trend==="up"?"📈":"📉"} Grafik {chartMetric==="omset"?"Omset":chartMetric==="profit"?"Profit":"Per Item"}</span>
               <span style={{fontSize:12,fontWeight:700,color:tC,marginLeft:8,background:`${tC}18`,padding:"2px 9px",borderRadius:20}}>{trend==="up"?"▲ Naik":"▼ Turun"}</span>
               <div style={{fontSize:11,color:"#aaa",fontWeight:600,marginTop:2}}>
                 {period==="custom"?`${dateFrom} s/d ${dateTo}`:period==="daily"?"14 Hari Terakhir":period==="monthly"?"12 Bulan Terakhir":"5 Tahun Terakhir"}
@@ -1907,7 +1911,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
             <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
               {/* Metric */}
               <div style={{display:"flex",gap:0,background:"#f0faf8",borderRadius:9,padding:3}}>
-                {[{k:"omset",l:"Omset"},{k:"profit",l:"Profit"}].map(m=>(
+                {[{k:"omset",l:"Omset"},{k:"profit",l:"Profit"},{k:"item",l:"Per Item"}].map(m=>(
                   <button key={m.k} onClick={()=>setChartMetric(m.k)} style={{padding:"5px 11px",borderRadius:7,border:"none",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",background:chartMetric===m.k?"#0d9488":"transparent",color:chartMetric===m.k?"#fff":"#888"}}>{m.l}</button>
                 ))}
               </div>
@@ -6794,6 +6798,572 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
 }
 
 
+// ─── Chart component ──────────────────────────────────────────────────────────
+function BankChart({ data, metric, color }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const vals = data.map(p=>p[metric]);
+  const maxVal = Math.max(...vals,1);
+  const cW=640,cH=200,pL=52,pR=16,pT=16,pB=32;
+  const iW=cW-pL-pR, iH=cH-pT-pB, n=data.length;
+  const pts = data.map((p,i)=>({
+    x:pL+(i/((n-1)||1))*iW,
+    y:pT+(1-p[metric]/maxVal)*iH,
+    val:p[metric], label:p.label
+  }));
+  const linePath = pts.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = pts.length>1?`${linePath} L${pts[pts.length-1].x},${pT+iH} L${pts[0].x},${pT+iH} Z`:"";
+  const yLabels = [0,.25,.5,.75,1].map(f=>({y:pT+iH*(1-f),val:maxVal*f}));
+  const gId = `bg${metric}`;
+  const lastTwo = pts.slice(-2);
+  const trend = lastTwo.length===2?(lastTwo[1].val>=lastTwo[0].val?"up":"down"):"up";
+  const tC = color||(trend==="up"?"#0d9488":"#ff4757");
+
+  return (
+    <div style={{overflowX:"auto",position:"relative"}}>
+      {hoverIdx!==null&&pts[hoverIdx]&&(()=>{
+        const p=pts[hoverIdx];
+        const prev=hoverIdx>0?pts[hoverIdx-1]:null;
+        const diff=prev?p.val-prev.val:null;
+        const diffPct=prev&&prev.val>0?((diff/prev.val)*100).toFixed(1):null;
+        const tipLeft=(p.x/cW)>0.7?`calc(${(p.x/cW*100).toFixed(1)}% - 168px)`:`calc(${(p.x/cW*100).toFixed(1)}% + 10px)`;
+        return(
+          <div style={{position:"absolute",top:0,left:tipLeft,background:"#fff",borderRadius:12,
+            padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,.18)",
+            border:`2px solid ${tC}33`,pointerEvents:"none",zIndex:10,width:160}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#555",marginBottom:3}}>{p.label}</div>
+            <div style={{fontSize:15,fontWeight:900,color:tC}}>{fmtRp(p.val)}</div>
+            {diff!==null&&<div style={{fontSize:11,fontWeight:700,color:diff>=0?"#27ae60":"#e74c3c",marginTop:3}}>
+              {diff>=0?"▲":"▼"} {fmtRp(Math.abs(diff))} ({diff>=0?"+":""}{diffPct}%)
+            </div>}
+          </div>
+        );
+      })()}
+      <svg width="100%" viewBox={`0 0 ${cW} ${cH}`} style={{display:"block",minWidth:320,cursor:"crosshair"}}
+        onMouseLeave={()=>setHoverIdx(null)}
+        onMouseMove={e=>{
+          const r=e.currentTarget.getBoundingClientRect();
+          const mx=(e.clientX-r.left)*(cW/r.width);
+          let best=0,bestD=Infinity;
+          pts.forEach((p,i)=>{const d=Math.abs(p.x-mx);if(d<bestD){bestD=d;best=i;}});
+          setHoverIdx(best);
+        }}>
+        <defs>
+          <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={tC} stopOpacity="0.28"/>
+            <stop offset="100%" stopColor={tC} stopOpacity="0.02"/>
+          </linearGradient>
+          <filter id="cs"><feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={tC} floodOpacity="0.18"/></filter>
+        </defs>
+        {yLabels.map((yl,i)=>(
+          <g key={i}>
+            <line x1={pL} y1={yl.y} x2={cW-pR} y2={yl.y} stroke={i===0?"#e0f5f1":"#f0faf8"} strokeWidth={i===0?"1.5":"1"} strokeDasharray={i===0?"none":"4,4"}/>
+            <text x={pL-6} y={yl.y+4} textAnchor="end" fontSize="11" fill="#aaa" fontFamily="Nunito,sans-serif" fontWeight="700">{fmtS(yl.val)}</text>
+          </g>
+        ))}
+        {pts.length>1&&<path d={areaPath} fill={`url(#${gId})`}/>}
+        {pts.length>1&&<path d={linePath} fill="none" stroke={tC} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" filter="url(#cs)"/>}
+        {hoverIdx!==null&&pts[hoverIdx]&&(()=>{
+          const p=pts[hoverIdx];
+          return(<g>
+            <line x1={p.x} y1={pT} x2={p.x} y2={pT+iH} stroke={tC} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.6"/>
+            <line x1={pL} y1={p.y} x2={cW-pR} y2={p.y} stroke={tC} strokeWidth="1" strokeDasharray="3,3" opacity="0.4"/>
+            <rect x={0} y={p.y-9} width={pL-2} height={18} rx="4" fill={tC}/>
+            <text x={pL-5} y={p.y+4} textAnchor="end" fontSize="10" fill="#fff" fontFamily="Nunito,sans-serif" fontWeight="800">{fmtS(p.val)}</text>
+          </g>);
+        })()}
+        {pts.map((p,i)=>{
+          const isH=hoverIdx===i;
+          const showX=n<=14||i===0||i===n-1||i%Math.ceil(n/10)===0||isH;
+          return(<g key={i}>
+            {isH&&<circle cx={p.x} cy={p.y} r="10" fill={tC} opacity="0.12"/>}
+            {isH&&<circle cx={p.x} cy={p.y} r="6.5" fill={tC} opacity="0.2"/>}
+            <circle cx={p.x} cy={p.y} r={isH?5.5:3.5} fill={isH?tC:"#fff"} stroke={tC} strokeWidth={isH?0:2.5}/>
+            {showX&&<text x={p.x} y={pT+iH+16} textAnchor="middle" fontSize="10" fill={isH?tC:"#999"} fontFamily="Nunito,sans-serif" fontWeight={isH?"800":"600"}>{p.label}</text>}
+            {(isH&&p.val>0)&&<text x={p.x} y={p.y-10} textAnchor="middle" fontSize="11" fill={tC} fontWeight="800" fontFamily="Nunito,sans-serif">{fmtS(p.val)}</text>}
+          </g>);
+        })}
+      </svg>
+    </div>
+  );
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// BANK DASHBOARD — sama persis dengan dashboard penjualan
+// ════════════════════════════════════════════════════════════════════════════
+// ─── Chart component ──────────────────────────────────────────────────────────
+function BankChart({ data, metric, color }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const vals = data.map(p=>p[metric]);
+  const maxVal = Math.max(...vals,1);
+  const cW=640,cH=200,pL=52,pR=16,pT=16,pB=32;
+  const iW=cW-pL-pR, iH=cH-pT-pB, n=data.length;
+  const pts = data.map((p,i)=>({
+    x:pL+(i/((n-1)||1))*iW,
+    y:pT+(1-p[metric]/maxVal)*iH,
+    val:p[metric], label:p.label
+  }));
+  const linePath = pts.map((p,i)=>`${i===0?"M":"L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const areaPath = pts.length>1?`${linePath} L${pts[pts.length-1].x},${pT+iH} L${pts[0].x},${pT+iH} Z`:"";
+  const yLabels = [0,.25,.5,.75,1].map(f=>({y:pT+iH*(1-f),val:maxVal*f}));
+  const gId = `bg${metric}`;
+  const lastTwo = pts.slice(-2);
+  const trend = lastTwo.length===2?(lastTwo[1].val>=lastTwo[0].val?"up":"down"):"up";
+  const tC = color||(trend==="up"?"#0d9488":"#ff4757");
+
+  return (
+    <div style={{overflowX:"auto",position:"relative"}}>
+      {hoverIdx!==null&&pts[hoverIdx]&&(()=>{
+        const p=pts[hoverIdx];
+        const prev=hoverIdx>0?pts[hoverIdx-1]:null;
+        const diff=prev?p.val-prev.val:null;
+        const diffPct=prev&&prev.val>0?((diff/prev.val)*100).toFixed(1):null;
+        const tipLeft=(p.x/cW)>0.7?`calc(${(p.x/cW*100).toFixed(1)}% - 168px)`:`calc(${(p.x/cW*100).toFixed(1)}% + 10px)`;
+        return(
+          <div style={{position:"absolute",top:0,left:tipLeft,background:"#fff",borderRadius:12,
+            padding:"10px 14px",boxShadow:"0 4px 20px rgba(0,0,0,.18)",
+            border:`2px solid ${tC}33`,pointerEvents:"none",zIndex:10,width:160}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#555",marginBottom:3}}>{p.label}</div>
+            <div style={{fontSize:15,fontWeight:900,color:tC}}>{fmtRp(p.val)}</div>
+            {diff!==null&&<div style={{fontSize:11,fontWeight:700,color:diff>=0?"#27ae60":"#e74c3c",marginTop:3}}>
+              {diff>=0?"▲":"▼"} {fmtRp(Math.abs(diff))} ({diff>=0?"+":""}{diffPct}%)
+            </div>}
+          </div>
+        );
+      })()}
+      <svg width="100%" viewBox={`0 0 ${cW} ${cH}`} style={{display:"block",minWidth:320,cursor:"crosshair"}}
+        onMouseLeave={()=>setHoverIdx(null)}
+        onMouseMove={e=>{
+          const r=e.currentTarget.getBoundingClientRect();
+          const mx=(e.clientX-r.left)*(cW/r.width);
+          let best=0,bestD=Infinity;
+          pts.forEach((p,i)=>{const d=Math.abs(p.x-mx);if(d<bestD){bestD=d;best=i;}});
+          setHoverIdx(best);
+        }}>
+        <defs>
+          <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={tC} stopOpacity="0.28"/>
+            <stop offset="100%" stopColor={tC} stopOpacity="0.02"/>
+          </linearGradient>
+          <filter id="cs"><feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={tC} floodOpacity="0.18"/></filter>
+        </defs>
+        {yLabels.map((yl,i)=>(
+          <g key={i}>
+            <line x1={pL} y1={yl.y} x2={cW-pR} y2={yl.y} stroke={i===0?"#e0f5f1":"#f0faf8"} strokeWidth={i===0?"1.5":"1"} strokeDasharray={i===0?"none":"4,4"}/>
+            <text x={pL-6} y={yl.y+4} textAnchor="end" fontSize="11" fill="#aaa" fontFamily="Nunito,sans-serif" fontWeight="700">{fmtS(yl.val)}</text>
+          </g>
+        ))}
+        {pts.length>1&&<path d={areaPath} fill={`url(#${gId})`}/>}
+        {pts.length>1&&<path d={linePath} fill="none" stroke={tC} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" filter="url(#cs)"/>}
+        {hoverIdx!==null&&pts[hoverIdx]&&(()=>{
+          const p=pts[hoverIdx];
+          return(<g>
+            <line x1={p.x} y1={pT} x2={p.x} y2={pT+iH} stroke={tC} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.6"/>
+            <line x1={pL} y1={p.y} x2={cW-pR} y2={p.y} stroke={tC} strokeWidth="1" strokeDasharray="3,3" opacity="0.4"/>
+            <rect x={0} y={p.y-9} width={pL-2} height={18} rx="4" fill={tC}/>
+            <text x={pL-5} y={p.y+4} textAnchor="end" fontSize="10" fill="#fff" fontFamily="Nunito,sans-serif" fontWeight="800">{fmtS(p.val)}</text>
+          </g>);
+        })()}
+        {pts.map((p,i)=>{
+          const isH=hoverIdx===i;
+          const showX=n<=14||i===0||i===n-1||i%Math.ceil(n/10)===0||isH;
+          return(<g key={i}>
+            {isH&&<circle cx={p.x} cy={p.y} r="10" fill={tC} opacity="0.12"/>}
+            {isH&&<circle cx={p.x} cy={p.y} r="6.5" fill={tC} opacity="0.2"/>}
+            <circle cx={p.x} cy={p.y} r={isH?5.5:3.5} fill={isH?tC:"#fff"} stroke={tC} strokeWidth={isH?0:2.5}/>
+            {showX&&<text x={p.x} y={pT+iH+16} textAnchor="middle" fontSize="10" fill={isH?tC:"#999"} fontFamily="Nunito,sans-serif" fontWeight={isH?"800":"600"}>{p.label}</text>}
+            {(isH&&p.val>0)&&<text x={p.x} y={p.y-10} textAnchor="middle" fontSize="11" fill={tC} fontWeight="800" fontFamily="Nunito,sans-serif">{fmtS(p.val)}</text>}
+          </g>);
+        })}
+      </svg>
+    </div>
+  );
+}
+
+
+function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
+  const [metric,   setMetric]   = useState("masuk");   // masuk|keluar|saldo|trx
+  const [period,   setPeriod]   = useState("daily");
+  const [dateFrom, setDateFrom] = useState(()=>{const d=new Date();d.setDate(d.getDate()-13);return d.toISOString().split("T")[0];});
+  const [dateTo,   setDateTo]   = useState(()=>new Date().toISOString().split("T")[0]);
+  const [filterOutlet, setFilterOutlet] = useState("semua");
+  const [tab, setTab] = useState("grafik");
+
+  const bankTrx = rawBankTrx || [];
+  const outletNames = (outlets||[]).map(o=>o.nama);
+
+  // Filter by outlet
+  const filtered = filterOutlet==="semua" ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
+
+  // KPI hari ini
+  const todayStr = today();
+  const todayTrx = filtered.filter(t=>t.tgl===todayStr);
+  const masukHari  = todayTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+  const keluarHari = todayTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+  const saldoHari  = masukHari - keluarHari;
+  const feeHari    = todayTrx.reduce((s,t)=>s+t.fee,0);
+
+  // Chart data builder
+  const parseISO = s => new Date(s);
+  const getChartData = () => {
+    const now=new Date(); const pts=[];
+    const addPt = (label, list) => {
+      const m=list.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
+      const k=list.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+      const f=list.reduce((s,t)=>s+t.fee,0);
+      pts.push({label, masuk:m, keluar:k, saldo:m-k, trx:list.length, fee:f});
+    };
+    if(period==="custom"){
+      const from=parseISO(dateFrom), to=parseISO(dateTo);
+      to.setHours(23,59,59);
+      const diff=Math.round((to-from)/(864e5))+1;
+      if(diff<=31){
+        for(let d=0;d<diff;d++){
+          const dt=new Date(from); dt.setDate(from.getDate()+d);
+          const str=dt.toLocaleDateString("id-ID");
+          const lbl=dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"});
+          addPt(lbl, filtered.filter(t=>t.tgl===str));
+        }
+      } else {
+        const cur=new Date(from.getFullYear(),from.getMonth(),1);
+        while(cur<=to){
+          const yr=cur.getFullYear(),mo=cur.getMonth();
+          const lbl=cur.toLocaleDateString("id-ID",{month:"short",year:"2-digit"});
+          addPt(lbl, filtered.filter(t=>{const d=new Date(t.tgl.split("/").reverse().join("-"));return d.getFullYear()===yr&&d.getMonth()===mo;}));
+          cur.setMonth(mo+1);
+        }
+      }
+    } else if(period==="daily"){
+      for(let d=13;d>=0;d--){
+        const dt=new Date(now);dt.setDate(now.getDate()-d);
+        addPt(dt.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit"}), filtered.filter(t=>t.tgl===dt.toLocaleDateString("id-ID")));
+      }
+    } else {
+      for(let m=11;m>=0;m--){
+        const dt=new Date(now.getFullYear(),now.getMonth()-m,1);
+        const yr=dt.getFullYear(),mo=dt.getMonth();
+        addPt(dt.toLocaleDateString("id-ID",{month:"short",year:"2-digit"}),
+          filtered.filter(t=>{const d=new Date(t.tgl.split("/").reverse().join("-"));return d.getFullYear()===yr&&d.getMonth()===mo;}));
+      }
+    }
+    return pts;
+  };
+
+  const chartData = getChartData();
+  const vals = chartData.map(p=>p[metric]);
+  const total = filtered.reduce((s,t)=>s+(t.netNominal>0?t.netNominal:0),0);
+  const totalK= filtered.reduce((s,t)=>s+(t.netNominal<0?Math.abs(t.netNominal):0),0);
+  const totalFee = filtered.reduce((s,t)=>s+t.fee,0);
+
+  // Top nama transaksi (hari ini)
+  const namaMap = {};
+  filtered.filter(t=>t.netNominal>0).forEach(t=>{
+    if(!namaMap[t.nama]) namaMap[t.nama]={nama:t.nama,total:0,count:0};
+    namaMap[t.nama].total+=t.netNominal; namaMap[t.nama].count++;
+  });
+  const topMasuk = Object.values(namaMap).sort((a,b)=>b.total-a.total).slice(0,5);
+  const maxTop = topMasuk[0]?.total||1;
+
+  const keluarMap = {};
+  filtered.filter(t=>t.netNominal<0).forEach(t=>{
+    if(!keluarMap[t.nama]) keluarMap[t.nama]={nama:t.nama,total:0,count:0};
+    keluarMap[t.nama].total+=Math.abs(t.netNominal); keluarMap[t.nama].count++;
+  });
+  const topKeluar = Object.values(keluarMap).sort((a,b)=>b.total-a.total).slice(0,5);
+  const maxTopK = topKeluar[0]?.total||1;
+
+  // Outlet breakdown
+  const outletData = outletNames.map(o=>{
+    const list = bankTrx.filter(t=>t.outletId===o);
+    return {nama:o, masuk:list.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0),
+      keluar:list.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0),
+      trx:list.length};
+  });
+  const maxOutlet = Math.max(...outletData.map(o=>o.masuk),1);
+
+  const metrics = [
+    {k:"masuk",  l:"Masuk",      c:"#0d9488"},
+    {k:"keluar", l:"Keluar",     c:"#e74c3c"},
+    {k:"saldo",  l:"Saldo",      c:"#8e44ad"},
+    {k:"trx",    l:"Transaksi",  c:"#2980b9"},
+    {k:"fee",    l:"Fee/Admin",  c:"#d97706"},
+  ];
+  const applyPreset = p => {
+    const n=new Date();
+    if(p==="today") {setDateFrom(n.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0]);}
+    else if(p==="7d") {const d=new Date(n);d.setDate(n.getDate()-6);setDateFrom(d.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0]);}
+    else if(p==="30d") {const d=new Date(n);d.setDate(n.getDate()-29);setDateFrom(d.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0]);}
+    else if(p==="month") {const d=new Date(n.getFullYear(),n.getMonth(),1);setDateFrom(d.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0]);}
+    else if(p==="year") {const d=new Date(n.getFullYear(),0,1);setDateFrom(d.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0]);}
+    setPeriod("custom");
+  };
+
+  const curMetric = metrics.find(m=>m.k===metric)||metrics[0];
+  const lastTwo = chartData.slice(-2);
+  const trend = lastTwo.length===2?(lastTwo[1][metric]>=lastTwo[0][metric]?"up":"down"):"up";
+
+  return (
+    <div style={{fontFamily:"'Nunito',sans-serif",background:"#f0faf8",minHeight:"100vh"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box}@keyframes fadeUp{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}`}</style>
+
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"0 20px",minHeight:50,display:"flex",alignItems:"center",gap:12,position:"sticky",top:0,zIndex:100,boxShadow:"0 3px 16px rgba(13,148,136,.35)"}}>
+        <><button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",marginRight:8}}>← Menu</button><div style={{fontWeight:900,fontSize:16,color:"#fff"}}>🏦 Dashboard Bank</div></>
+        <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+          <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
+            style={{padding:"5px 10px",borderRadius:20,border:"1px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.15)",color:"#fff",fontWeight:700,fontSize:11,outline:"none",fontFamily:"inherit"}}>
+            <option value="semua" style={{color:"#000"}}>Semua Outlet</option>
+            {outletNames.map(o=><option key={o} value={o} style={{color:"#000"}}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 20px",maxWidth:1100,margin:"0 auto"}}>
+
+        {/* KPI Cards */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16,animation:"fadeUp .3s ease"}}>
+          {[
+            {l:"Masuk Hari Ini",   v:fmtRp(masukHari),  c:"#0d9488",bg:"linear-gradient(135deg,#0a7a70,#0d9488)",txt:"#fff",icon:"⬇"},
+            {l:"Keluar Hari Ini",  v:fmtRp(keluarHari), c:"#fff",   bg:"linear-gradient(135deg,#c0392b,#e74c3c)",txt:"#fff",icon:"⬆"},
+            {l:"Saldo Hari Ini",   v:fmtRp(saldoHari),  c:"#fff",   bg:saldoHari>=0?"linear-gradient(135deg,#27ae60,#2ecc71)":"linear-gradient(135deg,#c0392b,#e74c3c)",txt:"#fff",icon:"💰"},
+            {l:"Fee Hari Ini",     v:fmtRp(feeHari),    c:"#8e44ad",bg:"#fff",txt:"#8e44ad",icon:"💎",border:true},
+          ].map(k=>(
+            <div key={k.l} style={{background:k.bg,borderRadius:16,padding:"16px 18px",
+              boxShadow:k.border?"none":"0 4px 18px rgba(0,0,0,.12)",
+              border:k.border?"2px solid #e8d5f5":"none"}}>
+              <div style={{fontSize:10,color:k.border?"#aaa":"rgba(255,255,255,.7)",fontWeight:700,
+                textTransform:"uppercase",letterSpacing:".5px",marginBottom:4}}>
+                {k.icon} {k.l}
+              </div>
+              <div style={{fontWeight:900,fontSize:22,color:k.border?k.txt:"#fff"}}>
+                {k.v}
+              </div>
+              <div style={{fontSize:10,color:k.border?"#bbb":"rgba(255,255,255,.6)",marginTop:4}}>
+                {todayTrx.filter(t=>t.netNominal>0).length} / {todayTrx.filter(t=>t.netNominal<0).length} trx
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:4,marginBottom:14,background:"#fff",borderRadius:12,padding:4,
+          border:"2px solid #e0f5f1",width:"fit-content"}}>
+          {[{k:"grafik",l:"📈 Grafik"},{k:"outlet",l:"🏪 Per Outlet"},{k:"transaksi",l:"💳 Top Transaksi"}].map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)}
+              style={{padding:"7px 18px",borderRadius:9,border:"none",fontWeight:700,fontSize:12,
+                cursor:"pointer",fontFamily:"inherit",transition:"all .15s",
+                background:tab===t.k?"linear-gradient(135deg,#0d9488,#14b8a6)":"transparent",
+                color:tab===t.k?"#fff":"#888",
+                boxShadow:tab===t.k?"0 3px 10px rgba(13,148,136,.3)":"none"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        {/* ── TAB GRAFIK ── */}
+        {tab==="grafik"&&(
+          <div style={{animation:"fadeUp .3s ease"}}>
+            <div style={{background:"#fff",borderRadius:16,padding:"20px 22px",
+              border:"2px solid #e0f5f1",marginBottom:14,
+              boxShadow:"0 2px 16px rgba(0,0,0,.04)"}}>
+              {/* Chart header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>
+                      {trend==="up"?"📈":"📉"} Grafik {curMetric.l}
+                    </span>
+                    <span style={{fontSize:11,fontWeight:700,color:trend==="up"?"#27ae60":"#e74c3c",
+                      background:trend==="up"?"#e8f8f4":"#fff0f0",padding:"2px 9px",borderRadius:20}}>
+                      {trend==="up"?"▲ Naik":"▼ Turun"}
+                    </span>
+                  </div>
+                  <div style={{fontSize:11,color:"#aaa",marginTop:3}}>
+                    {period==="daily"?"14 Hari Terakhir":period==="monthly"?"12 Bulan Terakhir":"Periode Kustom"}
+                  </div>
+                </div>
+                {/* Metric selector */}
+                <div style={{display:"flex",gap:4,background:"#f0faf8",borderRadius:9,padding:4}}>
+                  {metrics.map(m=>(
+                    <button key={m.k} onClick={()=>setMetric(m.k)}
+                      style={{padding:"5px 12px",borderRadius:7,border:"none",fontWeight:700,fontSize:11,
+                        cursor:"pointer",fontFamily:"inherit",
+                        background:metric===m.k?m.c:"transparent",
+                        color:metric===m.k?"#fff":"#888",transition:"all .15s"}}>
+                      {m.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Period selector */}
+              <div style={{marginBottom:16,background:"#f8fffe",borderRadius:12,padding:"14px 16px",border:"1px solid #e0f5f1"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#555"}}>📅 Rentang:</span>
+                  {[{k:"today",l:"Hari Ini"},{k:"7d",l:"7 Hari"},{k:"30d",l:"30 Hari"},{k:"month",l:"Bulan Ini"},{k:"year",l:"Tahun Ini"}].map(p=>(
+                    <button key={p.k} onClick={()=>applyPreset(p.k)}
+                      style={{padding:"4px 11px",borderRadius:20,border:"2px solid",
+                        borderColor:"#b2ede6",background:"#fff",color:"#0d9488",
+                        fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                      {p.l}
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#555"}}>Dari:</span>
+                    <input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom");}}
+                      style={{padding:"5px 9px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                  </div>
+                  <span style={{fontSize:11,color:"#aaa"}}>s/d</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#555"}}>Sampai:</span>
+                    <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom");}}
+                      style={{padding:"5px 9px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chart */}
+              <BankChart data={chartData} metric={metric} color={curMetric.c}/>
+
+              {/* Stats */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginTop:14}}>
+                {[
+                  {l:"Total Masuk",  v:fmtRp(total),        c:"#0d9488"},
+                  {l:"Total Keluar", v:fmtRp(totalK),       c:"#e74c3c"},
+                  {l:"Saldo Bersih", v:fmtRp(total-totalK), c:(total-totalK)>=0?"#27ae60":"#e74c3c"},
+                  {l:"Total Fee",    v:fmtRp(totalFee),      c:"#d97706"},
+                  {l:"Transaksi",    v:`${filtered.length} trx`, c:"#2980b9"},
+                ].map(k=>(
+                  <div key={k.l} style={{background:"#f8fffe",borderRadius:10,padding:"10px 13px",border:"1px solid #e0f5f1"}}>
+                    <div style={{fontWeight:900,fontSize:15,color:k.c}}>{k.v}</div>
+                    <div style={{fontSize:10,fontWeight:700,color:"#aaa",marginTop:2}}>{k.l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB PER OUTLET ── */}
+        {tab==="outlet"&&(
+          <div style={{animation:"fadeUp .3s ease"}}>
+            <div style={{background:"#fff",borderRadius:16,padding:"18px 20px",
+              border:"2px solid #e0f5f1",marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a",marginBottom:14}}>🏪 Perbandingan Outlet</div>
+              {outletData.map((o,i)=>(
+                <div key={o.nama} style={{marginBottom:18}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,alignItems:"center"}}>
+                    <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{o.nama}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#888"}}>{o.trx} transaksi</div>
+                  </div>
+                  {/* Masuk bar */}
+                  <div style={{marginBottom:4}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontWeight:700,color:"#0d9488",marginBottom:3}}>
+                      <span>⬇ Masuk</span><span>{fmtRp(o.masuk)}</span>
+                    </div>
+                    <div style={{background:"#f0f0f0",borderRadius:20,height:10,overflow:"hidden"}}>
+                      <div style={{background:"linear-gradient(90deg,#0d9488,#14b8a6)",height:"100%",
+                        width:`${Math.round(o.masuk/maxOutlet*100)}%`,borderRadius:20,
+                        transition:"width .6s ease"}}/>
+                    </div>
+                  </div>
+                  {/* Keluar bar */}
+                  <div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,fontWeight:700,color:"#e74c3c",marginBottom:3}}>
+                      <span>⬆ Keluar</span><span>{fmtRp(o.keluar)}</span>
+                    </div>
+                    <div style={{background:"#f0f0f0",borderRadius:20,height:10,overflow:"hidden"}}>
+                      <div style={{background:"linear-gradient(90deg,#e74c3c,#ff6b6b)",height:"100%",
+                        width:`${Math.round(o.keluar/maxOutlet*100)}%`,borderRadius:20,
+                        transition:"width .6s ease"}}/>
+                    </div>
+                  </div>
+                  {/* Saldo */}
+                  <div style={{marginTop:6,display:"flex",gap:10}}>
+                    <div style={{background:(o.masuk-o.keluar)>=0?"#e8f8f4":"#fff0f0",borderRadius:8,
+                      padding:"4px 10px",fontSize:11,fontWeight:800,
+                      color:(o.masuk-o.keluar)>=0?"#0d9488":"#e74c3c"}}>
+                      Saldo: {fmtRp(o.masuk-o.keluar)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB TOP TRANSAKSI ── */}
+        {tab==="transaksi"&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,animation:"fadeUp .3s ease"}}>
+            {/* Top Masuk */}
+            <div style={{background:"#fff",borderRadius:16,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+              <div style={{padding:"14px 16px",borderBottom:"2px solid #e0f5f1",
+                background:"linear-gradient(135deg,#e0faf5,#f0fdfb)"}}>
+                <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>⬇ Top Sumber Masuk</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:2}}>Periode yang dipilih</div>
+              </div>
+              {topMasuk.map((t,i)=>(
+                <div key={t.nama} style={{padding:"10px 16px",borderTop:i>0?"1px solid #f0faf8":"none",
+                  background:i%2===0?"#fff":"#fafffe"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:26,height:26,borderRadius:8,background:"#e0faf5",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontWeight:900,fontSize:12,color:"#0d9488",flexShrink:0}}>{i+1}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.nama}</div>
+                      <div style={{background:"#f0f0f0",borderRadius:20,height:4,marginTop:4,overflow:"hidden"}}>
+                        <div style={{background:"linear-gradient(90deg,#0d9488,#14b8a6)",height:"100%",
+                          width:`${Math.round(t.total/maxTop*100)}%`,borderRadius:20}}/>
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontWeight:900,fontSize:12,color:"#0d9488"}}>{fmtRp(t.total)}</div>
+                      <div style={{fontSize:10,color:"#aaa"}}>{t.count}x</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Top Keluar */}
+            <div style={{background:"#fff",borderRadius:16,border:"2px solid #ffe0e0",overflow:"hidden"}}>
+              <div style={{padding:"14px 16px",borderBottom:"2px solid #ffe0e0",
+                background:"linear-gradient(135deg,#fff5f5,#fffafa)"}}>
+                <div style={{fontWeight:800,fontSize:14,color:"#e74c3c"}}>⬆ Top Sumber Keluar</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:2}}>Periode yang dipilih</div>
+              </div>
+              {topKeluar.map((t,i)=>(
+                <div key={t.nama} style={{padding:"10px 16px",borderTop:i>0?"1px solid #fff5f5":"none",
+                  background:i%2===0?"#fff":"#fffafa"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:26,height:26,borderRadius:8,background:"#fff0f0",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontWeight:900,fontSize:12,color:"#e74c3c",flexShrink:0}}>{i+1}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.nama}</div>
+                      <div style={{background:"#f0f0f0",borderRadius:20,height:4,marginTop:4,overflow:"hidden"}}>
+                        <div style={{background:"linear-gradient(90deg,#e74c3c,#ff6b6b)",height:"100%",
+                          width:`${Math.round(t.total/maxTopK*100)}%`,borderRadius:20}}/>
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontWeight:900,fontSize:12,color:"#e74c3c"}}>{fmtRp(t.total)}</div>
+                      <div style={{fontSize:10,color:"#aaa"}}>{t.count}x</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 function PulseDotM({color="#27ae60",size=8}){
   return(
     <span style={{position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+6,height:size+6}}>
@@ -7227,6 +7797,7 @@ export default function App() {
   const [dbError,     setDbError]       = useState(null);
   const [prodOrder,      setProdOrderRoot]   = useState(null); // urutan global produk
   const [aktifProdsRoot, setAktifProdsRoot]  = useState({});   // produk aktif per outlet
+  const [allBankTrx,     setAllBankTrx]      = useState([]);   // semua bank transactions
 
   // Simpan user ke localStorage setiap kali berubah
   const setUser = (u) => {
@@ -7546,17 +8117,18 @@ export default function App() {
   // ── Realtime active_shifts — laporan admin update otomatis ────────────────
   useEffect(()=>{
     const ch = supabase.channel('realtime-shifts')
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{
-        // Shift baru dibuka — reload transactions saja
-        reloadData();
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{ reloadData(); })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},(p)=>{
+        const r=p.new; if(!r) return;
+        const t={id:r.id,waktu:r.waktu,tgl:r.tgl,shiftId:r.shift_id,nama:r.nama,
+          jenis:r.jenis,feeType:r.fee_type,fee:r.fee||0,nominal:r.nominal,
+          netNominal:r.net_nominal,outletId:r.outlet_id};
+        setAllBankTrx(prev=>prev.find(x=>x.id===t.id)?prev:[t,...prev]);
       })
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'active_shifts'},()=>{
-        reloadData();
-      })
-      // DELETE active_shifts TIDAK trigger reloadData karena bisa mengganggu kasir aktif
-      // Setiap kasir handle shift delete sendiri via dbShift.getActiveShift()
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{
-        reloadData();
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'bank_transactions'},(p)=>{
+        setAllBankTrx(prev=>prev.filter(x=>x.id!==p.old?.id));
       })
       .subscribe();
     return ()=>supabase.removeChannel(ch);
@@ -7742,7 +8314,8 @@ export default function App() {
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} saldoBank={saldoBank} setSaldoBank={setSaldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
 
 
-      {page==="dashboard" && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
+      {page==="dashboard"     && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
+      {page==="dashboardbank"  && isAdmin && <BankDashboardPage bankTrx={allBankTrx} outlets={outlets} onBack={()=>setPage("menu")}/>}
       {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
