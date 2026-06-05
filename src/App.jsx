@@ -1895,10 +1895,6 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <SubHeader title="📊 Dashboard" onBack={onBack}
         right={
-<div style={{display:"flex",gap:6,alignItems:"center"}}>
-          <button onClick={loadData} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}} title="Refresh data">
-            {loading?"⏳":"🔄"}
-          </button>
           <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
             style={{padding:"5px 11px",borderRadius:20,border:"1px solid rgba(255,255,255,.35)",
               background:"rgba(255,255,255,.18)",color:"#fff",fontWeight:700,fontSize:11,
@@ -1908,7 +1904,6 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
               <option key={o.id} value={o.id} style={{color:"#000",background:"#fff"}}>{o.nama}</option>
             ))}
           </select>
-        </div>
         }
       />
       <div style={{padding:"14px 20px",maxWidth:980,margin:"0 auto"}}>
