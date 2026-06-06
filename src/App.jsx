@@ -5692,16 +5692,20 @@ const getFmStatus = (qty, days) => {
 
 
 function OutletFmPanel({outlet,data,globalMax,selectedProduct}){
+  const [page,setPage]=useState(1);
+  const PER=8;
+  const pages=Math.ceil((data||[]).length/PER);
+  const shown=(data||[]).slice((page-1)*PER,page*PER);
   return(
-    <div style={{background:"#fff",borderRadius:14,border:`2px solid ${outlet.color}22`,overflow:"hidden",flex:1,minWidth:0}}>
+    <div style={{background:"#fff",borderRadius:14,border:`2px solid ${outlet.color}22`,overflow:"hidden",flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
       <div style={{padding:"8px 12px",background:`linear-gradient(135deg,${outlet.color}15,${outlet.color}05)`,borderBottom:`2px solid ${outlet.color}15`,display:"flex",alignItems:"center",gap:6}}>
         <div style={{width:8,height:8,borderRadius:"50%",background:outlet.color,flexShrink:0}}/>
         <span style={{fontWeight:800,fontSize:"clamp(11px,1vw,14px)",color:"#1e293b"}}>{outlet.nama}</span>
         <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:outlet.color,background:`${outlet.color}12`,padding:"2px 7px",borderRadius:20}}>{data.filter(d=>d.qty>0).length} produk</span>
       </div>
       <div style={{padding:"4px 0"}}>
-        {data.length===0&&<div style={{textAlign:"center",color:"#cbd5e1",padding:"16px 0",fontSize:10}}>Tidak ada data</div>}
-        {data.map((p,i)=>{
+        {(data||[]).length===0&&<div style={{textAlign:"center",color:"#cbd5e1",padding:"16px 0",fontSize:10}}>Tidak ada data</div>}
+        {shown.map((p,i)=>{
           const pct=Math.round(p.qty/globalMax*100);
           const hl=selectedProduct===p.name;
           const noSale=p.qty===0;
@@ -5724,6 +5728,21 @@ function OutletFmPanel({outlet,data,globalMax,selectedProduct}){
           );
         })}
       </div>
+      {/* Pagination inside panel */}
+      {pages>1&&(
+        <div style={{padding:"5px 8px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"center",gap:4,background:"#fafbff",flexShrink:0}}>
+          <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}
+            style={{width:22,height:22,borderRadius:6,border:"1px solid #e2e8f0",background:page===1?"#f8fafc":"#fff",color:page===1?"#cbd5e1":outlet.color,fontWeight:900,fontSize:11,cursor:page===1?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+          {Array.from({length:pages},(_,i)=>i+1).map(p=>(
+            <button key={p} onClick={()=>setPage(p)}
+              style={{width:22,height:22,borderRadius:6,border:"1px solid",borderColor:page===p?outlet.color:"#e2e8f0",background:page===p?outlet.color:"#fff",color:page===p?"#fff":"#64748b",fontWeight:700,fontSize:10,cursor:"pointer"}}>
+              {p}
+            </button>
+          ))}
+          <button onClick={()=>setPage(p=>Math.min(pages,p+1))} disabled={page===pages}
+            style={{width:22,height:22,borderRadius:6,border:"1px solid #e2e8f0",background:page===pages?"#f8fafc":"#fff",color:page===pages?"#cbd5e1":outlet.color,fontWeight:900,fontSize:11,cursor:page===pages?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -6360,7 +6379,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[]}){
                 };
                 if(checked.trxPerItem){
                   const itemMap={};
-                  transactions.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
+                  filteredTx.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
                     if(!itemMap[i.name]) itemMap[i.name]={name:i.name,omset:0,qty:0,trx:0};
                     itemMap[i.name].omset+=i.price*i.qty;
                     itemMap[i.name].qty+=i.qty;
@@ -6408,7 +6427,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[]}){
                   ))}</tbody>
                 </table>
               </div>
-              <div style={{padding:"5px 10px",background:"#f8fafc",fontSize:9,color:"#94a3b8"}}>...dan {FAST_MOVING.length-4} baris lainnya</div>
+              <div style={{padding:"5px 10px",background:"#f8fafc",fontSize:9,color:"#94a3b8"}}>...dan {(fastMoving||[]).length-4} baris lainnya</div>
             </div>
           )}
           {checked.revenue&&(
@@ -6442,15 +6461,25 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[]}){
   );
 }
 
-function AnalisisTab(){
-  const q=[{q:"Q1",omset:0,profit:0,trx:0},{q:"Q2",omset:17521500,profit:1315371,trx:303},{q:"Q3",omset:0,profit:0,trx:0},{q:"Q4",omset:0,profit:0,trx:0}];
-  const curr=q[1],prev=q[0];
-  const og=pct(curr.omset,prev.omset),pg=pct(curr.profit,prev.profit),tg=pct(curr.trx,prev.trx);
+function AnalisisTab({transactions=[],outlets=[]}){ // real data injected
+  const buildQ=(qIdx)=>{
+    const yr=new Date().getFullYear();
+    const starts=[new Date(yr,0,1),new Date(yr,3,1),new Date(yr,6,1),new Date(yr,9,1)];
+    const ends  =[new Date(yr,2,31,23,59),new Date(yr,5,30,23,59),new Date(yr,8,30,23,59),new Date(yr,11,31,23,59)];
+    const list=(transactions||[]).filter(t=>{try{const p=t.date.split('/');const d=p.length===3?new Date(p[2],p[1]-1,p[0]):new Date(t.date);return d>=starts[qIdx]&&d<=ends[qIdx];}catch{return false;}});
+    const omset=list.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+    const profit=list.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.price-(i.buyPrice||0))*i.qty,0),0);
+    return {omset,profit,trx:list.length};
+  };
+  const q=[0,1,2,3].map((i,_,__)=>({q:`Q${i+1}`,...buildQ(i)}));
+  const curQIdx=q.reduce((best,qq,i)=>qq.omset>q[best].omset?i:best,0);
+  const curr=q[curQIdx]||q[1], prev=q[Math.max(0,curQIdx-1)]||q[0];
+  const og=pctGrowth(curr.omset,prev.omset),pg=pctGrowth(curr.profit,prev.profit),tg=pctGrowth(curr.trx,prev.trx);
   const margin=(curr.profit/curr.omset*100).toFixed(1);
   return (
     <div style={{padding:"20px 24px",maxWidth:900,margin:"0 auto"}}>
       <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",borderRadius:18,padding:"22px 24px",marginBottom:18}}>
-        <div style={{fontWeight:800,fontSize:12,color:"rgba(255,255,255,.7)",marginBottom:14}}>ANALISIS GROWTH — Q2 2026</div>
+        <div style={{fontWeight:800,fontSize:12,color:"rgba(255,255,255,.7)",marginBottom:14}}>ANALISIS GROWTH — {curr.q} {new Date().getFullYear()}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
           {[
             {l:"Omset Growth",v:fmtS(curr.omset),g:og,icon:"💰"},
@@ -6485,7 +6514,7 @@ function AnalisisTab(){
             </tr></thead>
             <tbody>{q.map((row,i)=>{
               const prev2=q[i-1];
-              const g=prev2?pct(row.omset,prev2.omset):null;
+              const g=prev2?pctGrowth(row.omset,prev2.omset):null;
               const isCurr=i===1;
               return (
                 <tr key={row.q} style={{background:isCurr?"#eef2ff":"#fff",borderTop:"1px solid #f1f5f9"}}>
@@ -6538,8 +6567,16 @@ function AnalisisTab(){
 
 function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
   const [activeTab,setActiveTab]=useState("overview");
-  const [dateFrom,setDateFrom]=useState("2026-01-01");
-  const [dateTo,setDateTo]=useState("2026-06-04");
+  const [dateFrom,setDateFrom]=useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split('T')[0];});
+  const [dateTo,setDateTo]=useState(()=>new Date().toISOString().split('T')[0]);
+  const applyPreset=(p)=>{
+    const n=new Date();
+    if(p==="today")  {setDateFrom(n.toISOString().split('T')[0]);setDateTo(n.toISOString().split('T')[0]);}
+    else if(p==="7d") {const d=new Date(n);d.setDate(n.getDate()-6);setDateFrom(d.toISOString().split('T')[0]);setDateTo(n.toISOString().split('T')[0]);}
+    else if(p==="30d"){const d=new Date(n);d.setDate(n.getDate()-29);setDateFrom(d.toISOString().split('T')[0]);setDateTo(n.toISOString().split('T')[0]);}
+    else if(p==="month"){const d=new Date(n.getFullYear(),n.getMonth(),1);setDateFrom(d.toISOString().split('T')[0]);setDateTo(n.toISOString().split('T')[0]);}
+    else if(p==="year"){const d=new Date(n.getFullYear(),0,1);setDateFrom(d.toISOString().split('T')[0]);setDateTo(n.toISOString().split('T')[0]);}
+  };
   const TABS=[{k:"overview",l:"Overview",icon:"📊"},{k:"peroutlet",l:"Per Outlet",icon:"🏪"},{k:"fastmoving",l:"Fast Moving",icon:"🚀"},{k:"analisis",l:"Analisis",icon:"🧠"},{k:"export",l:"Export",icon:"📤"}];
   // ── Compute real data from props ─────────────────────────────────────────
   const parseDate = s => { if(!s) return null; const p=s.split('/'); if(p.length===3) return new Date(p[2],p[1]-1,p[0]); return new Date(s); };
@@ -6548,8 +6585,12 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
   const todayStr  = today();
   const todayTrx  = transactions.filter(t=>t.date===todayStr);
   const OMSET_HARI_REAL  = calcOmset(todayTrx);
-  const TOTAL_TRX_REAL   = transactions.length;
+  const TOTAL_TRX_REAL   = filteredTx.length;
   const filterTx = (from, to) => transactions.filter(t=>{ const d=parseDate(t.date); return d&&d>=from&&d<=to; });
+  // Apply date range filter to Q_DATA using user-selected dates
+  const userFrom = new Date(dateFrom); userFrom.setHours(0,0,0,0);
+  const userTo   = new Date(dateTo);   userTo.setHours(23,59,59,999);
+  const filteredTx = transactions.filter(t=>{ const d=parseDate(t.date); return d&&d>=userFrom&&d<=userTo; });
   const now_d     = new Date();
   // Quarterly data
   const getQ = (qIdx) => {
@@ -6565,12 +6606,13 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
     {...getQ(2), b:"Q3 (Jul-Sep)", qKey:"Q3", bank:0},
     {...getQ(3), b:"Q4 (Okt-Des)", qKey:"Q4", bank:0},
   ];
-  const TOTAL_OMSET_REAL  = Q_DATA_REAL.reduce((s,q)=>s+q.omset,0);
-  const TOTAL_PROFIT_REAL = Q_DATA_REAL.reduce((s,q)=>s+q.profit,0);
+  // Use filteredTx for period totals
+  const TOTAL_OMSET_REAL  = filteredTx.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+  const TOTAL_PROFIT_REAL = filteredTx.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.price-(i.buyPrice||0))*i.qty,0),0);
   const PROFIT_MARGIN_REAL= TOTAL_OMSET_REAL>0?(TOTAL_PROFIT_REAL/TOTAL_OMSET_REAL*100).toFixed(1):"0.0";
   // Outlet stats real
   const OUTLET_STATS_REAL = (outlets||[]).map((o,i)=>{
-    const list = transactions.filter(t=>t.outletId===o.id);
+    const list = filteredTx.filter(t=>t.outletId===o.id);
     const colors=["#6366f1","#06b6d4","#f59e0b","#10b981","#f43f5e"];
     return { nama:o.nama, omset:calcOmset(list), profit:calcProfit(list), trx:list.length, color:colors[i%colors.length], bank:null };
   });
@@ -6585,7 +6627,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
   const FAST_MOVING_REAL = Object.values(itemMap).sort((a,b)=>b.qty-a.qty).slice(0,100).map((x,i)=>({...x,rank:i+1}));
   // Top profit real
   const profitMap = {};
-  transactions.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
+  filteredTx.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
     const p=(i.price-(i.buyPrice||0))*i.qty;
     if(!profitMap[i.name]) profitMap[i.name]={name:i.name,profit:0};
     profitMap[i.name].profit+=p;
@@ -6839,7 +6881,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
       </div>
       )}
 
-      {activeTab==="analisis"&&<AnalisisTab/>}
+      {activeTab==="analisis"&&<AnalisisTab transactions={transactions} outlets={outlets}/>}
       {activeTab==="export"&&<ExportTab fastMoving={FAST_MOVING_REAL} outletStats={OUTLET_STATS_REAL} transactions={transactions}/>}
     </div>
   );
