@@ -5696,7 +5696,7 @@ function OutletFmPanel({outlet,data,globalMax,selectedProduct}){
     <div style={{background:"#fff",borderRadius:14,border:`2px solid ${outlet.color}22`,overflow:"hidden",flex:1,minWidth:0}}>
       <div style={{padding:"8px 12px",background:`linear-gradient(135deg,${outlet.color}15,${outlet.color}05)`,borderBottom:`2px solid ${outlet.color}15`,display:"flex",alignItems:"center",gap:6}}>
         <div style={{width:8,height:8,borderRadius:"50%",background:outlet.color,flexShrink:0}}/>
-        <span style={{fontWeight:800,fontSize:12,color:"#1e293b"}}>{outlet.nama}</span>
+        <span style={{fontWeight:800,fontSize:"clamp(11px,1vw,14px)",color:"#1e293b"}}>{outlet.nama}</span>
         <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:outlet.color,background:`${outlet.color}12`,padding:"2px 7px",borderRadius:20}}>{data.filter(d=>d.qty>0).length} produk</span>
       </div>
       <div style={{padding:"4px 0"}}>
@@ -5710,7 +5710,7 @@ function OutletFmPanel({outlet,data,globalMax,selectedProduct}){
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{width:16,height:16,borderRadius:4,flexShrink:0,background:noSale?"#f1f5f9":i===0?`${outlet.color}20`:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:900,color:noSale?"#cbd5e1":i===0?outlet.color:"#94a3b8"}}>{i+1}</span>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:10,fontWeight:noSale?400:700,color:noSale?"#cbd5e1":"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}}>{p.name}</div>
+                  <div style={{fontSize:"clamp(9px,0.85vw,12px)",fontWeight:noSale?400:700,color:noSale?"#cbd5e1":"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}}>{p.name}</div>
                   <div style={{height:3,background:"#f1f5f9",borderRadius:20,overflow:"hidden"}}>
                     <div style={{height:"100%",width:`${pct}%`,borderRadius:20,background:noSale?"#e2e8f0":pct>=70?outlet.color:pct>=35?`${outlet.color}aa`:`${outlet.color}55`,transition:"width .5s ease"}}/>
                   </div>
@@ -5807,11 +5807,11 @@ function MonthlyHistoryTab({transactions,outlets}){
         <span style={{fontSize:11,fontWeight:700,color:"#64748b",flexShrink:0}}>📅 Pilih Bulan:</span>
         {MONTHLY_HISTORY_OPTS.map(m=>(
           <button key={m.key} onClick={()=>setSelMonth(m.key)}
-            style={{padding:"5px 13px",borderRadius:20,border:"2px solid",
+            style={{padding:"clamp(4px,0.5vw,7px) clamp(10px,1vw,15px)",borderRadius:20,border:"2px solid",
               borderColor:selMonth===m.key?"#0d9488":"#e2e8f0",
               background:selMonth===m.key?"#0d9488":"#fff",
               color:selMonth===m.key?"#fff":"#64748b",
-              fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",
+              fontWeight:700,fontSize:"clamp(11px,0.9vw,13px)",cursor:"pointer",fontFamily:"inherit",
               transition:"all .15s",position:"relative"}}>
             {m.label}
             {m.note&&<span style={{position:"absolute",top:-6,right:-4,background:"#f59e0b",borderRadius:20,padding:"1px 5px",fontSize:7,color:"#fff",fontWeight:900}}>{m.note}</span>}
@@ -5820,10 +5820,10 @@ function MonthlyHistoryTab({transactions,outlets}){
       </div>
 
       {/* Header bulan yang dipilih */}
-      <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:14,padding:"14px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
-        <div style={{fontSize:32}}>📅</div>
+      <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:14,padding:"clamp(12px,1.2vw,18px)",marginBottom:12,display:"flex",alignItems:"center",gap:14}}>
+        <div style={{fontSize:"clamp(24px,2.5vw,36px)"}}>📅</div>
         <div style={{flex:1}}>
-          <div style={{fontWeight:900,fontSize:16,color:"#fff"}}>{monthData?.label}</div>
+          <div style={{fontWeight:900,fontSize:"clamp(14px,1.4vw,18px)",color:"#fff"}}>{monthData?.label}</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:2}}>
             {monthData?.days} hari · {filtered.filter(p=>p.qty>0).length} produk terjual
             {monthData?.note&&<span style={{marginLeft:8,background:"#f59e0b",borderRadius:20,padding:"1px 7px",fontSize:9,color:"#1e293b",fontWeight:800}}>{monthData.note}</span>}
@@ -5835,15 +5835,15 @@ function MonthlyHistoryTab({transactions,outlets}){
             {l:"Total Omset",  v:fmtRp(filtered.reduce((s,p)=>s+p.omset,0)),c:"#fcd34d"},
             {l:"Total Profit", v:fmtRp(filtered.reduce((s,p)=>s+p.profit,0)),c:"#6ee7b7"},
           ].map(k=>(
-            <div key={k.l} style={{background:"rgba(255,255,255,.1)",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
-              <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
-              <div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:1,fontWeight:600}}>{k.l}</div>
+            <div key={k.l} style={{background:"rgba(255,255,255,.1)",borderRadius:10,padding:"clamp(6px,0.8vw,10px)",textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:"clamp(11px,1.1vw,15px)",color:k.c}}>{k.v}</div>
+              <div style={{fontSize:"clamp(9px,0.75vw,11px)",color:"rgba(255,255,255,.5)",marginTop:1,fontWeight:600}}>{k.l}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr clamp(240px,28%,340px)",gap:"clamp(8px,1vw,14px)"}}>
         {/* Tabel produk bulan ini */}
         <div>
           <div style={{display:"flex",gap:8,marginBottom:8,alignItems:"center"}}>
@@ -5860,7 +5860,7 @@ function MonthlyHistoryTab({transactions,outlets}){
             </div>
             <div style={{display:"grid",gridTemplateColumns:"28px 1fr 54px 54px 70px 70px 54px",background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
               {["#","Produk","Status","Qty","Omset","Profit","vs Bln Lalu"].map(h=>(
-                <div key={h} style={{padding:"6px 6px",fontSize:8,fontWeight:700,color:"#64748b",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</div>
+                <div key={h} style={{padding:"clamp(5px,0.6vw,8px) 6px",fontSize:"clamp(9px,0.75vw,11px)",fontWeight:700,color:"#64748b",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</div>
               ))}
             </div>
             {filtered.slice(0,15).map((p,i)=>{
@@ -6010,7 +6010,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
       <div style={{display:"flex",gap:2,background:"rgba(255,255,255,.1)",borderRadius:10,padding:3,marginBottom:14,width:"fit-content"}}>
         {MAIN_TABS.map(t=>(
           <button key={t.k} onClick={()=>setMainTab(t.k)}
-            style={{padding:"6px 14px",borderRadius:8,border:"none",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",
+            style={{padding:"clamp(5px,0.6vw,8px) clamp(10px,1.2vw,16px)",borderRadius:8,border:"none",fontWeight:700,fontSize:"clamp(11px,0.9vw,13px)",cursor:"pointer",fontFamily:"inherit",transition:"all .15s",
               background:mainTab===t.k?"#0d9488":"transparent",
               color:mainTab===t.k?"#fff":"#64748b",
               boxShadow:mainTab===t.k?"0 2px 8px rgba(13,148,136,.25)":"none"}}>
@@ -6021,11 +6021,11 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
           <div style={{display:"flex",gap:3,marginLeft:8,alignItems:"center"}}>
             {FM_PERIOD_OPTS.map(p=>(
               <button key={p.k} onClick={()=>setComparePeriod(p.k)}
-                style={{padding:"5px 11px",borderRadius:20,border:"2px solid",
+                style={{padding:"clamp(4px,0.5vw,6px) clamp(9px,0.9vw,13px)",borderRadius:20,border:"2px solid",
                   borderColor:comparePeriod===p.k?"#0d9488":"#e2e8f0",
                   background:comparePeriod===p.k?"#e0faf5":"#fff",
                   color:comparePeriod===p.k?"#0d9488":"#64748b",
-                  fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                  fontWeight:700,fontSize:"clamp(11px,0.9vw,13px)",cursor:"pointer",fontFamily:"inherit"}}>
                 {p.l}
               </button>
             ))}
@@ -6035,7 +6035,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
 
       {/* ══ SPLIT VIEW ══ */}
       {mainTab==="split"&&(
-      <div style={{display:"grid",gridTemplateColumns:"460px 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"clamp(320px,38%,500px) 1fr",gap:"clamp(8px,1vw,16px)"}}>
         {/* Kiri: Daftar global */}
         <div>
           <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
@@ -6054,9 +6054,9 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
               {label:"Stok Mati",  icon:"💀",count:FM_LIST.filter(p=>p.qty/DAYS<0.1).length,  sub:"<0.1/hari",c:"#f43f5e",bg:"#fff1f2"},
             ].map(k=>(
               <div key={k.label} style={{background:k.bg,borderRadius:11,padding:"9px 10px",border:`1px solid ${k.c}22`}}>
-                <div style={{fontWeight:900,fontSize:18,color:k.c}}>{k.count}</div>
-                <div style={{fontSize:9,fontWeight:700,color:k.c,marginTop:1}}>{k.icon} {k.label}</div>
-                <div style={{fontSize:8,color:k.c,opacity:.7,marginTop:1}}>{k.sub}</div>
+                <div style={{fontWeight:900,fontSize:"clamp(16px,2vw,24px)",color:k.c}}>{k.count}</div>
+                <div style={{fontSize:"clamp(10px,0.85vw,13px)",fontWeight:700,color:k.c,marginTop:1}}>{k.icon} {k.label}</div>
+                <div style={{fontSize:"clamp(9px,0.72vw,11px)",color:k.c,opacity:.7,marginTop:1}}>{k.sub}</div>
               </div>
             ))}
           </div>
@@ -6067,7 +6067,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
             </div>
             <div style={{display:"grid",gridTemplateColumns:"28px 1fr 58px 48px 70px 68px",background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
               {["#","Produk","Status","Terjual","Omset","Profit"].map(h=>(
-                <div key={h} style={{padding:"6px 6px",fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</div>
+                <div key={h} style={{padding:"clamp(5px,0.6vw,8px) 6px",fontSize:"clamp(9px,0.75vw,11px)",fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>{h}</div>
               ))}
             </div>
             {shown.map((p,i)=>{
@@ -6596,7 +6596,19 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
 
   return (
     <div style={{fontFamily:"'Nunito',sans-serif",background:"#f1f5f9",minHeight:"100vh"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');*{box-sizing:border-box}@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+        *{box-sizing:border-box}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        .fm-wrap{font-size:clamp(12px,1.1vw,15px)}
+        .fm-wrap .fm-h1{font-size:clamp(14px,1.4vw,18px);font-weight:900}
+        .fm-wrap .fm-h2{font-size:clamp(12px,1.1vw,15px);font-weight:800}
+        .fm-wrap .fm-sm{font-size:clamp(10px,0.85vw,13px)}
+        .fm-wrap .fm-xs{font-size:clamp(9px,0.75vw,12px)}
+        .fm-wrap .fm-kpi{font-size:clamp(16px,2vw,26px);font-weight:900}
+        .fm-wrap input,.fm-wrap button{font-size:inherit;font-family:inherit}
+        .fm-row td,.fm-row th{font-size:clamp(10px,0.85vw,13px)}
+      `}</style>
       {/* NAV */}
       <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",padding:"0 20px",display:"flex",alignItems:"center",minHeight:52,gap:10,boxShadow:"0 4px 20px rgba(67,56,202,.4)",position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginRight:"auto"}}>
@@ -6813,7 +6825,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
       )}
 
       {activeTab==="fastmoving"&&(
-      <div style={{padding:"14px 16px",maxWidth:1440,margin:"0 auto",animation:"fadeIn .3s ease"}}>
+      <div className="fm-wrap" style={{padding:"clamp(10px,1.5vw,20px)",maxWidth:"100%",margin:"0 auto",animation:"fadeIn .3s ease"}}>
         <FastMovingTab
           transactions={transactions}
           outlets={outlets}
