@@ -6582,15 +6582,15 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
   const parseDate = s => { if(!s) return null; const p=s.split('/'); if(p.length===3) return new Date(p[2],p[1]-1,p[0]); return new Date(s); };
   const calcOmset = list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
   const calcProfit= list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv-(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.buyPrice||0)*i.qty,0); },0);
-  const todayStr  = today();
-  const todayTrx  = transactions.filter(t=>t.date===todayStr);
-  const OMSET_HARI_REAL  = calcOmset(todayTrx);
-  const TOTAL_TRX_REAL   = filteredTx.length;
-  const filterTx = (from, to) => transactions.filter(t=>{ const d=parseDate(t.date); return d&&d>=from&&d<=to; });
-  // Apply date range filter to Q_DATA using user-selected dates
+  const filterTx = (from, to) => (transactions||[]).filter(t=>{ const d=parseDate(t.date); return d&&d>=from&&d<=to; });
+  // filteredTx HARUS deklarasi sebelum dipakai
   const userFrom = new Date(dateFrom); userFrom.setHours(0,0,0,0);
   const userTo   = new Date(dateTo);   userTo.setHours(23,59,59,999);
-  const filteredTx = transactions.filter(t=>{ const d=parseDate(t.date); return d&&d>=userFrom&&d<=userTo; });
+  const filteredTx = (transactions||[]).filter(t=>{ const d=parseDate(t.date); return d&&d>=userFrom&&d<=userTo; });
+  const todayStr  = today();
+  const todayTrx  = (transactions||[]).filter(t=>t.date===todayStr);
+  const OMSET_HARI_REAL  = calcOmset(todayTrx);
+  const TOTAL_TRX_REAL   = filteredTx.length;
   const now_d     = new Date();
   // Quarterly data
   const getQ = (qIdx) => {
