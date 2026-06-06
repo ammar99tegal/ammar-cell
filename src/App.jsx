@@ -25,6 +25,10 @@ const useDevice = () => {
 
 const fmt   = n => new Intl.NumberFormat("id-ID").format(n??0);
 const fmtRp = n => `Rp ${fmt(n)}`;
+const pctGrowth = (a,b) => b>0?((a-b)/b*100).toFixed(1):"N/A";
+const growthColor = g => isNaN(+g)?"#94a3b8":+g>0?"#10b981":+g<0?"#f43f5e":"#94a3b8";
+const growthBg    = g => isNaN(+g)?"#f8fafc":+g>0?"#ecfdf5":+g<0?"#fff1f2":"#f8fafc";
+const growthIcon  = g => isNaN(+g)?"—":+g>0?"▲":+g<0?"▼":"—";
 const fmtS  = n => n>=1000000?`${(n/1000000).toFixed(1)}jt`:n>=1000?`${(n/1000).toFixed(0)}rb`:String(Math.round(n));
 const safeDt = v => {
   if(!v) return null;
@@ -6251,7 +6255,7 @@ function QBarChart({data,keys,colors,labels}){
           })}
           <text x={cX} y={H-16} textAnchor="middle" fontSize="9" fill={isH?"#6366f1":"#64748b"} fontFamily="Nunito" fontWeight={isH?"800":"600"}>{d.qKey}</text>
           {i>0&&d.omset>0&&data[i-1].omset>0&&(()=>{
-            const g=pct(d.omset,data[i-1].omset);
+            const g=pctGrowth(d.omset,data[i-1].omset);
             return <text x={cX} y={pT+10} textAnchor="middle" fontSize="9" fill={growthColor(g)} fontFamily="Nunito" fontWeight="900">{growthIcon(g)}{isNaN(+g)?"":Math.abs(+g)+"%"}</text>;
           })()}
           {isH&&(
