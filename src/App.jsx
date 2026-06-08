@@ -2501,8 +2501,10 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
   if(filterTo)   filterTo.setHours(23,59,59,999);
   const inRange = (startTime) => {
     if(!filterFrom||!filterTo) return true;
+    if(!startTime) return true; // tidak ada tanggal → tampilkan
     const d = parseDate(startTime);
-    return d && d>=filterFrom && d<=filterTo;
+    if(!d) return true; // tidak bisa parse → tampilkan
+    return d>=filterFrom && d<=filterTo;
   };
 
   const buildShifts = () => {
