@@ -2539,9 +2539,13 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
         start_time:startRaw,
         end_time:l.end_time||null,
         status:'closed',
-        masuk, keluar, fee, trx:trxList.length,
+        masuk, keluar, fee,
+        trx:trxList,          // array untuk BankShiftDetailModal
+        trxCount:trxList.length, // number untuk display
         selisih:l._selisih??(l.saldo_close?.selisih)??null,
         catatan:l._catatan||(l.saldo_close?.catatan)||'',
+        saldo_open:l.saldo_open||{},
+        saldo_close:l.saldo_close||{},
       });
     });
 
@@ -2562,8 +2566,12 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
         userId:s.user_id||'',
         start_time:startRaw, end_time:null,
         status:'active',
-        masuk, keluar, fee, trx:trxList.length,
+        masuk, keluar, fee,
+        trx:trxList,          // array untuk BankShiftDetailModal
+        trxCount:trxList.length, // number untuk display
         selisih:null, catatan:'',
+        saldo_open:sd||{},
+        saldo_close:{},
       });
     });
 
@@ -2652,7 +2660,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
                 {/* Sub info */}
                 <div style={{fontSize:11,color:'#aaa',display:'flex',gap:12,flexWrap:'wrap'}}>
                   <span>🏪 {s.outletNama}</span>
-                  <span>💳 {s.trx} transaksi</span>
+                  <span>💳 {s.trxCount||s.trx?.length||0} transaksi</span>
                   <span style={{color:'#0d9488'}}>⬇ {fmtRp(s.masuk)}</span>
                   <span style={{color:'#e74c3c'}}>⬆ {fmtRp(s.keluar)}</span>
                 </div>
