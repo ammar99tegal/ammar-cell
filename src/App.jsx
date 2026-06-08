@@ -2555,12 +2555,20 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
 
   return (
     <div>
-      {/* Live bar */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-        <div style={{display:'flex',alignItems:'center',gap:6,background:'#e0faf5',borderRadius:9,padding:'5px 12px',fontSize:11,color:'#0d9488',fontWeight:700}}>
-          🔴 Live · {lastRefresh}
+      {/* Date filter + Live bar */}
+      <div style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:12,border:"2px solid #e0f5f1",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,background:'#e0faf5',borderRadius:9,padding:'5px 12px',fontSize:11,color:'#0d9488',fontWeight:700,flexShrink:0}}>
+          🔴 Live{lastRefresh&&<span style={{opacity:.7}}> · {lastRefresh}</span>}
         </div>
-        <button onClick={loadAll} style={{background:'#f0faf8',border:'2px solid #b2ede6',borderRadius:9,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#0d9488',cursor:'pointer',fontFamily:'inherit'}}>🔄 Refresh</button>
+        <div style={{display:"flex",alignItems:"center",gap:5,background:"#f8fafc",borderRadius:9,padding:"5px 10px",border:"1px solid #e2e8f0"}}>
+          <span style={{fontSize:10,fontWeight:700,color:"#0d9488",flexShrink:0}}>📅</span>
+          <input type="date" id="bankLapFrom" defaultValue={new Date(new Date().setDate(new Date().getDate()-29)).toISOString().split('T')[0]}
+            style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
+          <span style={{color:"#cbd5e1",fontWeight:700}}>—</span>
+          <input type="date" id="bankLapTo" defaultValue={new Date().toISOString().split('T')[0]}
+            style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
+        </div>
+        <button onClick={loadAll} style={{marginLeft:"auto",background:'#f0faf8',border:'2px solid #b2ede6',borderRadius:9,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#0d9488',cursor:'pointer',fontFamily:'inherit'}}>🔄 Refresh</button>
       </div>
       {/* KPI total */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
@@ -2692,6 +2700,32 @@ function LaporanPage({ transactions, outlets, onBack }) {
   const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
   const [refreshTrigger,   setRefreshTrigger]   = useState(0);
   const [freshTransactions,setFreshTransactions] = useState(null); // null = belum load
+  // ── Filter tanggal di Laporan ─────────────────────────────────────────────
+  const [laporanDateFrom, setLaporanDateFrom] = useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split('T')[0];});
+  const [laporanDateTo,   setLaporanDateTo]   = useState(()=>new Date().toISOString().split('T')[0]);
+  const applyLaporanPreset = (k) => {
+    const n=new Date();
+    if(k==='today') {const s=n.toISOString().split('T')[0];setLaporanDateFrom(s);setLaporanDateTo(s);}
+    else if(k==='7d')  {const d=new Date(n);d.setDate(n.getDate()-6); setLaporanDateFrom(d.toISOString().split('T')[0]);setLaporanDateTo(n.toISOString().split('T')[0]);}
+    else if(k==='30d') {const d=new Date(n);d.setDate(n.getDate()-29);setLaporanDateFrom(d.toISOString().split('T')[0]);setLaporanDateTo(n.toISOString().split('T')[0]);}
+    else if(k==='month'){const d=new Date(n.getFullYear(),n.getMonth(),1);setLaporanDateFrom(d.toISOString().split('T')[0]);setLaporanDateTo(n.toISOString().split('T')[0]);}
+  };
+  // Filter groupArr berdasarkan tanggal
+  const isInLaporanRange = (group) => {
+    if(!laporanDateFrom||!laporanDateTo) return true;
+    const from=new Date(laporanDateFrom); from.setHours(0,0,0,0);
+    const to  =new Date(laporanDateTo);   to.setHours(23,59,59,999);
+    // coba ambil tanggal dari shiftLogs atau dari group key
+    const log = shiftLogs[group.key];
+    const dateStr = log?.created_at||log?.start_time||group.key||'';
+    if(!dateStr) return true;
+    let d;
+    try {
+      const parts=String(dateStr).split('/');
+      d = parts.length===3 ? new Date(parts[2],parts[1]-1,parts[0]) : new Date(dateStr);
+    } catch{return true;}
+    return !isNaN(d) && d>=from && d<=to;
+  };
 
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
 
@@ -3424,6 +3458,27 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
       <div style={{padding:"14px 18px",maxWidth:960,margin:"0 auto"}}>
 
+        {/* Date filter bar */}
+        <div style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:10,border:"2px solid #e0f5f1",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#0d9488",flexShrink:0}}>📅 Rentang</span>
+          <div style={{display:"flex",alignItems:"center",gap:5,background:"#f8fafc",borderRadius:9,padding:"5px 10px",border:"1px solid #e2e8f0"}}>
+            <input type="date" value={laporanDateFrom} onChange={e=>setLaporanDateFrom(e.target.value)}
+              style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
+            <span style={{color:"#cbd5e1",fontWeight:700}}>—</span>
+            <input type="date" value={laporanDateTo} onChange={e=>setLaporanDateTo(e.target.value)}
+              style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
+          </div>
+          <div style={{display:"flex",gap:4}}>
+            {[{l:"Hari Ini",k:"today"},{l:"7 Hari",k:"7d"},{l:"30 Hari",k:"30d"},{l:"Bulan Ini",k:"month"}].map(p=>(
+              <button key={p.k} onClick={()=>applyLaporanPreset(p.k)}
+                style={{padding:"5px 10px",borderRadius:9,border:"1px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"background .15s"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#e0faf5"}
+                onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+                {p.l}
+              </button>
+            ))}
+          </div>
+        </div>
         {/* Filter */}
         <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
           <select value={filterOutlet} onChange={e=>setFilterOutlet(e.target.value)}
@@ -3451,7 +3506,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
         {/* ── TAB KASIR ── */}
         {mainTab==="kasir"&&(<>
           {shiftLogsLoading&&<div style={{textAlign:"center",color:"#0d9488",padding:20,fontSize:13,fontWeight:700}}>⏳ Memuat data shift...</div>}
-          {!shiftLogsLoading&&groupArr.map(group=>{
+          {!shiftLogsLoading&&groupArr.filter(isInLaporanRange).map(group=>{
             const saldoCard = getShiftSaldo(group.key);
             const shiftCardInLogs = shiftLogs[group.key];
             const isClosedCard = 
@@ -3466,7 +3521,20 @@ function LaporanPage({ transactions, outlets, onBack }) {
               onMouseLeave={e=>{e.currentTarget.style.borderColor=selisihCard!==null&&selisihCard!==0?"#f39c1255":"#e0f5f1";e.currentTarget.style.boxShadow="none";}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:800,fontSize:14,color:"#1a2e2a"}}>{group.label}</span>
+                    {(()=>{
+                      const log=shiftLogs[group.key];
+                      const raw=log?.created_at||log?.start_time||'';
+                      if(!raw) return null;
+                      try{
+                        const parts=String(raw).split('/');
+                        const d=parts.length===3?new Date(parts[2],parts[1]-1,parts[0]):new Date(raw);
+                        if(isNaN(d)) return null;
+                        return <span style={{fontSize:10,color:"#94a3b8",fontWeight:600,background:"#f1f5f9",padding:"2px 8px",borderRadius:20}}>📅 {d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}</span>;
+                      }catch{return null;}
+                    })()}
+                  </div>
                   <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
                 </div>
                 <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
@@ -5857,56 +5925,82 @@ const getFmStatus = (qty, days) => {
 };
 
 
-function OutletFmPanel({outlet,data,globalMax,selectedProduct}){
+function OutletFmPanel({outlet,data,globalMax,selectedProduct,onHover}){
   const [page,setPage]=useState(1);
-  const PER=8;
-  const pages=Math.ceil((data||[]).length/PER);
+  const PER=8,pages=Math.ceil((data||[]).length/PER);
   const shown=(data||[]).slice((page-1)*PER,page*PER);
+  const topQty=(data||[])[0]?.qty||1;
   return(
-    <div style={{background:"#fff",borderRadius:14,border:`2px solid ${outlet.color}22`,overflow:"hidden",flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
-      <div style={{padding:"8px 12px",background:`linear-gradient(135deg,${outlet.color}15,${outlet.color}05)`,borderBottom:`2px solid ${outlet.color}15`,display:"flex",alignItems:"center",gap:6}}>
-        <div style={{width:8,height:8,borderRadius:"50%",background:outlet.color,flexShrink:0}}/>
-        <span style={{fontWeight:800,fontSize:"clamp(11px,1vw,14px)",color:"#1e293b"}}>{outlet.nama}</span>
-        <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:outlet.color,background:`${outlet.color}12`,padding:"2px 7px",borderRadius:20}}>{data.filter(d=>d.qty>0).length} produk</span>
+    <div style={{background:"#fff",borderRadius:16,border:`2px solid ${outlet.color}18`,overflow:"hidden",flex:1,minWidth:0,boxShadow:`0 4px 16px ${outlet.color}15`,display:"flex",flexDirection:"column"}}>
+      {/* Gradient header */}
+      <div style={{background:`linear-gradient(135deg,${outlet.color},${outlet.color}cc)`,padding:"11px 14px",display:"flex",alignItems:"center",gap:8}}>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:900,fontSize:"clamp(11px,1vw,13px)",color:"#fff"}}>{outlet.nama.replace("Ammar Cell ","")}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{(data||[]).filter(d=>d.qty>0).length} produk · hal {page}/{pages||1}</div>
+        </div>
+        <div style={{background:"rgba(255,255,255,.2)",borderRadius:10,padding:"4px 10px",textAlign:"center"}}>
+          <div style={{fontWeight:900,fontSize:16,color:"#fff"}}>{(data||[]).reduce((s,d)=>s+d.qty,0)}</div>
+          <div style={{fontSize:8,color:"rgba(255,255,255,.7)",fontWeight:600}}>TOTAL PCS</div>
+        </div>
       </div>
-      <div style={{padding:"4px 0"}}>
-        {(data||[]).length===0&&<div style={{textAlign:"center",color:"#cbd5e1",padding:"16px 0",fontSize:10}}>Tidak ada data</div>}
+      {/* List */}
+      <div style={{flex:1,padding:"5px 0"}}>
+        {(data||[]).length===0&&<div style={{textAlign:"center",color:"#cbd5e1",padding:"20px 0",fontSize:10}}>Tidak ada data</div>}
         {shown.map((p,i)=>{
-          const pct=Math.round(p.qty/globalMax*100);
           const hl=selectedProduct===p.name;
           const noSale=p.qty===0;
+          const barW=Math.round(p.qty/topQty*100);
           return(
-            <div key={p.name} style={{padding:"5px 10px",background:hl?`${outlet.color}10`:"transparent",borderLeft:hl?`3px solid ${outlet.color}`:"3px solid transparent",transition:"all .12s"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{width:16,height:16,borderRadius:4,flexShrink:0,background:noSale?"#f1f5f9":i===0?`${outlet.color}20`:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:900,color:noSale?"#cbd5e1":i===0?outlet.color:"#94a3b8"}}>{i+1}</span>
+            <div key={p.name}
+              onMouseEnter={()=>onHover&&onHover(p.name)}
+              onMouseLeave={()=>onHover&&onHover(null)}
+              style={{padding:"6px 12px",cursor:"pointer",transition:"background .1s",
+                background:hl?`${outlet.color}0e`:"transparent",
+                borderLeft:`3px solid ${hl?outlet.color:"transparent"}`}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                <div style={{width:19,height:19,borderRadius:5,flexShrink:0,
+                  background:i===0&&page===1?`${outlet.color}20`:"#f8fafc",
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontWeight:900,fontSize:9,color:i===0&&page===1?outlet.color:"#94a3b8"}}>
+                  {(page-1)*PER+i+1}
+                </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:"clamp(9px,0.85vw,12px)",fontWeight:noSale?400:700,color:noSale?"#cbd5e1":"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}}>{p.name}</div>
-                  <div style={{height:3,background:"#f1f5f9",borderRadius:20,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${pct}%`,borderRadius:20,background:noSale?"#e2e8f0":pct>=70?outlet.color:pct>=35?`${outlet.color}aa`:`${outlet.color}55`,transition:"width .5s ease"}}/>
+                  <div style={{fontSize:"clamp(9px,0.85vw,11px)",fontWeight:hl?800:noSale?400:700,
+                    color:noSale?"#cbd5e1":"#1e293b",
+                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}}>{p.name}</div>
+                  <div style={{height:4,background:"#f1f5f9",borderRadius:20,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${barW}%`,borderRadius:20,
+                      background:noSale?"#e2e8f0":barW>=80?outlet.color:barW>=50?`${outlet.color}bb`:`${outlet.color}77`,
+                      transition:"width .5s ease"}}/>
                   </div>
                 </div>
-                <div style={{flexShrink:0,textAlign:"right",minWidth:30}}>
-                  {noSale?<span style={{fontSize:9,color:"#fca5a5",fontWeight:700}}>—</span>
-                  :<span style={{fontSize:11,fontWeight:900,color:outlet.color}}>{p.qty}<span style={{fontSize:8,opacity:.65}}> pcs</span></span>}
+                <div style={{flexShrink:0,fontWeight:900,fontSize:"clamp(10px,0.95vw,12px)",
+                  color:noSale?"#e2e8f0":outlet.color,minWidth:28,textAlign:"right"}}>
+                  {noSale?"—":p.qty}<span style={{fontSize:8,opacity:.65,fontWeight:600}}>{noSale?"":" pcs"}</span>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
-      {/* Pagination inside panel */}
+      {/* Pagination */}
       {pages>1&&(
-        <div style={{padding:"5px 8px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"center",gap:4,background:"#fafbff",flexShrink:0}}>
+        <div style={{padding:"5px 8px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"center",gap:3,background:"#fafbff",flexShrink:0}}>
           <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}
-            style={{width:22,height:22,borderRadius:6,border:"1px solid #e2e8f0",background:page===1?"#f8fafc":"#fff",color:page===1?"#cbd5e1":outlet.color,fontWeight:900,fontSize:11,cursor:page===1?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
-          {Array.from({length:pages},(_,i)=>i+1).map(p=>(
+            style={{width:22,height:22,borderRadius:6,border:"1px solid #e2e8f0",background:page===1?"#f8fafc":"#fff",color:page===1?"#cbd5e1":outlet.color,fontWeight:900,fontSize:12,cursor:page===1?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
+          {Array.from({length:Math.min(pages,5)},(_,i)=>{
+            if(pages<=5) return i+1;
+            if(page<=3) return i+1;
+            if(page>=pages-2) return pages-4+i;
+            return page-2+i;
+          }).map(p=>(
             <button key={p} onClick={()=>setPage(p)}
-              style={{width:22,height:22,borderRadius:6,border:"1px solid",borderColor:page===p?outlet.color:"#e2e8f0",background:page===p?outlet.color:"#fff",color:page===p?"#fff":"#64748b",fontWeight:700,fontSize:10,cursor:"pointer"}}>
+              style={{width:22,height:22,borderRadius:6,border:"1px solid",borderColor:page===p?outlet.color:"#e2e8f0",background:page===p?outlet.color:"#fff",color:page===p?"#fff":"#64748b",fontWeight:700,fontSize:9,cursor:"pointer"}}>
               {p}
             </button>
           ))}
           <button onClick={()=>setPage(p=>Math.min(pages,p+1))} disabled={page===pages}
-            style={{width:22,height:22,borderRadius:6,border:"1px solid #e2e8f0",background:page===pages?"#f8fafc":"#fff",color:page===pages?"#cbd5e1":outlet.color,fontWeight:900,fontSize:11,cursor:page===pages?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
+            style={{width:22,height:22,borderRadius:6,border:"1px solid #e2e8f0",background:page===pages?"#f8fafc":"#fff",color:page===pages?"#cbd5e1":outlet.color,fontWeight:900,fontSize:12,cursor:page===pages?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
         </div>
       )}
     </div>
@@ -6314,7 +6408,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
           </div>
           <div style={{display:"flex",gap:10}}>
             {OUTLET_LIST.map(o=>(
-              <OutletFmPanel key={o.id} outlet={o} data={fmOutletSplit[o.id]||[]} globalMax={globalMax} selectedProduct={hoveredProduct}/>
+              <OutletFmPanel key={o.id} outlet={o} data={fmOutletSplit[o.id]||[]} globalMax={globalMax} selectedProduct={hoveredProduct} onHover={setHoveredProduct}/>
             ))}
           </div>
           {hoveredProduct&&(()=>{
@@ -6715,7 +6809,7 @@ function AnalisisTab({transactions=[],outlets=[],outletStats=[]}){ // real data 
         {[
           {title:"Kekuatan",icon:"💪",color:"#15803d",bg:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"#bbf7d0",items:["Growth omset Q2 positif","2 outlet aktif berjalan","Margin 7.5% terjaga"]},
           {title:"Perhatikan",icon:"⚠️",color:"#be123c",bg:"linear-gradient(135deg,#fff1f2,#ffe4e6)",border:"#fecdd3",items:["Margin masih di bawah 10%","1 outlet belum aktif","Stok kritis 132 produk"]},
-          {title:"Proyeksi Q3",icon:"🔮",color:"#1d4ed8",bg:"linear-gradient(135deg,#eff6ff,#dbeafe)",border:"#bfdbfe",items:[`Est. Omset: ${fmtRp(Math.round(TOTAL_OMSET*1.15))}`,`Est. Profit: ${fmtRp(Math.round(TOTAL_PROFIT*1.2))}`,"Target Growth: +15%"]},
+          {title:"Proyeksi Q3",icon:"🔮",color:"#1d4ed8",bg:"linear-gradient(135deg,#eff6ff,#dbeafe)",border:"#bfdbfe",items:[`Est. Omset: ${fmtRp(Math.round((curr?.omset||TOTAL_OMSET_REAL)*1.15))}`,`Est. Profit: ${fmtRp(Math.round((curr?.profit||TOTAL_PROFIT_REAL)*1.2))}`,"Target Growth: +15%"]},
         ].map(card=>(
           <div key={card.title} style={{background:card.bg,borderRadius:16,padding:"16px 18px",border:`2px solid ${card.border}`}}>
             <div style={{fontWeight:800,fontSize:12,color:card.color,marginBottom:10,display:"flex",gap:6,alignItems:"center"}}>
@@ -6854,10 +6948,10 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
       {activeTab==="overview"&&(
       <div style={{padding:"16px 20px",maxWidth:1200,margin:"0 auto",animation:"fadeIn .3s ease"}}>
         <div style={{display:"flex",gap:6,marginBottom:14}}>
-          {["Hari Ini","7 Hari","30 Hari","Bulan Ini","Tahun Ini"].map(p=>(
-            <button key={p} style={{padding:"5px 12px",borderRadius:20,border:"2px solid #e2e8f0",background:"#fff",color:"#64748b",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}
+          {[{l:"Hari Ini",k:"today"},{l:"7 Hari",k:"7d"},{l:"30 Hari",k:"30d"},{l:"Bulan Ini",k:"month"},{l:"Tahun Ini",k:"year"}].map(p=>(
+            <button key={p.k} onClick={()=>applyPreset(p.k)} style={{padding:"5px 12px",borderRadius:20,border:"2px solid #e2e8f0",background:"#fff",color:"#64748b",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor="#6366f1";e.currentTarget.style.color="#6366f1";}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#64748b";}}>{p}</button>
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#64748b";}}>{p.l}</button>
           ))}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
