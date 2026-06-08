@@ -7414,13 +7414,12 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const [kirimOk,  setKirimOk]  = useState(false);
 
   // ── Load dari localStorage satu kali saat mount ─────────────────────────
-  const sv = useMemo(()=>{
+  const sv = (()=>{
     try {
       const s = localStorage.getItem(SAVE_KEY);
       return s ? JSON.parse(s) : null;
     } catch { return null; }
-  // eslint-disable-next-line
-  },[]);
+  })();
   const defOutlets = outletNames&&outletNames.length ? outletNames : OUTLETS;
 
   const [pCash, setPCash] = useState(sv?.pCash  || cfMkRows(defOutlets));
