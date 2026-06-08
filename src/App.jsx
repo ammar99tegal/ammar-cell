@@ -2712,19 +2712,33 @@ function LaporanPage({ transactions, outlets, onBack }) {
   };
   // Filter groupArr berdasarkan tanggal
   const isInLaporanRange = (group) => {
+    // Jika filter kosong → tampilkan semua
     if(!laporanDateFrom||!laporanDateTo) return true;
     const from=new Date(laporanDateFrom); from.setHours(0,0,0,0);
     const to  =new Date(laporanDateTo);   to.setHours(23,59,59,999);
-    // coba ambil tanggal dari shiftLogs atau dari group key
     const log = shiftLogs[group.key];
-    const dateStr = log?.created_at||log?.start_time||group.key||'';
-    if(!dateStr) return true;
-    let d;
-    try {
-      const parts=String(dateStr).split('/');
-      d = parts.length===3 ? new Date(parts[2],parts[1]-1,parts[0]) : new Date(dateStr);
-    } catch{return true;}
-    return !isNaN(d) && d>=from && d<=to;
+    // Coba berbagai sumber tanggal
+    const candidates = [
+      log?.created_at, log?.start_time, log?.date,
+      // group.key bisa berupa "shiftId" atau "date/kasir"
+      group.key,
+      // coba dari items transaksi
+      group.items?.[0]?.date,
+    ].filter(Boolean);
+    for(const raw of candidates) {
+      try {
+        const s=String(raw);
+        let d;
+        // format DD/MM/YYYY
+        const slash=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if(slash) d=new Date(slash[3],+slash[2]-1,+slash[1]);
+        // format YYYY-MM-DD or ISO
+        else d=new Date(s);
+        if(!isNaN(d)) return d>=from && d<=to;
+      } catch{}
+    }
+    // Tidak bisa tentukan tanggal → tampilkan saja (jangan sembunyikan)
+    return true;
   };
 
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
