@@ -7413,14 +7413,14 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const [lastSave, setLastSave] = useState(null);
   const [kirimOk,  setKirimOk]  = useState(false);
 
-  // ── Load dari localStorage saat pertama mount ──────────────────────────────
-  const loadSaved = () => {
+  // ── Load dari localStorage satu kali saat mount ─────────────────────────
+  const sv = useMemo(()=>{
     try {
       const s = localStorage.getItem(SAVE_KEY);
       return s ? JSON.parse(s) : null;
     } catch { return null; }
-  };
-  const sv = loadSaved();
+  // eslint-disable-next-line
+  },[]);
   const defOutlets = outletNames&&outletNames.length ? outletNames : OUTLETS;
 
   const [pCash, setPCash] = useState(sv?.pCash  || cfMkRows(defOutlets));
@@ -7433,16 +7433,22 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const [mFisik,setMFisik]= useState(sv?.mFisik || cfMkRows(defOutlets));
 
   // ── Autosave ke localStorage setiap ada perubahan ─────────────────────────
+  const doSave = (data) => {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({...data, savedAt:new Date().toISOString()}));
+      setLastSave(new Date().toLocaleTimeString("id-ID"));
+    } catch(e) { console.warn('autosave error:',e); }
+  };
+
   useEffect(()=>{
     if(saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(()=>{
-      try {
-        const data = {pCash,pBank,pApps,mOut,mBank,mApps,mKel,mFisik,savedAt:new Date().toISOString()};
-        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-        setLastSave(new Date().toLocaleTimeString("id-ID"));
-      } catch(e) { console.warn('autosave error:',e); }
-    }, 600);
-    return ()=>{ if(saveTimer.current) clearTimeout(saveTimer.current); };
+    const data = {pCash,pBank,pApps,mOut,mBank,mApps,mKel,mFisik};
+    saveTimer.current = setTimeout(()=>doSave(data), 500);
+    // Flush langsung saat unmount — jangan cancel timer, langsung save
+    return ()=>{
+      clearTimeout(saveTimer.current);
+      doSave(data); // save sinkron saat komponen hilang
+    };
   },[pCash,pBank,pApps,mOut,mBank,mApps,mKel,mFisik]);
 
   const tPC=cfSumR(pCash),tPB=cfSumR(pBank),tPA=cfSumR(pApps);
