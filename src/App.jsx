@@ -2474,7 +2474,17 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
         fee:r.fee||0, nominal:r.nominal, netNominal:r.net_nominal,
         outletId:r.outlet_id,
       })));
-      setBankShiftData(logsRes.data||[]);
+      // Normalise bank_shift_logs fields
+      setBankShiftData((logsRes.data||[]).map(l=>({
+        ...l,
+        // start_time bisa string waktu, ISO, atau format lain
+        start_time: l.start_time||l.created_at||null,
+        end_time:   l.end_time||null,
+        // selisih ada di saldo_close
+        _selisih:   (l.saldo_close?.selisih)??null,
+        _catatan:   l.saldo_close?.catatan||'',
+        _namaShift: l.saldo_open?.namaShift||l.nama||l.user_id||'Shift',
+      })));
       setActiveShifts(activeRes.data||[]);
       setLastRefresh(new Date().toLocaleTimeString('id-ID'));
     } catch(e){ console.error('LaporanBankList load:', e); }
@@ -2513,23 +2523,25 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
     // Closed shifts dari bank_shift_logs
     bankShiftData.forEach(l=>{
       if(filterOutlet!=='all' && l.outlet_id!==filterOutlet) return;
-      const so=l.saldo_open||{}, sc=l.saldo_close||{};
-      if(sc.disembunyikan) return;
+      if((l.saldo_close||{}).disembunyikan) return;
+      // Coba ambil tanggal dari berbagai field
+      const startRaw = l.start_time||l.created_at||null;
+      if(!inRange(startRaw)) return;
       const trxList = bankTrx.filter(t=>t.shiftId===l.id);
       const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s,t)=>s+(t.netNominal||0),0);
       const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s,t)=>s+Math.abs(t.netNominal||0),0);
       const fee     = trxList.reduce((s,t)=>s+(t.fee||0),0);
-      if(!inRange(l.start_time)) return;
       const outletObj = outlets.find(o=>o.id===l.outlet_id)||{nama:'—'};
       result.push({
         id:l.id, outletId:l.outlet_id, outletNama:outletObj.nama,
-        nama:so.namaShift||l.nama||l.user_id||'Shift',
+        nama:l._namaShift||(l.saldo_open?.namaShift)||l.nama||l.user_id||'Shift',
         userId:l.user_id||'',
-        start_time:l.start_time, end_time:l.end_time||l.created_at,
+        start_time:startRaw,
+        end_time:l.end_time||null,
         status:'closed',
         masuk, keluar, fee, trx:trxList.length,
-        selisih:sc.selisih??null,
-        catatan:sc.catatan||'',
+        selisih:l._selisih??(l.saldo_close?.selisih)??null,
+        catatan:l._catatan||(l.saldo_close?.catatan)||'',
       });
     });
 
@@ -2537,17 +2549,18 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
     activeShifts.forEach(s=>{
       if(filterOutlet!=='all' && s.outlet_id!==filterOutlet) return;
       const sd=s.saldo_data||{};
+      const startRaw = s.start_time||s.created_at||null;
+      // Active shift selalu tampil (tidak difilter tanggal karena sedang berjalan)
       const trxList = bankTrx.filter(t=>t.shiftId===s.id);
       const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s2,t)=>s2+(t.netNominal||0),0);
       const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s2,t)=>s2+Math.abs(t.netNominal||0),0);
       const fee     = trxList.reduce((s2,t)=>s2+(t.fee||0),0);
-      if(!inRange(s.start_time)) return;
       const outletObj = outlets.find(o=>o.id===s.outlet_id)||{nama:'—'};
       result.push({
         id:s.id, outletId:s.outlet_id, outletNama:outletObj.nama,
         nama:sd.namaShift||s.nama||s.user_id||'Shift Aktif',
         userId:s.user_id||'',
-        start_time:s.start_time, end_time:null,
+        start_time:startRaw, end_time:null,
         status:'active',
         masuk, keluar, fee, trx:trxList.length,
         selisih:null, catatan:'',
