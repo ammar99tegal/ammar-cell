@@ -163,9 +163,17 @@ function Modal({ children, onClose, title, width=420 }) {
   );
 }
 
-function SubHeader({ title, onBack, right, badge }) {
+function SubHeader({ title, onBack, right, badge, connDot }) {
   return (
     <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",alignItems:"center",padding:"0 16px",boxShadow:"0 2px 14px rgba(13,148,136,.3)",position:"sticky",top:0,zIndex:100,fontFamily:"'Nunito',sans-serif"}}>
+      {connDot&&connDot!=="online"&&(
+        <div style={{width:10,height:10,borderRadius:"50%",flexShrink:0,cursor:"default",
+          background:connDot==="offline"?"#ef4444":connDot==="reconnecting"?"#f59e0b":"#f59e0b",
+          animation:"pulse-conn 1.2s infinite",
+          boxShadow:connDot==="offline"?"0 0 0 3px #ef444444":"0 0 0 3px #f59e0b44"}}
+          title={connDot==="offline"?"📵 Tidak ada koneksi":connDot==="reconnecting"?"🔄 Menghubungkan...":"⚠ Sinyal bermasalah"}/>
+      )}
+      <style>{`@keyframes pulse-conn{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.6)}}`}</style>
       {onBack&&<button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 13px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",marginRight:12,fontFamily:"inherit"}}>← Kembali</button>}
       <div style={{fontWeight:900,fontSize:15,color:"#fff",marginRight:"auto",display:"flex",alignItems:"center",gap:8}}>{title}{badge&&<span style={{background:"rgba(255,255,255,.2)",borderRadius:20,padding:"2px 10px",fontSize:11}}>{badge}</span>}</div>
       {right&&<div style={{display:"flex",gap:8,alignItems:"center"}}>{right}</div>}
@@ -2753,6 +2761,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
             .select('id,shift_id,outlet_id,total,date,kasir,items')
             .order('created_at',{ascending:false})
             .limit(2000);
+          // Backup transaksi ke localStorage untuk riwayat offline
+          if(txData?.length>0) try{localStorage.setItem('laporan_tx_backup',JSON.stringify(txData.slice(0,100)));}catch{}
           freshTx = (txData||[]).map(t=>({
             id:     t.id,
             shiftId:t.shift_id,
@@ -2797,6 +2807,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
           m[dKey] = m[l.id];
         });
 
+        // Backup shift logs ke localStorage
+        try{localStorage.setItem('laporan_shift_backup',JSON.stringify(Object.keys(m).slice(0,50)));}catch{}
         // Load active shifts (belum ditutup) dari active_shifts
         let activeShifts = [];
         try {
@@ -2868,7 +2880,23 @@ function LaporanPage({ transactions, outlets, onBack }) {
         });
         setBankTrxMap(btm);
 
-      } catch(e){ console.error(e); }
+      } catch(e){
+        console.warn('[Laporan] loadLogs error — fallback localStorage:', e.message||e);
+        // Jangan kosongkan data yang sudah ada — pakai yang terakhir berhasil
+        // freshTx dari localStorage backup
+        try{
+          const backupTx = JSON.parse(localStorage.getItem('laporan_tx_backup')||'[]');
+          if(backupTx.length>0 && freshTransactions===null){
+            const mapped = backupTx.map(t=>({
+              id:t.id, shiftId:t.shift_id||t.shiftId, outletId:t.outlet_id||t.outletId,
+              total:t.total||0, date:t.date, kasir:t.kasir,
+              items:(t.items||[]).map(i=>typeof i==='string'?JSON.parse(i):i),
+            }));
+            setFreshTransactions(mapped);
+            console.log('[Laporan] Loaded', mapped.length, 'trx dari localStorage backup');
+          }
+        }catch{}
+      }
       setShiftLogsLoading(false);
     };
     loadLogs();
@@ -3673,7 +3701,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ══════════════════════════════════════════════════════════════════════════════
 // KASIR APP (per outlet)
 // ══════════════════════════════════════════════════════════════════════════════
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder }) {
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{} }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
@@ -3699,34 +3727,100 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const [refundModal, setRefundModal] = useState(null);
   const [refundReason,setRefundReason]= useState("");
 
+  // ── Periodic shift heartbeat: cek tiap 30 detik (bukan dari DELETE realtime) ─
+  useEffect(()=>{
+    if(!shift?.id) return;
+    const verifyShift = async () => {
+      // Skip jika offline atau sinyal buruk
+      if(!navigator.onLine || connStatus==="offline" || connStatus==="reconnecting") return;
+      try{
+        // Timeout 5 detik agar tidak menggantung
+        const timeoutPromise = new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000));
+        const s = await Promise.race([
+          dbShift.getActiveShift(selectedOutlet, user.username),
+          timeoutPromise
+        ]);
+        if(!s || s.id !== shift.id){
+          console.warn('[ShiftVerify] Shift tidak ditemukan di DB:', shift.id);
+          // Verifikasi GANDA: cek shift_logs
+          const {data:log}=await supabase.from('shift_logs').select('id').eq('id',shift.id)
+            .limit(1).catch(()=>({data:null}));
+          if(log && log.length>0){
+            // Terkonfirmasi sudah tutup — baru null
+            setShiftState(null);
+            try{localStorage.removeItem(shiftKey);}catch{}
+            notify("⚠ Shift telah ditutup dari perangkat lain","warn");
+          }
+          // Jika tidak ada di shift_logs = false alarm, pertahankan shift
+        }
+        // Update localStorage dengan data terbaru
+        if(s) try{localStorage.setItem(shiftKey, JSON.stringify(s));}catch{}
+      }catch(e){
+        // Timeout atau error koneksi — SKIP, jangan null shift
+        console.log('[ShiftVerify] Skip — koneksi bermasalah:', e.message);
+      }
+    };
+    const iv = setInterval(verifyShift, 30000);
+    return ()=>clearInterval(iv);
+  },[shift?.id, selectedOutlet]);
+
   // ── Load shift dari Supabase — cross-check dengan shift_logs ──────────────
   useEffect(()=>{
     setShiftLoading(true);
     const loadShift = async () => {
       try{
-        // Ambil shift aktif dari active_shifts
         const s = await dbShift.getActiveShift(selectedOutlet, user.username);
         if(s){
-          // Verifikasi: cek apakah shift ini sudah ada di shift_logs (sudah ditutup)
+          // Verifikasi: cek apakah shift ini sudah ada di shift_logs
           const { data: logCheck } = await supabase
             .from('shift_logs').select('id').eq('id', s.id).limit(1);
           if(logCheck && logCheck.length > 0){
-            // Shift ini sudah di-close tapi active_shifts belum terhapus — paksa hapus
-            console.warn('Stale active_shift found, cleaning up:', s.id);
+            // Shift sudah ditutup tapi active_shifts belum bersih — hapus
+            console.warn('[Shift] Stale shift ditemukan, membersihkan:', s.id);
             await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
             setShiftState(null);
             try{ localStorage.removeItem(shiftKey); }catch{}
           } else {
-            // Benar-benar aktif
+            // Aktif — simpan juga ke localStorage sebagai backup
             setShiftState(s);
+            try{ localStorage.setItem(shiftKey, JSON.stringify(s)); }catch{}
           }
         } else {
-          setShiftState(null);
-          try{ localStorage.removeItem(shiftKey); }catch{}
+          // Tidak ada shift aktif di DB
+          // Cek localStorage — mungkin shift baru dibuka tapi belum sync
+          const localShift = (() => { try{ const v=localStorage.getItem(shiftKey); return v?JSON.parse(v):null; }catch{return null;} })();
+          if(localShift && navigator.onLine){
+            // Ada di lokal tapi tidak di DB — kemungkinan koneksi putus saat openShift
+            // Coba re-sync ke Supabase
+            console.warn('[Shift] Shift lokal tidak ada di DB, re-sync...');
+            try{
+              await dbShift.openShift({...localShift, id:localShift.id}, selectedOutlet, user.username);
+              setShiftState(localShift);
+              console.log('[Shift] Re-sync berhasil:', localShift.id);
+            }catch(e2){
+              console.warn('[Shift] Re-sync gagal:', e2);
+              setShiftState(localShift); // pakai lokal saja dulu
+            }
+          } else if(localShift && !navigator.onLine){
+            // Offline — pakai shift dari localStorage, jangan null
+            console.log('[Shift] Offline — pakai shift dari localStorage');
+            setShiftState(localShift);
+          } else {
+            setShiftState(null);
+            try{ localStorage.removeItem(shiftKey); }catch{}
+          }
         }
       }catch(e){
-        console.log("Shift load error:", e);
-        setShiftState(null);
+        // ── KRITIS: JANGAN null shift karena error koneksi ──────────────────
+        // Coba fallback ke localStorage
+        console.warn('[Shift] loadShift error — fallback localStorage:', e.message||e);
+        const localShift = (() => { try{ const v=localStorage.getItem(shiftKey); return v?JSON.parse(v):null; }catch{return null;} })();
+        if(localShift){
+          console.log('[Shift] Pakai shift dari localStorage:', localShift.id);
+          setShiftState(localShift); // JANGAN null! pakai lokal
+        }
+        // Jika tidak ada lokal pun, jangan set null — biarkan state sebelumnya
+        // setShiftState(null) DIHAPUS dari sini
       } finally {
         setShiftLoading(false);
       }
@@ -3790,9 +3884,51 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     const cashFinal=cashNum>=total?cashNum:total;
     const trx={id:uid(),time:now(),date:today(),shiftId:shift?.id,shiftNama:shift?.nama,kasir:user.nama,outletId:selectedOutlet,
       items:cart.map(i=>({...i,refunded:false,refundReason:""})),total,cash:cashFinal,kembalian:cashFinal-total};
-    // Simpan ke Supabase dulu, baru update state
-    db.addTransaction(trx).catch(e=>console.error("Gagal simpan transaksi:",e));
+    // ── Offline: simpan ke antrian lokal ──────────────────────────────────
+    if(!navigator.onLine || connStatus==="offline"){
+      try{
+        const qKey=`offline_queue_${selectedOutlet}`;
+        const existing=JSON.parse(localStorage.getItem(qKey)||"[]");
+        localStorage.setItem(qKey, JSON.stringify([...existing,{type:"transaction",data:trx}]));
+      }catch{}
+      setOfflineQueue(prev=>[...prev,{type:"transaction",data:trx}]);
+      setTx(prev=>[trx,...prev]); // tetap tampilkan di UI
+      setCartPersist([]);setCashInput("");setShowPayment(false);
+      notify("📵 Offline — Transaksi tersimpan lokal, dikirim saat online","warn");
+      return;
+    }
+    // Simpan ke localStorage dulu sebagai backup
+    try{
+      const txBackupKey=`trx_backup_${selectedOutlet}`;
+      const existing=JSON.parse(localStorage.getItem(txBackupKey)||"[]");
+      localStorage.setItem(txBackupKey, JSON.stringify([trx,...existing].slice(0,200)));
+    }catch{}
+    // Update UI langsung
     setTx(prev=>[trx,...prev]);
+    // Simpan ke Supabase dengan retry
+    const syncTrx = async (retries=3) => {
+      for(let i=0;i<retries;i++){
+        try{
+          await db.addTransaction(trx);
+          console.log('[Trx] Saved to Supabase:', trx.id);
+          return;
+        }catch(e){
+          console.warn(`[Trx] Sync attempt ${i+1} gagal:`, e.message||e);
+          if(i<retries-1) await new Promise(r=>setTimeout(r,1500*(i+1)));
+        }
+      }
+      // Simpan ke offline queue untuk retry nanti
+      try{
+        const qKey=`offline_queue_${selectedOutlet}`;
+        const existing=JSON.parse(localStorage.getItem(qKey)||"[]");
+        if(!existing.find(x=>x.data?.id===trx.id)){
+          localStorage.setItem(qKey, JSON.stringify([...existing,{type:"transaction",data:trx}]));
+        }
+      }catch{}
+      setOfflineQueue(prev=>prev.find(x=>x.data?.id===trx.id)?prev:[...prev,{type:"transaction",data:trx}]);
+      notify("⚠ Koneksi lemah — transaksi tersimpan, akan sync otomatis","warn");
+    };
+    syncTrx();
     setStocks(prev=>{
       const s={...prev,[selectedOutlet]:{...prev[selectedOutlet]}};
       cart.forEach(i=>{if(!i.isManual) s[selectedOutlet][i.id]=Math.max(0,(s[selectedOutlet][i.id]||0)-i.qty);});
@@ -3814,30 +3950,50 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     notify("Item direfund","ok");setRefundModal(null);setRefundReason("");
   };
 
-  const openShift =data=>{
+  const openShift = async (data) => {
     const s={id:uid(),nama:data.namaShift,start:now(),...data};
-    setShift(s);
-    // Simpan ke Supabase dengan data saldo lengkap
     const saldoData = {
+      namaShift: data.namaShift,
       saldoApps: data.saldoApps||{},
       cashKembalian: data.cashKembalian||0,
+      cashKemb: data.cashKembalian||0,
       totalSaldoApps: data.totalSaldoApps||0,
       waktuBuka: now(),
     };
-    dbShift.openShift({...s, saldo_data: saldoData}, selectedOutlet, user.username).catch(()=>{});
-    // Juga simpan ke localStorage sebagai backup
-    try{
-      localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({
-        type:"open", namaShift:data.namaShift, waktuBuka:now(),
-        saldoApps:data.saldoApps||{}, cashKembalian:data.cashKembalian||0,
-        totalSaldoApps:data.totalSaldoApps||0,
-      }));
-    }catch{}
+    // ── Simpan ke localStorage DULU (sebelum Supabase) ──────────────────
+    // Jadi kalau koneksi putus, shift tetap ada
+    try{ localStorage.setItem(shiftKey, JSON.stringify(s)); }catch{}
+    try{ localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({type:"open",...saldoData})); }catch{}
+    
+    // Set state UI dulu — tidak perlu tunggu Supabase
+    setShift(s);
     setShowShift(false);
     notify("Shift dibuka!","ok");
+    
+    // Simpan ke Supabase (async, dengan retry)
+    const syncToSupabase = async (retries=3) => {
+      for(let i=0;i<retries;i++){
+        try{
+          await dbShift.openShift({...s, saldo_data: saldoData}, selectedOutlet, user.username);
+          console.log('[Shift] openShift synced ke Supabase:', s.id);
+          return;
+        }catch(e){
+          console.warn(`[Shift] openShift sync attempt ${i+1} gagal:`, e.message||e);
+          if(i<retries-1) await new Promise(r=>setTimeout(r,2000*(i+1)));
+        }
+      }
+      // Semua retry gagal — shift tetap ada di lokal, akan sync saat koneksi balik
+      notify("⚠ Shift tersimpan lokal, belum sync ke server","warn");
+    };
+    syncToSupabase();
   };
 
   const closeShift = async (data) => {
+    // ── Guard: jangan tutup shift saat offline ─────────────────────────────
+    if(!navigator.onLine || connStatus==="offline"){
+      notify("📵 Tidak bisa tutup shift — tidak ada koneksi internet. Pastikan tersambung dulu.","err");
+      return;
+    }
     const closeData={...data, waktuTutup:now()};
     const shiftRef = shift; // simpan referensi SEBELUM di-null
 
@@ -3896,6 +4052,16 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           <div style={{fontWeight:900,fontSize:14,color:"#fff",lineHeight:1.1}}>{outlet?.nama||"Kasir"}</div>
           <div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>{user.nama}</div>
         </div>
+        {/* ── Conn dot — satu-satunya tambahan visual ── */}
+        {(()=>{
+          const dc=connStatus==="offline"?"#f87171":connStatus==="online"?"#4ade80":"#fbbf24";
+          const dp=connStatus!=="online";
+          return(<div title={connStatus==="offline"?"📵 Tidak ada koneksi":connStatus==="reconnecting"?"🔄 Menghubungkan...":connStatus==="slow"?"⚠ Koneksi lambat":connStatus==="warn"?"⚡ Sinyal lemah":"🟢 Online"}
+            style={{width:9,height:9,borderRadius:"50%",background:dc,marginRight:8,flexShrink:0,
+              boxShadow:`0 0 0 3px ${dc}44`,
+              animation:dp?"kdot 1.2s ease-in-out infinite":"none",cursor:"default"}}/>);
+        })()}
+        <style>{`@keyframes kdot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.45)}}`}</style>
         {/* Pilih outlet (hanya admin) */}
         {user.role==="admin"&&(
           <select value={selectedOutlet} onChange={e=>{setSelectedOutlet(e.target.value);setCartPersist([]);}}
@@ -8452,6 +8618,41 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   );
 }
 
+// ── Connection Status Bar ─────────────────────────────────────────────────────
+function ConnStatusBar({ status, lastPing, offlineQueue }) {
+  if(status==="online") return null; // Tidak tampil saat normal
+
+  const cfg = {
+    offline:      { bg:"#dc2626", icon:"📵", text:"Tidak Ada Koneksi — Transaksi tersimpan lokal, akan dikirim saat online",  pulse:true  },
+    reconnecting: { bg:"#d97706", icon:"🔄", text:"Menghubungkan kembali...",                                                  pulse:true  },
+    slow:         { bg:"#b45309", icon:"⚠️",  text:`Koneksi Lambat (${lastPing||"..."}ms) — Data mungkin tertunda`,          pulse:false },
+    warn:         { bg:"#ca8a04", icon:"⚡",  text:`Sinyal Lemah (${lastPing||"..."}ms)`,                                      pulse:false },
+  }[status]||{ bg:"#dc2626", icon:"📵", text:"Koneksi Bermasalah", pulse:true };
+
+  return (
+    <div style={{
+      position:"fixed", top:0, left:0, right:0, zIndex:99999,
+      background:cfg.bg, padding:"7px 16px",
+      display:"flex", alignItems:"center", gap:10,
+      boxShadow:"0 3px 12px rgba(0,0,0,.3)",
+      animation: cfg.pulse?"pulse-bar 1.5s infinite":"none",
+    }}>
+      <style>{`@keyframes pulse-bar{0%,100%{opacity:1}50%{opacity:.75}}`}</style>
+      <span style={{fontSize:16}}>{cfg.icon}</span>
+      <span style={{fontWeight:700, fontSize:12, color:"#fff", flex:1}}>{cfg.text}</span>
+      {offlineQueue?.length>0&&(
+        <span style={{background:"rgba(255,255,255,.2)", borderRadius:20, padding:"2px 10px",
+          fontSize:11, fontWeight:800, color:"#fff"}}>
+          {offlineQueue.length} antrian
+        </span>
+      )}
+      {lastPing&&status==="slow"&&(
+        <span style={{fontSize:10, color:"rgba(255,255,255,.7)"}}>{lastPing}ms</span>
+      )}
+    </div>
+  );
+}
+
 function PulseDotM({color="#27ae60",size=8}){
   return(
     <span style={{position:"relative",display:"inline-flex",alignItems:"center",justifyContent:"center",width:size+6,height:size+6}}>
@@ -8925,6 +9126,9 @@ export default function App() {
   const [prodOrder,      setProdOrderRoot]   = useState(null); // urutan global produk
   const [aktifProdsRoot, setAktifProdsRoot]  = useState({});   // produk aktif per outlet
   const [allBankTrx,     setAllBankTrx]      = useState([]);   // semua bank transactions
+  const [connStatus,     setConnStatus]      = useState("online");  // online|offline|reconnecting
+  const [offlineQueue,   setOfflineQueue]    = useState([]);  // transaksi antrian saat offline
+  const [lastPing,       setLastPing]        = useState(null);
 
   // Simpan user ke localStorage setiap kali berubah
   const setUser = (u) => {
@@ -9017,32 +9221,112 @@ export default function App() {
   },[]);
 
   // ── Auto reload saat app kembali ke foreground (tab aktif lagi) ──────────
+  // ── Connection monitor: ping Supabase tiap 10 detik ─────────────────────
   useEffect(()=>{
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        reloadData();
+    let wasOffline = false;
+
+    const checkConn = async () => {
+      if(!navigator.onLine){
+        setConnStatus("offline");
+        wasOffline = true;
+        return;
+      }
+      try{
+        // Ping ringan ke Supabase
+        const t0=Date.now();
+        await supabase.from('active_shifts').select('id').limit(1);
+        const ms=Date.now()-t0;
+        setLastPing(ms);
+        if(wasOffline){
+          setConnStatus("reconnecting");
+          setTimeout(async()=>{
+            // Flush offline queue DULU sebelum reload
+            setOfflineQueue(prev=>{
+              if(prev.length>0){
+                flushOfflineQueue(prev).then(ok=>{
+                  // Setelah flush, reload data agar admin lihat data terbaru
+                  reloadData();
+                });
+              } else {
+                reloadData();
+              }
+              return [];
+            });
+            setConnStatus("online");
+          },1500);
+          wasOffline=false;
+        } else {
+          setConnStatus(ms>3000?"slow":ms>1500?"warn":"online");
+        }
+      }catch(e){
+        setConnStatus("offline");
+        wasOffline=true;
       }
     };
+
+    const pingIv = setInterval(checkConn, 10000);
+    checkConn();
+
+    const onOnline = () => {
+      setConnStatus("reconnecting");
+      wasOffline=true;
+      setTimeout(checkConn, 1500);
+    };
+    const onOffline = () => {
+      setConnStatus("offline");
+      wasOffline=true;
+    };
+    const onVisible = () => {
+      if(document.visibilityState==='visible'){ checkConn(); reloadData(); }
+    };
+
+    // Reload data setiap 90 detik sebagai fallback realtime putus
+    const reloadIv = setInterval(()=>{
+      if(document.visibilityState==='visible'&&navigator.onLine) reloadData();
+    }, 90000);
+
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVisible);
 
-    // Reload data setiap 60 detik sebagai fallback jika realtime putus
-    const iv = setInterval(()=>{
-      if(document.visibilityState==='visible') reloadData();
-    }, 60000);
-
-    // ── Online/offline detection — tablet sering putus wifi ────────────────
-    const onOnline = () => {
-      console.log('🟢 Koneksi kembali — reload data...');
-      setTimeout(()=>reloadData(), 1000); // delay 1 detik biar koneksi stabil dulu
-    };
-    window.addEventListener('online', onOnline);
-
     return () => {
-      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(pingIv);
+      clearInterval(reloadIv);
       window.removeEventListener('online', onOnline);
-      clearInterval(iv);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   },[]);
+
+  // ── Flush offline queue setelah kembali online ───────────────────────────
+  const flushOfflineQueue = async (queue) => {
+    if(!queue?.length) return;
+    console.log('[OfflineQueue] Memproses', queue.length, 'item...');
+    const succeeded = [];
+    for(const item of queue){
+      try{
+        if(item.type==='transaction'){
+          await db.addTransaction(item.data);
+          console.log('[OfflineQueue] ✓ Transaksi disimpan:', item.data.id);
+          succeeded.push(item);
+          // Hapus dari backup localStorage
+          try{
+            const qKey=`offline_queue_${item.data.outletId}`;
+            const remaining=JSON.parse(localStorage.getItem(qKey)||'[]').filter(x=>x.data?.id!==item.data.id);
+            localStorage.setItem(qKey, JSON.stringify(remaining));
+          }catch{}
+        } else if(item.type==='stock'){
+          await db.updateStock(item.productId, item.outletId, item.newQty);
+          succeeded.push(item);
+        }
+      }catch(e){ console.warn('[OfflineQueue] Gagal flush item:', e.message||e); }
+    }
+    if(succeeded.length>0){
+      console.log('[OfflineQueue] Berhasil sync', succeeded.length, 'dari', queue.length);
+      notify(`✅ ${succeeded.length} transaksi berhasil dikirim ke server`, "ok");
+    }
+    return succeeded;
+  };
 
   // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
   const reloadData = async () => {
@@ -9055,6 +9339,16 @@ export default function App() {
       ]);
       setProductsState(prods);
       setOutletsState(outs);
+      try{ localStorage.setItem('ammar_outlets', JSON.stringify(outs.map(o=>({id:o.id,nama:o.nama})))); }catch{}
+      // Restore offline queue saat app startup
+      try{
+        const allQ=[];
+        outs.forEach(o=>{
+          const q=JSON.parse(localStorage.getItem(`offline_queue_${o.id}`)||'[]');
+          allQ.push(...q);
+        });
+        if(allQ.length>0){ setOfflineQueue(allQ); console.log('[OfflineQueue] Restored',allQ.length,'item'); }
+      }catch{}
       setStocksState(stks);
       if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
       if(Object.keys(aktifMap).length>0) setAktifProdsRoot(aktifMap);
@@ -9417,6 +9711,7 @@ export default function App() {
     <div style={{fontFamily:"'Nunito',sans-serif"}}>
       <style>{css}</style>
       <Toast toast={toast}/>
+      <ConnStatusBar status={connStatus} lastPing={lastPing} offlineQueue={offlineQueue}/>
 
       {/* Portrait warning untuk HP */}
       <div className="portrait-warn">
@@ -9431,7 +9726,7 @@ export default function App() {
       </div>
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
-      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder}/>}
+      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
