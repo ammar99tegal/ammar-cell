@@ -2453,21 +2453,19 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
 
 
 // ── Laporan Bank List (realtime) — per outlet + per shift accordion ─────────
-function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filterOutlet, onSelectShift }) {
+function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filterOutlet, dateFrom, dateTo, onSelectShift }) {
   const [bankTrx,       setBankTrx]       = useState([]);
-  const [bankShiftData, setBankShiftData] = useState([]); // dari bank_shift_logs
-  const [activeShifts,  setActiveShifts]  = useState([]); // dari bank_shifts
+  const [bankShiftData, setBankShiftData] = useState([]);
+  const [activeShifts,  setActiveShifts]  = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [lastRefresh,   setLastRefresh]   = useState(null);
-  const [expandedOutlet,setExpandedOutlet]= useState({});
   const [selShift,      setSelShift]      = useState(null);
 
-  // ── Load semua data bank ──────────────────────────────────────────────────
   const loadAll = async () => {
     try {
       const [trxRes, logsRes, activeRes] = await Promise.all([
         supabase.from('bank_transactions').select('*').order('created_at',{ascending:false}).limit(2000),
-        supabase.from('bank_shift_logs').select('*').order('created_at',{ascending:false}).limit(200),
+        supabase.from('bank_shift_logs').select('*').order('created_at',{ascending:false}).limit(300),
         supabase.from('bank_shifts').select('*'),
       ]);
       setBankTrx((trxRes.data||[]).map(r=>({
@@ -2479,14 +2477,14 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
       setBankShiftData(logsRes.data||[]);
       setActiveShifts(activeRes.data||[]);
       setLastRefresh(new Date().toLocaleTimeString('id-ID'));
-    } catch(e){ console.error('loadAll bank:', e); }
+    } catch(e){ console.error('LaporanBankList load:', e); }
     setLoading(false);
   };
 
   useEffect(()=>{
     loadAll();
-    const iv = setInterval(loadAll, 8000);
-    const ch = supabase.channel('laporan-bank-rt-v3')
+    const iv = setInterval(loadAll, 10000);
+    const ch = supabase.channel('laporan-bank-rt-v4')
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},()=>loadAll())
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shift_logs'},()=>loadAll())
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},()=>loadAll())
@@ -2494,190 +2492,179 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
     return()=>{ clearInterval(iv); supabase.removeChannel(ch); };
   },[]);
 
+  // Build shift list dari closed + active
+  // Parse date range
+  const parseDate = s => { try{ const d=new Date(s); return isNaN(d)?null:d; }catch{return null;} };
+  const filterFrom = dateFrom ? new Date(dateFrom) : null;
+  const filterTo   = dateTo   ? new Date(dateTo)   : null;
+  if(filterFrom) filterFrom.setHours(0,0,0,0);
+  if(filterTo)   filterTo.setHours(23,59,59,999);
+  const inRange = (startTime) => {
+    if(!filterFrom||!filterTo) return true;
+    const d = parseDate(startTime);
+    return d && d>=filterFrom && d<=filterTo;
+  };
 
+  const buildShifts = () => {
+    const result = [];
 
-  // ── Build outlet → shift → trx structure ─────────────────────────────────
-  const filteredTrx = filterOutlet==='all' ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
-  const filteredOutlets = filterOutlet==='all' ? outlets : outlets.filter(o=>o.id===filterOutlet);
-
-  // Gabung closed shifts + active shifts per outlet
-  const buildShifts = (outletId) => {
-    const closed = bankShiftData
-      .filter(l=>l.outlet_id===outletId && !l.saldo_close?.disembunyikan && !l.saldo_close?.digabung)
-      .map(l=>{
-        const so=l.saldo_open||{}, sc=l.saldo_close||{};
-        const nm = so.namaShift||l.nama||l.user_id||'Shift';
-        const trxList = filteredTrx.filter(t=>t.shiftId===l.id);
-        return { id:l.id, nama:nm, userId:l.user_id||'', outletId,
-          start_time:l.start_time, end_time:l.end_time||l.created_at,
-          status:'closed', saldo_open:{
-              cashKemb:  so.cashKemb||so.cashKembalian||0,
-              saldoApps: so.saldoApps||so.saldo_apps||{},
-              namaShift: so.namaShift||'',
-            }, saldo_close:{
-            uangLaci:sc.uangLaci||sc.uang_laci||0,
-            uangSistem:sc.uangSistem||sc.uang_sistem||0,
-            selisih:sc.selisih??null, catatan:sc.catatan||'',
-            saldoAppsAkhir:sc.saldoAppsC||sc.saldoAppsAkhir||sc.saldo_apps_akhir||sc.saldo_close_apps||{},
-          }, trx:trxList };
+    // Closed shifts dari bank_shift_logs
+    bankShiftData.forEach(l=>{
+      if(filterOutlet!=='all' && l.outlet_id!==filterOutlet) return;
+      const so=l.saldo_open||{}, sc=l.saldo_close||{};
+      if(sc.disembunyikan) return;
+      const trxList = bankTrx.filter(t=>t.shiftId===l.id);
+      const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s,t)=>s+(t.netNominal||0),0);
+      const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s,t)=>s+Math.abs(t.netNominal||0),0);
+      const fee     = trxList.reduce((s,t)=>s+(t.fee||0),0);
+      if(!inRange(l.start_time)) return;
+      const outletObj = outlets.find(o=>o.id===l.outlet_id)||{nama:'—'};
+      result.push({
+        id:l.id, outletId:l.outlet_id, outletNama:outletObj.nama,
+        nama:so.namaShift||l.nama||l.user_id||'Shift',
+        userId:l.user_id||'',
+        start_time:l.start_time, end_time:l.end_time||l.created_at,
+        status:'closed',
+        masuk, keluar, fee, trx:trxList.length,
+        selisih:sc.selisih??null,
+        catatan:sc.catatan||'',
       });
-    const active = activeShifts
-      .filter(s=>s.outlet_id===outletId)
-      .map(s=>{
-        const sd=s.saldo_data||{};
-        const trxList = filteredTrx.filter(t=>t.shiftId===s.id);
-        return { id:s.id, nama:sd.namaShift||s.nama||s.user_id||'Shift Aktif',
-          userId:s.user_id||'', outletId,
-          start_time:s.start_time, end_time:null, status:'active',
-          saldo_open:sd, saldo_close:{}, trx:trxList };
+    });
+
+    // Active shifts dari bank_shifts
+    activeShifts.forEach(s=>{
+      if(filterOutlet!=='all' && s.outlet_id!==filterOutlet) return;
+      const sd=s.saldo_data||{};
+      const trxList = bankTrx.filter(t=>t.shiftId===s.id);
+      const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s2,t)=>s2+(t.netNominal||0),0);
+      const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s2,t)=>s2+Math.abs(t.netNominal||0),0);
+      const fee     = trxList.reduce((s2,t)=>s2+(t.fee||0),0);
+      if(!inRange(s.start_time)) return;
+      const outletObj = outlets.find(o=>o.id===s.outlet_id)||{nama:'—'};
+      result.push({
+        id:s.id, outletId:s.outlet_id, outletNama:outletObj.nama,
+        nama:sd.namaShift||s.nama||s.user_id||'Shift Aktif',
+        userId:s.user_id||'',
+        start_time:s.start_time, end_time:null,
+        status:'active',
+        masuk, keluar, fee, trx:trxList.length,
+        selisih:null, catatan:'',
       });
-    return [...active, ...closed].sort((a,b)=>{
+    });
+
+    return result.sort((a,b)=>{
       const ta=a.start_time?new Date(a.start_time):new Date(0);
       const tb=b.start_time?new Date(b.start_time):new Date(0);
       return tb-ta;
     });
   };
 
-  // Hitung totals per outlet dari bankTrx (include unassigned trx)
-  const outletTotals = {};
-  filteredTrx.forEach(t=>{
-    if(!outletTotals[t.outletId]) outletTotals[t.outletId]={masuk:0,keluar:0,fee:0,count:0};
-    if(t.netNominal>0) outletTotals[t.outletId].masuk+=t.netNominal;
-    else outletTotals[t.outletId].keluar+=Math.abs(t.netNominal);
-    outletTotals[t.outletId].fee+=t.fee||0;
-    outletTotals[t.outletId].count++;
-  });
+  const shifts = buildShifts();
 
-  if(loading) return <div style={{textAlign:'center',padding:32,color:'#aaa',fontSize:13}}>⏳ Memuat data bank...</div>;
-
-  const allMasuk  = filteredTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
-  const allKeluar = filteredTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
+  if(loading) return <div style={{textAlign:'center',padding:32,color:'#0d9488',fontSize:13,fontWeight:700}}>⏳ Memuat data bank...</div>;
 
   return (
     <div>
-      {/* Date filter + Live bar */}
-      <div style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:12,border:"2px solid #e0f5f1",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{display:'flex',alignItems:'center',gap:6,background:'#e0faf5',borderRadius:9,padding:'5px 12px',fontSize:11,color:'#0d9488',fontWeight:700,flexShrink:0}}>
+      {/* Filter bar — Live + Refresh */}
+      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,background:'#e0faf5',borderRadius:9,padding:'5px 12px',fontSize:11,color:'#0d9488',fontWeight:700}}>
           🔴 Live{lastRefresh&&<span style={{opacity:.7}}> · {lastRefresh}</span>}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:5,background:"#f8fafc",borderRadius:9,padding:"5px 10px",border:"1px solid #e2e8f0"}}>
-          <span style={{fontSize:10,fontWeight:700,color:"#0d9488",flexShrink:0}}>📅</span>
-          <input type="date" id="bankLapFrom" defaultValue={new Date(new Date().setDate(new Date().getDate()-29)).toISOString().split('T')[0]}
-            style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
-          <span style={{color:"#cbd5e1",fontWeight:700}}>—</span>
-          <input type="date" id="bankLapTo" defaultValue={new Date().toISOString().split('T')[0]}
-            style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
+        <span style={{fontSize:11,color:'#94a3b8',fontWeight:600}}>{shifts.length} shift</span>
+        <button onClick={loadAll} style={{marginLeft:'auto',background:'#f0faf8',border:'2px solid #b2ede6',borderRadius:9,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#0d9488',cursor:'pointer',fontFamily:'inherit'}}>🔄 Refresh</button>
+      </div>
+
+      {/* Empty */}
+      {shifts.length===0&&(
+        <div style={{textAlign:'center',padding:40,color:'#94a3b8'}}>
+          <div style={{fontSize:36,marginBottom:8}}>📭</div>
+          <div style={{fontWeight:700,fontSize:14}}>Tidak ada shift dalam rentang ini</div>
+          <div style={{fontSize:11,marginTop:4}}>Coba ubah rentang tanggal atau filter outlet</div>
         </div>
-        <button onClick={loadAll} style={{marginLeft:"auto",background:'#f0faf8',border:'2px solid #b2ede6',borderRadius:9,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#0d9488',cursor:'pointer',fontFamily:'inherit'}}>🔄 Refresh</button>
-      </div>
-      {/* KPI total */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
-        {[
-          {l:'Total Masuk',  v:allMasuk,  c:'#27ae60',bg:'#e8f8f0'},
-          {l:'Total Keluar', v:allKeluar, c:'#e74c3c', bg:'#fff0f0'},
-          {l:'Transaksi',    v:filteredTrx.length, c:'#0d9488',bg:'#e0faf5',raw:true},
-        ].map(k=>(
-          <div key={k.l} style={{background:k.bg,borderRadius:12,padding:'12px 15px'}}>
-            <div style={{fontWeight:900,fontSize:18,color:k.c}}>{k.raw?k.v:fmtRp(k.v)}</div>
-            <div style={{fontSize:11,color:k.c,fontWeight:700,opacity:.8,marginTop:2}}>{k.l}</div>
-          </div>
-        ))}
-      </div>
+      )}
 
-      {/* Hint */}
-      <div style={{background:'#f0fdfb',borderRadius:10,padding:'7px 13px',marginBottom:12,fontSize:11,color:'#0d9488',fontWeight:600,border:'1px solid #b2f5ea'}}>
-        💡 Klik kartu outlet untuk melihat daftar shift · Klik shift untuk detail lengkap
-      </div>
+      {/* Shift cards — identik layout dengan Laporan Kasir */}
+      {shifts.map(s=>{
+        const startDate = s.start_time ? new Date(s.start_time) : null;
+        const isActive  = s.status==='active';
+        const hasIssue  = s.selisih!==null && s.selisih!==0;
+        const saldo     = s.masuk - s.keluar;
+        const dateLabel = startDate&&!isNaN(startDate) ?
+          startDate.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) : '';
 
-      {/* Outlet cards */}
-      {filteredOutlets.length===0&&<div style={{textAlign:'center',color:'#ccc',padding:32}}>Belum ada data</div>}
-      {filteredOutlets.map(outlet=>{
-        const ot = outletTotals[outlet.id]||{masuk:0,keluar:0,fee:0,count:0};
-        const shifts = buildShifts(outlet.id);
-        const hasActive = shifts.some(s=>s.status==='active');
-        const hasIssue  = shifts.some(s=>s.saldo_close?.selisih!=null&&s.saldo_close.selisih!==0);
-        const isOpen = expandedOutlet[outlet.id];
-        const borderC = hasIssue?'#fca5a5':hasActive?'#a3e9c8':'#e0f5f1';
-        return (
-          <div key={outlet.id} style={{background:'#fff',borderRadius:14,marginBottom:10,overflow:'hidden',border:`2px solid ${borderC}`,boxShadow:'0 2px 12px rgba(0,0,0,.04)'}}>
-            {/* Outlet header */}
-            <div style={{padding:'14px 16px',cursor:'pointer',userSelect:'none'}}
-              onClick={()=>setExpandedOutlet(p=>({...p,[outlet.id]:!p[outlet.id]}))}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div style={{flex:1}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                    <span style={{fontWeight:800,fontSize:15,color:'#1a2e2a'}}>{outlet.nama}</span>
-                    {hasActive&&<span style={{fontSize:10,fontWeight:700,color:'#16a34a',background:'#e8f8f4',padding:'2px 9px',borderRadius:20,border:'1px solid #a3e9c8'}}>🟢 Ada Shift Aktif</span>}
-                    {hasIssue&&<span style={{fontSize:10,fontWeight:700,color:'#dc2626',background:'#fff0f0',padding:'2px 9px',borderRadius:20,border:'1px solid #fca5a5'}}>⚠ Ada Selisih</span>}
+        return(
+        <div key={s.id}
+          onClick={()=>setSelShift(s)}
+          style={{background:'#fff',borderRadius:13,padding:'13px 16px',marginBottom:10,
+            border:`2px solid ${hasIssue?'#fca5a522':'#e0f5f1'}`,
+            cursor:'pointer',transition:'all .2s',boxShadow:'0 2px 8px rgba(0,0,0,.04)'}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor='#0d9488';e.currentTarget.style.boxShadow='0 2px 12px rgba(13,148,136,.12)';}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=hasIssue?'#fca5a522':'#e0f5f1';e.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,.04)';}}>
+
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{display:'flex',alignItems:'flex-start',gap:12,flex:1,minWidth:0}}>
+
+              {/* Date badge — identik dengan kasir */}
+              {startDate&&!isNaN(startDate)&&(
+                <div style={{background:isActive?'#e0faf5':'#f8fafc',
+                  borderRadius:10,padding:'8px 10px',textAlign:'center',flexShrink:0,
+                  border:`1px solid ${isActive?'#b2f5ea':'#e2e8f0'}`,minWidth:52}}>
+                  <div style={{fontWeight:900,fontSize:22,color:isActive?'#0d9488':'#1e293b',lineHeight:1}}>
+                    {startDate.getDate().toString().padStart(2,'0')}
                   </div>
-                  <div style={{fontSize:11,color:'#aaa',marginTop:3}}>{shifts.length} shift · {ot.count} transaksi</div>
-                  <div style={{display:'flex',gap:10,marginTop:5,fontSize:12,fontWeight:700}}>
-                    <span style={{color:'#0d9488'}}>+{fmtRp(ot.masuk)}</span>
-                    <span style={{color:'#e74c3c'}}>-{fmtRp(ot.keluar)}</span>
-                    <span style={{color:(ot.masuk-ot.keluar)>=0?'#16a34a':'#dc2626',fontWeight:800}}>={fmtRp(Math.abs(ot.masuk-ot.keluar))}</span>
+                  <div style={{fontSize:9,fontWeight:700,color:'#94a3b8',marginTop:1}}>
+                    {['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'][startDate.getMonth()]}
                   </div>
+                  <div style={{fontSize:8,color:'#cbd5e1',fontWeight:600}}>{startDate.getFullYear()}</div>
                 </div>
-                <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontWeight:900,fontSize:16,color:'#0d9488'}}>{fmtRp(ot.masuk-ot.keluar)}</div>
-                    <div style={{fontSize:10,color:'#aaa'}}>saldo bersih</div>
-                  </div>
-                  <div style={{color:'#ccc',fontSize:22,transition:'transform .2s',transform:isOpen?'rotate(180deg)':'none'}}>▾</div>
+              )}
+
+              <div style={{flex:1,minWidth:0}}>
+                {/* Nama + badges */}
+                <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginBottom:4}}>
+                  <span style={{fontWeight:800,fontSize:14,color:'#1a2e2a'}}>{s.nama}</span>
+                  {dateLabel&&<span style={{fontSize:10,color:'#94a3b8',fontWeight:600,background:'#f1f5f9',padding:'2px 8px',borderRadius:20}}>📅 {dateLabel}</span>}
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                    background:isActive?'#e0faf5':'#f1f5f9',
+                    color:isActive?'#0d9488':'#64748b',
+                    border:`1px solid ${isActive?'#a3e9c8':'#e2e8f0'}`}}>
+                    {isActive?'🟢 Aktif':'⚫ Tutup'}
+                  </span>
+                  {!isActive&&s.selisih===0&&<span style={{fontSize:10,fontWeight:700,color:'#16a34a',background:'#ecfdf5',padding:'2px 8px',borderRadius:20}}>✅ Balance</span>}
+                  {!isActive&&s.selisih!==null&&s.selisih>0&&<span style={{fontSize:10,fontWeight:700,color:'#ca8a04',background:'#fffbeb',padding:'2px 8px',borderRadius:20}}>📈 +{fmtRp(s.selisih)}</span>}
+                  {!isActive&&s.selisih!==null&&s.selisih<0&&<span style={{fontSize:10,fontWeight:700,color:'#dc2626',background:'#fff1f2',padding:'2px 8px',borderRadius:20}}>📉 -{fmtRp(Math.abs(s.selisih))}</span>}
                 </div>
+                {/* Sub info */}
+                <div style={{fontSize:11,color:'#aaa',display:'flex',gap:12,flexWrap:'wrap'}}>
+                  <span>🏪 {s.outletNama}</span>
+                  <span>💳 {s.trx} transaksi</span>
+                  <span style={{color:'#0d9488'}}>⬇ {fmtRp(s.masuk)}</span>
+                  <span style={{color:'#e74c3c'}}>⬆ {fmtRp(s.keluar)}</span>
+                </div>
+                {s.catatan&&(
+                  <div style={{marginTop:5,fontSize:10,color:'#b7770d',background:'#fffbe6',
+                    borderRadius:6,padding:'2px 8px',border:'1px solid #fde68a',display:'inline-block'}}>
+                    📝 {s.catatan.substring(0,50)}{s.catatan.length>50?'...':''}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Shift list */}
-            {isOpen&&(
-              <div style={{borderTop:'2px solid #e0f5f1'}}>
-                {shifts.length===0&&<div style={{textAlign:'center',color:'#ccc',padding:20,fontSize:12}}>Belum ada shift tercatat</div>}
-                {shifts.map((sh,i)=>{
-                  const sMasuk  = sh.trx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
-                  const sKeluar = sh.trx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-                  const sel = sh.saldo_close?.selisih??null;
-                  const isAct = sh.status==='active';
-                  return (
-                    <div key={sh.id}
-                      style={{padding:'11px 16px',borderTop:i>0?'1px solid #f0faf8':'none',cursor:'pointer',transition:'background .1s',background:i%2===0?'#fff':'#fafffe'}}
-                      onMouseEnter={e=>e.currentTarget.style.background='#f0fdfb'}
-                      onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'#fff':'#fafffe'}
-                      onClick={()=>setSelShift(sh)}>
-                      <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <div style={{width:28,height:28,borderRadius:8,flexShrink:0,background:isAct?'#e8f8f4':'#f0f0f0',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,fontSize:12,color:isAct?'#16a34a':'#888'}}>{i+1}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                            <span style={{fontWeight:800,fontSize:13}}>{sh.nama}</span>
-                            <span style={{fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:20,background:isAct?'#e8f8f4':'#f0f0f0',color:isAct?'#16a34a':'#888',border:`1px solid ${isAct?'#a3e9c8':'#ddd'}`}}>{isAct?'🟢 Aktif':'⚫ Tutup'}</span>
-                            {sel===0&&!isAct&&<span style={{fontSize:10,fontWeight:700,color:'#16a34a',background:'#e8f8f4',padding:'1px 7px',borderRadius:20}}>✅ Balance</span>}
-                            {sel!==null&&sel>0&&<span style={{fontSize:10,fontWeight:700,color:'#ca8a04',background:'#fffbeb',padding:'1px 7px',borderRadius:20}}>📈 +{fmtRp(sel)}</span>}
-                            {sel!==null&&sel<0&&<span style={{fontSize:10,fontWeight:700,color:'#dc2626',background:'#fff0f0',padding:'1px 7px',borderRadius:20}}>📉 -{fmtRp(Math.abs(sel))}</span>}
-                          </div>
-                          <div style={{fontSize:10,color:'#aaa',marginTop:2}}>
-                            {fmtDT(sh.start_time)}{sh.end_time&&` → ${fmtT(sh.end_time)}`}
-                            <span style={{marginLeft:8}}>{sh.trx.length} trx</span>
-                          </div>
-                          <div style={{display:'flex',gap:8,marginTop:4,fontSize:11,fontWeight:700}}>
-                            <span style={{color:'#0d9488'}}>+{fmtRp(sMasuk)}</span>
-                            <span style={{color:'#e74c3c'}}>-{fmtRp(sKeluar)}</span>
-                          </div>
-                          {sh.saldo_close?.catatan&&(
-                            <div style={{marginTop:4,fontSize:10,color:'#b7770d',background:'#fffbe6',borderRadius:6,padding:'2px 8px',border:'1px solid #fde68a',display:'inline-block'}}>
-                              📝 {sh.saldo_close.catatan.substring(0,45)}{sh.saldo_close.catatan.length>45?'...':''}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{color:'#ccc',fontSize:16,flexShrink:0}}>›</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {/* Nilai kanan */}
+            <div style={{textAlign:'right',display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4,flexShrink:0,marginLeft:12}}>
+              <div style={{fontWeight:900,fontSize:16,color:saldo>=0?'#0d9488':'#dc2626'}}>{fmtRp(saldo)}</div>
+              <div style={{fontSize:10,color:'#aaa'}}>saldo bersih</div>
+              <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                background:isActive?'#e0faf5':'#f1f5f9',color:isActive?'#0d9488':'#64748b'}}>
+                {isActive?'🟢 Aktif':'⚫ Tutup'}
+              </span>
+            </div>
           </div>
+        </div>
         );
       })}
 
-      {/* ── Shift Detail Modal ── */}
+      {/* Modal detail — komponen BankShiftDetailModal tidak diubah */}
       {selShift&&<BankShiftDetailModal shift={selShift} onClose={()=>setSelShift(null)}/>}
     </div>
   );
@@ -2712,33 +2699,30 @@ function LaporanPage({ transactions, outlets, onBack }) {
   };
   // Filter groupArr berdasarkan tanggal
   const isInLaporanRange = (group) => {
-    // Jika filter kosong → tampilkan semua
     if(!laporanDateFrom||!laporanDateTo) return true;
     const from=new Date(laporanDateFrom); from.setHours(0,0,0,0);
     const to  =new Date(laporanDateTo);   to.setHours(23,59,59,999);
     const log = shiftLogs[group.key];
-    // Coba berbagai sumber tanggal
+    // shiftLogs fields: waktuBuka (ISO from start_time), waktuTutup
+    // group.items[].date = "DD/MM/YYYY"
     const candidates = [
-      log?.created_at, log?.start_time, log?.date,
-      // group.key bisa berupa "shiftId" atau "date/kasir"
-      group.key,
-      // coba dari items transaksi
-      group.items?.[0]?.date,
+      log?.waktuBuka,   // ISO datetime dari start_time
+      log?.waktuTutup,
+      group.items?.[0]?.date,  // "DD/MM/YYYY" dari transaksi
+      group.items?.[group.items.length-1]?.date,
     ].filter(Boolean);
+    const parseAny = (raw) => {
+      const s = String(raw);
+      const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if(slash) return new Date(+slash[3], +slash[2]-1, +slash[1]);
+      const d = new Date(s);
+      return isNaN(d) ? null : d;
+    };
     for(const raw of candidates) {
-      try {
-        const s=String(raw);
-        let d;
-        // format DD/MM/YYYY
-        const slash=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if(slash) d=new Date(slash[3],+slash[2]-1,+slash[1]);
-        // format YYYY-MM-DD or ISO
-        else d=new Date(s);
-        if(!isNaN(d)) return d>=from && d<=to;
-      } catch{}
+      const d = parseAny(raw);
+      if(d) return d>=from && d<=to;
     }
-    // Tidak bisa tentukan tanggal → tampilkan saja (jangan sembunyikan)
-    return true;
+    return true; // tidak bisa tentukan → tampilkan
   };
 
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
@@ -3585,6 +3569,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
             shiftLogs={shiftLogs}
             outlets={outlets}
             filterOutlet={filterOutlet}
+            dateFrom={laporanDateFrom}
+            dateTo={laporanDateTo}
             onSelectShift={(group)=>{setSelectedShift(group);setDetailTab("bank");}}
           />
         )}
