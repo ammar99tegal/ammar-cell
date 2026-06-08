@@ -6627,7 +6627,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[]}){
   );
 }
 
-function AnalisisTab({transactions=[],outlets=[]}){ // real data injected
+function AnalisisTab({transactions=[],outlets=[],outletStats=[]}){ // real data injected
   const buildQ=(qIdx)=>{
     const yr=new Date().getFullYear();
     const starts=[new Date(yr,0,1),new Date(yr,3,1),new Date(yr,6,1),new Date(yr,9,1)];
@@ -6696,7 +6696,7 @@ function AnalisisTab({transactions=[],outlets=[]}){ // real data injected
         </div>
         <div style={{background:"#fff",borderRadius:18,border:"2px solid #e2e8f0",overflow:"hidden"}}>
           <div style={{padding:"14px 16px",borderBottom:"2px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e293b"}}>Growth per Outlet</div>
-          {OUTLET_STATS.map((o,i)=>{
+          {(outletStats||[]).map((o,i)=>{
             const mg=i===0?"23.4":i===1?"-5.2":"N/A";
             return (
               <div key={o.nama} style={{padding:"12px 16px",borderTop:i>0?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:10}}>
@@ -6731,7 +6731,7 @@ function AnalisisTab({transactions=[],outlets=[]}){ // real data injected
   );
 }
 
-function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
+function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBack }){
   const [activeTab,setActiveTab]=useState("overview");
   const [dateFrom,setDateFrom]=useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split('T')[0];});
   const [dateTo,setDateTo]=useState(()=>new Date().toISOString().split('T')[0]);
@@ -6780,7 +6780,13 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
   const OUTLET_STATS_REAL = (outlets||[]).map((o,i)=>{
     const list = filteredTx.filter(t=>t.outletId===o.id);
     const colors=["#6366f1","#06b6d4","#f59e0b","#10b981","#f43f5e"];
-    return { nama:o.nama, omset:calcOmset(list), profit:calcProfit(list), trx:list.length, color:colors[i%colors.length], bank:null };
+    // Bank stats dari bankTrx prop
+    const bList = (bankTrx||[]).filter(t=>t.outletId===o.id);
+    const bMasuk  = bList.filter(t=>(t.netNominal||0)>0).reduce((s,t)=>s+(t.netNominal||0),0);
+    const bKeluar = bList.filter(t=>(t.netNominal||0)<0).reduce((s,t)=>s+Math.abs(t.netNominal||0),0);
+    const bFee    = bList.reduce((s,t)=>s+(t.fee||0),0);
+    const bankData = bList.length>0 ? {masuk:bMasuk,keluar:bKeluar,fee:bFee,trx:bList.length} : null;
+    return { nama:o.nama, omset:calcOmset(list), profit:calcProfit(list), trx:list.length, color:colors[i%colors.length], bank:bankData };
   });
   // Fast moving real
   const itemMap = {};
@@ -6842,7 +6848,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
           <span style={{color:"rgba(255,255,255,.3)"}}>—</span>
           <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{background:"none",border:"none",color:"#fff",fontSize:10,fontFamily:"inherit",outline:"none",width:82}}/>
         </div>
-        <button style={{background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:22,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
+        <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:22,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
       </div>
 
       {activeTab==="overview"&&(
@@ -7047,8 +7053,8 @@ function DashboardOverallPage({ transactions, outlets, stocks, onBack }){
       </div>
       )}
 
-      {activeTab==="analisis"&&<AnalisisTab transactions={transactions} outlets={outlets}/>}
-      {activeTab==="export"&&<ExportTab fastMoving={FAST_MOVING_REAL} outletStats={OUTLET_STATS_REAL} transactions={transactions}/>}
+      {activeTab==="analisis"&&<AnalisisTab transactions={transactions} outlets={outlets} outletStats={OUTLET_STATS_REAL}/>}
+      {activeTab==="export"&&<ExportTab fastMoving={FAST_MOVING_REAL} outletStats={OUTLET_STATS_REAL} transactions={filteredTx}/>}
     </div>
   );
 }
@@ -9331,12 +9337,20 @@ export default function App() {
   // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
   const reloadData = async () => {
     try {
-      const [prods, outs, stks, txs, usrs, prodOrd, aktifMap] = await Promise.all([
+      const [prods, outs, stks, txs, usrs, prodOrd, aktifMap, bTrx] = await Promise.all([
         db.getProducts(), db.getOutlets(), db.getStocks(),
         db.getTransactions(), db.getUsers(),
         dbProductOrder.getOrder().catch(()=>[]),
         dbAktifProduk.getAllAktif().catch(()=>({})),
+        dbBank.getTransactions().catch(()=>[]),
       ]);
+      // Update allBankTrx
+      setAllBankTrx((bTrx||[]).map(r=>({
+        id:r.id, tgl:r.tgl, waktu:r.waktu||r.created_at,
+        shiftId:r.shift_id, nama:r.nama, jenis:r.jenis,
+        fee:r.fee||0, nominal:r.nominal, netNominal:r.net_nominal,
+        outletId:r.outlet_id,
+      })));
       setProductsState(prods);
       setOutletsState(outs);
       try{ localStorage.setItem('ammar_outlets', JSON.stringify(outs.map(o=>({id:o.id,nama:o.nama})))); }catch{}
@@ -9738,7 +9752,7 @@ export default function App() {
 
       {page==="dashboard"     && isAdmin && <DashboardPage transactions={transactions} products={products} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
       {page==="dashboardbank"  && isAdmin && <BankDashboardPage bankTrx={allBankTrx} outlets={outlets} onBack={()=>setPage("menu")}/>}
-      {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} stocks={stocks} onBack={()=>setPage("menu")}/>}
+      {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} stocks={stocks} bankTrx={allBankTrx} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
       {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","kasir","bank"].includes(page)&&isMonitor&&(
