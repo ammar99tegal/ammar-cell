@@ -8486,8 +8486,14 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
   ];
 
-  // ── Mobile detection ──────────────────────────────────────────────────────
-  const isMobile = typeof window!=="undefined" && window.innerWidth <= 767;
+  // ── Mobile detection — reaktif, update saat resize ──────────────────────
+  const [winWidth, setWinWidth] = useState(typeof window!=="undefined"?window.innerWidth:1200);
+  useEffect(()=>{
+    const onResize=()=>setWinWidth(window.innerWidth);
+    window.addEventListener("resize",onResize);
+    return()=>window.removeEventListener("resize",onResize);
+  },[]);
+  const isMobile = winWidth <= 767;
 
   // Mobile add entry
   const handleMobileAdd = async (e) => {
@@ -9618,26 +9624,7 @@ export default function App() {
   const [user,        setUserState]   = useState(savedUser);
   const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":"menu");
 
-  // ── PWA: Unregister old SW + register new ──────────────────────────────
-  useEffect(()=>{
-    if("serviceWorker" in navigator){
-      // Unregister semua SW lama dulu
-      navigator.serviceWorker.getRegistrations().then(regs=>{
-        regs.forEach(r=>r.unregister());
-      }).then(()=>{
-        // Register SW baru setelah clear
-        navigator.serviceWorker.register("/sw.js").catch(()=>{});
-      });
-    }
-    // Inject manifest
-    if(!document.querySelector('link[rel="manifest"]')){
-      const l=document.createElement("link");l.rel="manifest";l.href="/manifest.json";document.head.appendChild(l);
-    }
-    // theme-color
-    if(!document.querySelector('meta[name="theme-color"]')){
-      const m=document.createElement("meta");m.name="theme-color";m.content="#0d9488";document.head.appendChild(m);
-    }
-  },[]);
+  // PWA dihandle di index.html
   const [products,    setProductsState] = useState([]);
   const [outlets,     setOutletsState]  = useState([]);
   const [stocks,      setStocksState]   = useState({});
