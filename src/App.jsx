@@ -113,6 +113,26 @@ const css = `
     html { font-size: 13px; }
   }
 
+  /* ── Cashflow Mobile ── */
+  @media (max-width: 767px) {
+    .cf-kalkulator-grid { grid-template-columns: 1fr !important; }
+    .cf-versus-row      { flex-direction: column !important; gap: 6px !important; }
+    .cf-tabs-header     { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .cf-tab-btn         { padding: 8px 10px !important; font-size: 10px !important; }
+    .cf-header-kpi      { display: none !important; }
+    .cf-mobile-kpi      { display: flex !important; }
+    .cf-content         { padding: 10px 12px !important; }
+    .cf-irow            { flex-direction: row; }
+    .cf-irow input      { font-size: 14px !important; }
+    /* Bottom nav for mobile */
+    .cf-bottom-nav      { display: flex !important; }
+    .cf-main-content    { padding-bottom: 70px !important; }
+  }
+  @media (min-width: 768px) {
+    .cf-mobile-kpi  { display: none !important; }
+    .cf-bottom-nav  { display: none !important; }
+  }
+
   /* Kasir layout responsif */
   .kasir-layout {
     display: flex;
@@ -8067,6 +8087,306 @@ function CfTabAnalisis({log}) {
 
 // ════════════════════════════════════════════════════════
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOBILE CASHFLOW COMPONENTS
+// ─────────────────────────────────────────────────────────────────────────────
+const CF_CATS_IN  = [
+  {k:"setoran",   l:"Setoran Outlet",    icon:"🏪", c:"#0d9488"},
+  {k:"pendapatan",l:"Pendapatan Lain",   icon:"💰", c:"#16a34a"},
+  {k:"modal",     l:"Modal / Investasi", icon:"💎", c:"#6d28d9"},
+  {k:"lainnya",   l:"Lainnya",           icon:"📝", c:"#6b7280"},
+];
+const CF_CATS_OUT = [
+  {k:"stok",       l:"Belanja Stok",     icon:"📦", c:"#dc2626"},
+  {k:"operasional",l:"Operasional",      icon:"⚙️", c:"#d97706"},
+  {k:"gaji",       l:"Gaji / Upah",      icon:"👷", c:"#7c3aed"},
+  {k:"lainnya",    l:"Lainnya",          icon:"📝", c:"#6b7280"},
+];
+const toNumCF2 = s => +String(s||"").replace(/[^\d]/g,"")||0;
+const todayISO2= () => new Date().toISOString().split("T")[0];
+
+function CfMobileTabCatat({ onAdd }) {
+  const [jenis,   setJenis]   = useState("masuk");
+  const [nominal, setNominal] = useState("");
+  const [kat,     setKat]     = useState("setoran");
+  const [nama,    setNama]    = useState("");
+  const [saved,   setSaved]   = useState(false);
+  const cats = jenis==="masuk" ? CF_CATS_IN : CF_CATS_OUT;
+  const handleJenis = j => { setJenis(j); setKat(j==="masuk"?"setoran":"stok"); };
+  const handleNumpad = v => {
+    if(v==="DEL"){ setNominal(p=>p.slice(0,-1)); return; }
+    if(v==="000"){ setNominal(p=>p&&p!=="0"?p+"000":p); return; }
+    if(nominal.length>=12) return;
+    setNominal(p=>p+v);
+  };
+  const handleSimpan = async () => {
+    if(!toNumCF2(nominal)||!nama.trim()) return;
+    const e = { id:uid(), tgl:today(), tglISO:todayISO2(), jenis, kat, nama:nama.trim(), nominal:toNumCF2(nominal) };
+    onAdd(e);
+    setNominal(""); setNama(""); setSaved(true); setTimeout(()=>setSaved(false),1800);
+  };
+  const dispVal = nominal ? fmtRp(toNumCF2(nominal)) : "Rp 0";
+  const isReady = toNumCF2(nominal)>0 && nama.trim().length>0;
+  const outletShorts = ["Merpati","Cikrik","Istana 67"];
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,borderRadius:14,overflow:"hidden",border:"2px solid #e0f5f1"}}>
+        {[{k:"masuk",l:"⬇ Masuk",c:"#0d9488",bg:"#e0faf5"},{k:"keluar",l:"⬆ Keluar",c:"#dc2626",bg:"#fff0f0"}].map(j=>(
+          <button key={j.k} onClick={()=>handleJenis(j.k)}
+            style={{padding:"13px 0",border:"none",cursor:"pointer",fontFamily:"inherit",
+              fontWeight:900,fontSize:15,transition:"all .2s",
+              background:jenis===j.k?j.bg:"#fff",color:jenis===j.k?j.c:"#94a3b8"}}>
+            {j.l}
+          </button>
+        ))}
+      </div>
+      <div style={{background:jenis==="masuk"?"linear-gradient(135deg,#0d9488,#14b8a6)":"linear-gradient(135deg,#dc2626,#ef4444)",
+        borderRadius:16,padding:"20px 16px",textAlign:"center",
+        boxShadow:`0 8px 24px ${jenis==="masuk"?"rgba(13,148,136,.3)":"rgba(220,38,38,.3)"}`}}>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.7)",fontWeight:700,marginBottom:4,textTransform:"uppercase",letterSpacing:1}}>
+          {jenis==="masuk"?"Total Masuk":"Total Keluar"}
+        </div>
+        <div style={{fontSize:32,fontWeight:900,color:"#fff",letterSpacing:-1}}>{dispVal}</div>
+        {saved&&<div style={{fontSize:12,color:"rgba(255,255,255,.8)",marginTop:6,fontWeight:700}}>✅ Tersimpan!</div>}
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:7,textTransform:"uppercase",letterSpacing:.5}}>Kategori</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+          {cats.map(c=>(
+            <button key={c.k} onClick={()=>setKat(c.k)}
+              style={{padding:"10px 8px",borderRadius:11,border:`2px solid ${kat===c.k?c.c:"#e2e8f0"}`,
+                background:kat===c.k?`${c.c}12`:"#fff",cursor:"pointer",fontFamily:"inherit",
+                display:"flex",alignItems:"center",gap:7,transition:"all .15s"}}>
+              <span style={{fontSize:18}}>{c.icon}</span>
+              <span style={{fontSize:11,fontWeight:kat===c.k?800:600,color:kat===c.k?c.c:"#64748b",textAlign:"left"}}>{c.l}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:7,textTransform:"uppercase",letterSpacing:.5}}>Keterangan</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:7}}>
+          {outletShorts.map(o=>(
+            <button key={o} onClick={()=>setNama(`Setoran ${o}`)}
+              style={{padding:"8px 4px",borderRadius:10,border:`2px solid ${nama===`Setoran ${o}`?"#0d9488":"#e2e8f0"}`,
+                background:nama===`Setoran ${o}`?"#e0faf5":"#fff",cursor:"pointer",fontFamily:"inherit",
+                fontSize:10,fontWeight:700,color:nama===`Setoran ${o}`?"#0d9488":"#64748b",transition:"all .15s"}}>
+              {o}
+            </button>
+          ))}
+        </div>
+        <input value={nama} onChange={e=>setNama(e.target.value)} placeholder="Ketik keterangan..."
+          style={{width:"100%",padding:"11px 14px",borderRadius:11,
+            border:`2px solid ${nama.trim()?"#0d9488":"#e2e8f0"}`,
+            fontSize:13,fontFamily:"inherit",outline:"none",background:"#fff",color:"#1e293b"}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {["1","2","3","4","5","6","7","8","9","000","0","DEL"].map(v=>(
+          <button key={v} onClick={()=>handleNumpad(v)}
+            style={{padding:"15px 0",borderRadius:12,border:"2px solid #e2e8f0",
+              background:v==="DEL"?"#fff0f0":v==="000"?"#f0faf8":"#fff",
+              color:v==="DEL"?"#dc2626":v==="000"?"#0d9488":"#1e293b",
+              fontWeight:800,fontSize:v==="DEL"?16:20,cursor:"pointer",fontFamily:"inherit",
+              boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
+            {v==="DEL"?"⌫":v}
+          </button>
+        ))}
+      </div>
+      <button onClick={handleSimpan} disabled={!isReady}
+        style={{padding:"16px",borderRadius:14,border:"none",cursor:isReady?"pointer":"not-allowed",
+          fontFamily:"inherit",fontWeight:900,fontSize:16,transition:"all .2s",
+          background:isReady?(jenis==="masuk"?"linear-gradient(135deg,#0d9488,#14b8a6)":"linear-gradient(135deg,#dc2626,#ef4444)"):"#e2e8f0",
+          color:isReady?"#fff":"#94a3b8",
+          boxShadow:isReady?`0 6px 20px ${jenis==="masuk"?"rgba(13,148,136,.35)":"rgba(220,38,38,.3)"}`:"none"}}>
+        {saved?"✅ Tersimpan!":(`💾 Simpan ${jenis==="masuk"?"Pemasukan":"Pengeluaran"}`)}
+      </button>
+    </div>
+  );
+}
+
+function CfMobileTabRiwayat({ log, onDelete, onRefresh }) {
+  const [filter, setFilter] = useState("semua");
+  const [search, setSearch] = useState("");
+  const filtered = log
+    .filter(e=>filter==="semua"||e.jenis===filter)
+    .filter(e=>!search||e.nama.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>(b.tglISO||b.tgl||"").localeCompare(a.tglISO||a.tgl||""));
+  const byDate={};
+  filtered.forEach(e=>{const k=e.tgl||"—";if(!byDate[k])byDate[k]=[];byDate[k].push(e);});
+  const tM=filtered.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const tK=filtered.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+  return(
+    <div>
+      <div style={{position:"relative",marginBottom:10}}>
+        <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:"#94a3b8"}}>🔍</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari transaksi..."
+          style={{width:"100%",padding:"10px 12px 10px 36px",borderRadius:12,border:"2px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",background:"#fff"}}/>
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:12,alignItems:"center"}}>
+        {[{k:"semua",l:"Semua"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"}].map(f=>(
+          <button key={f.k} onClick={()=>setFilter(f.k)}
+            style={{padding:"6px 14px",borderRadius:20,border:"2px solid",
+              borderColor:filter===f.k?"#0d9488":"#e2e8f0",background:filter===f.k?"#0d9488":"#fff",
+              color:filter===f.k?"#fff":"#64748b",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+            {f.l}
+          </button>
+        ))}
+        <button onClick={onRefresh} style={{marginLeft:"auto",padding:"6px 10px",borderRadius:20,border:"2px solid #e0f5f1",background:"#f0faf8",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔄</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+        {[{l:"Masuk",v:fmtS(tM),c:"#0d9488",bg:"#e0faf5",icon:"⬇"},
+          {l:"Keluar",v:fmtS(tK),c:"#dc2626",bg:"#fff0f0",icon:"⬆"},
+          {l:"Saldo",v:fmtS(tM-tK),c:tM-tK>=0?"#6366f1":"#dc2626",bg:"#eef2ff",icon:"💰"},
+        ].map(k=>(
+          <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"10px 8px",textAlign:"center",border:`1px solid ${k.c}22`}}>
+            <div style={{fontSize:9,color:k.c,fontWeight:700,marginBottom:2,textTransform:"uppercase"}}>{k.icon} {k.l}</div>
+            <div style={{fontSize:16,fontWeight:900,color:k.c}}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+      {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:"#94a3b8"}}>
+        <div style={{fontSize:44,marginBottom:10}}>📭</div>
+        <div style={{fontWeight:700,fontSize:14}}>Belum ada transaksi</div>
+        <div style={{fontSize:12,marginTop:4}}>Catat dari tab ✏️ Catat</div>
+      </div>}
+      {Object.entries(byDate).map(([date,items])=>(
+        <div key={date} style={{marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"6px 12px",background:"linear-gradient(90deg,#e0faf5,#f0fdfb)",
+            borderRadius:10,marginBottom:7,border:"1px solid #b2f5ea"}}>
+            <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>📅 {date}</span>
+            <div style={{fontSize:11,fontWeight:700,display:"flex",gap:10}}>
+              <span style={{color:"#0d9488"}}>+{fmtS(items.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0))}</span>
+              <span style={{color:"#dc2626"}}>-{fmtS(items.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0))}</span>
+            </div>
+          </div>
+          {items.map(e=>{
+            const cat=[...CF_CATS_IN,...CF_CATS_OUT].find(c=>c.k===e.kat);
+            return(
+            <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",
+              background:"#fff",borderRadius:12,marginBottom:6,
+              border:"1.5px solid #f1f5f9",boxShadow:"0 2px 8px rgba(0,0,0,.04)"}}>
+              <div style={{width:40,height:40,borderRadius:12,flexShrink:0,
+                background:e.jenis==="masuk"?"#e0faf5":"#fff0f0",
+                display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>
+                {cat?.icon||(e.jenis==="masuk"?"⬇":"⬆")}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.nama}</div>
+                <div style={{fontSize:10,color:"#94a3b8",marginTop:2,fontWeight:600}}>{cat?.l||e.kat||e.jenis}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontWeight:900,fontSize:14,color:e.jenis==="masuk"?"#0d9488":"#dc2626"}}>
+                  {e.jenis==="masuk"?"+":"-"}{fmtRp(e.nominal)}
+                </div>
+                <button onClick={()=>onDelete(e.id)} style={{background:"none",border:"none",color:"#fca5a5",cursor:"pointer",fontSize:16,padding:"0 2px",marginTop:2}}>×</button>
+              </div>
+            </div>
+          )})}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CfMobileTabRingkasan({ log }) {
+  const masuk  = log.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const keluar = log.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+  const saldo  = masuk - keluar;
+  const margin = masuk>0?(saldo/masuk*100):0;
+  const byKat={};
+  log.forEach(e=>{if(!byKat[e.kat])byKat[e.kat]={jenis:e.jenis,total:0,count:0};byKat[e.kat].total+=e.nominal;byKat[e.kat].count+=1;});
+  const hariMap={};
+  log.forEach(e=>{const k=e.tgl||"—";if(!hariMap[k])hariMap[k]={m:0,k:0};hariMap[k][e.jenis==="masuk"?"m":"k"]+=e.nominal;});
+  const hariArr=Object.entries(hariMap).sort(([a],[b])=>b.localeCompare(a)).slice(0,7);
+  const maxHari=Math.max(...hariArr.map(([,v])=>v.m+v.k),1);
+  if(log.length===0) return(
+    <div style={{textAlign:"center",padding:"50px 0",color:"#94a3b8"}}>
+      <div style={{fontSize:48,marginBottom:12}}>📊</div>
+      <div style={{fontWeight:700,fontSize:14}}>Belum ada data</div>
+      <div style={{fontSize:12,marginTop:4}}>Mulai catat dari tab ✏️ Catat</div>
+    </div>
+  );
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {[{l:"Total Masuk",v:fmtRp(masuk),c:"#fff",bg:"linear-gradient(135deg,#0d9488,#14b8a6)",sh:"rgba(13,148,136,.35)"},
+          {l:"Total Keluar",v:fmtRp(keluar),c:"#fff",bg:"linear-gradient(135deg,#dc2626,#ef4444)",sh:"rgba(220,38,38,.3)"},
+        ].map(k=>(
+          <div key={k.l} style={{background:k.bg,borderRadius:16,padding:"16px",boxShadow:`0 6px 20px ${k.sh}`}}>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>{k.l}</div>
+            <div style={{fontSize:20,fontWeight:900,color:k.c,marginTop:4}}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:saldo>=0?"linear-gradient(135deg,#6366f1,#818cf8)":"linear-gradient(135deg,#dc2626,#f87171)",
+        borderRadius:16,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",
+        boxShadow:`0 6px 20px ${saldo>=0?"rgba(99,102,241,.3)":"rgba(220,38,38,.25)"}`}}>
+        <div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:700,textTransform:"uppercase"}}>Saldo Bersih</div>
+          <div style={{fontSize:26,fontWeight:900,color:"#fff",marginTop:2}}>{fmtRp(saldo)}</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:700,textTransform:"uppercase"}}>Margin</div>
+          <div style={{fontSize:26,fontWeight:900,color:"#fcd34d"}}>{margin.toFixed(1)}%</div>
+        </div>
+      </div>
+      {hariArr.length>0&&(
+        <div style={{background:"#fff",borderRadius:16,padding:"14px",border:"1.5px solid #e2e8f0"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1e293b",marginBottom:12}}>📈 Tren Harian</div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end",height:90,overflowX:"auto"}}>
+            {[...hariArr].reverse().map(([date,v])=>{
+              const parts=date.split("/");
+              const label=parts.length>=2?`${parts[0]}/${parts[1]}`:date;
+              const hM=Math.round(v.m/maxHari*80);
+              const hK=Math.round(v.k/maxHari*80);
+              return(
+                <div key={date} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:36,flex:1}}>
+                  <div style={{display:"flex",gap:2,alignItems:"flex-end",height:80}}>
+                    <div style={{width:10,borderRadius:"4px 4px 0 0",background:"#0d9488",height:hM||2,minHeight:2}}/>
+                    <div style={{width:10,borderRadius:"4px 4px 0 0",background:"#fca5a5",height:hK||2,minHeight:2}}/>
+                  </div>
+                  <div style={{fontSize:8,color:"#94a3b8",fontWeight:600,textAlign:"center"}}>{label}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center"}}>
+            {[{c:"#0d9488",l:"Masuk"},{c:"#fca5a5",l:"Keluar"}].map(x=>(
+              <div key={x.l} style={{display:"flex",alignItems:"center",gap:4,fontSize:10,color:"#64748b",fontWeight:600}}>
+                <div style={{width:8,height:8,borderRadius:2,background:x.c}}/>{x.l}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{background:"#fff",borderRadius:16,padding:"14px",border:"1.5px solid #e2e8f0"}}>
+        <div style={{fontWeight:800,fontSize:13,color:"#1e293b",marginBottom:10}}>📂 Per Kategori</div>
+        {Object.entries(byKat).map(([k,v])=>{
+          const cat=[...CF_CATS_IN,...CF_CATS_OUT].find(c=>c.k===k)||{icon:"📝",l:k,c:"#6b7280"};
+          const pct=Math.round(v.total/(v.jenis==="masuk"?masuk:keluar)*100)||0;
+          return(
+            <div key={k} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{fontSize:20,flexShrink:0}}>{cat.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#1e293b"}}>{cat.l}</span>
+                  <span style={{fontSize:11,fontWeight:800,color:v.jenis==="masuk"?"#0d9488":"#dc2626"}}>{fmtRp(v.total)}</span>
+                </div>
+                <div style={{height:6,background:"#f1f5f9",borderRadius:20,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pct}%`,borderRadius:20,background:v.jenis==="masuk"?"#0d9488":"#dc2626"}}/>
+                </div>
+              </div>
+              <span style={{fontSize:10,color:"#94a3b8",fontWeight:600,flexShrink:0,minWidth:28,textAlign:"right"}}>{pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CashflowPage({ transactions, outlets, onBack, notify }) {
   const [cfTab, setCfTab] = useState("kalkulator");
   const [cfLog, setCfLog] = useState([]);
@@ -8166,44 +8486,67 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
   ];
 
-  return (
-    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
-        <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center",gap:10}}>
-          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>
-          <div style={{fontSize:18}}>💼</div>
-          <div>
-            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>Laporan Keuangan</div>
-            <div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>Ammar Cell</div>
+  // ── Mobile detection ──────────────────────────────────────────────────────
+  const [cfMobileTab, setCfMobileTab] = useState("catat");
+  const isMobile = typeof window!=="undefined" && window.innerWidth <= 767;
+
+  // Mobile add entry
+  const handleMobileAdd = async (e) => {
+    setCfLog(prev=>[e,...prev]);
+    try { await dbCashflow.addEntry({id:e.id,tgl:e.tgl,jenis:e.jenis,nama:e.nama,nominal:e.nominal,sumber:"",kategori:e.kat||e.jenis}); }
+    catch(err) { setCfLog(prev=>prev.filter(x=>x.id!==e.id)); notify&&notify("Gagal simpan","error"); }
+  };
+
+  // ── MOBILE VIEW ─────────────────────────────────────────────────────────────
+  if(isMobile) return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Nunito',sans-serif",position:"relative"}}>
+      <style>{`button:active{transform:scale(.96);}::-webkit-scrollbar{width:3px;height:3px;}::-webkit-scrollbar-thumb{background:#b2ede6;border-radius:10px;}`}</style>
+      {/* Status bar */}
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488)",padding:"8px 16px 0",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:700}}>
+        <span>{new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</span>
+        <span>Ammar Cell</span>
+        <span>📶 🔋</span>
+      </div>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"12px 16px 16px",boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <div style={{width:36,height:36,borderRadius:12,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>💼</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:900,fontSize:16,color:"#fff"}}>Laporan Keuangan</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.65)",marginTop:1}}>{new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long"})}</div>
           </div>
-          <div style={{marginLeft:"auto",display:"flex",gap:6}}>
-            {[{l:"Masuk",v:fmtRp(cfMasuk),c:"#a7f3d0"},{l:"Keluar",v:fmtRp(cfKeluar),c:"#fca5a5"},{l:"Laba",v:fmtRp(cfLaba),c:cfLaba>=0?"#a7f3d0":"#fca5a5"},{l:"Margin",v:`${cfMargin.toFixed(1)}%`,c:"#fcd34d"}].map(k=>(
-              <div key={k.l} style={{textAlign:"center",background:"rgba(255,255,255,.1)",borderRadius:9,padding:"4px 10px",border:"1px solid rgba(255,255,255,.15)"}}>
-                <div style={{fontWeight:900,fontSize:12,color:k.c}}>{k.v}</div>
-                <div style={{fontSize:9,color:"rgba(255,255,255,.5)",fontWeight:700}}>{k.l}</div>
-              </div>
-            ))}
-          </div>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.25)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
         </div>
-        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.12)",overflowX:"auto"}}>
-          {cfTabs.map(t=>(
-            <button key={t.k} onClick={()=>handleCfTab(t.k)}
-              style={{padding:"9px 14px",border:"none",borderBottom:`3px solid ${cfTab===t.k?"#fff":"transparent"}`,background:"transparent",color:cfTab===t.k?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
-              {t.l}
-              <span style={{fontSize:8,background:"rgba(255,255,255,.15)",borderRadius:20,padding:"1px 5px",color:cfTab===t.k?"#fff":"rgba(255,255,255,.4)",fontWeight:700}}>{t.badge}</span>
-            </button>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {[{l:"Masuk",v:fmtS(cfMasuk),c:"#a7f3d0",icon:"⬇"},{l:"Keluar",v:fmtS(cfKeluar),c:"#fca5a5",icon:"⬆"},{l:"Saldo",v:fmtS(cfLaba),c:cfLaba>=0?"#fcd34d":"#fca5a5",icon:"💰"}].map(k=>(
+            <div key={k.l} style={{background:"rgba(255,255,255,.12)",borderRadius:12,padding:"10px 8px",textAlign:"center",border:"1px solid rgba(255,255,255,.15)"}}>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{k.icon} {k.l}</div>
+              <div style={{fontSize:18,fontWeight:900,color:k.c,lineHeight:1}}>{k.v}</div>
+            </div>
           ))}
         </div>
       </div>
-      <div style={{padding:"14px 20px",maxWidth:1080,margin:"0 auto"}}>
-        {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
-        {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
-        {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
-        {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
-        {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
+      {/* Content */}
+      <div style={{padding:"14px 14px 80px"}}>
+        {cfMobileTab==="catat"     && <CfMobileTabCatat    onAdd={handleMobileAdd}/>}
+        {cfMobileTab==="riwayat"   && <CfMobileTabRiwayat  log={cfLog} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
+        {cfMobileTab==="ringkasan" && <CfMobileTabRingkasan log={cfLog}/>}
+      </div>
+      {/* Bottom Nav */}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:"#fff",borderTop:"1.5px solid #e0f5f1",display:"flex",padding:"8px 8px 10px",gap:4,boxShadow:"0 -4px 24px rgba(13,148,136,.15)"}}>
+        {[{k:"catat",icon:"✏️",l:"Catat"},{k:"riwayat",icon:"📋",l:"Riwayat"},{k:"ringkasan",icon:"📊",l:"Ringkasan"}].map(t=>(
+          <button key={t.k} onClick={()=>setCfMobileTab(t.k)}
+            style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 4px",border:"none",borderRadius:12,cursor:"pointer",fontFamily:"inherit",transition:"all .2s",background:cfMobileTab===t.k?"#e0faf5":"transparent"}}>
+            <div style={{fontSize:24,lineHeight:1,transform:cfMobileTab===t.k?"scale(1.1)":"scale(1)",transition:"transform .2s"}}>{t.icon}</div>
+            <span style={{fontSize:10,fontWeight:cfMobileTab===t.k?900:600,color:cfMobileTab===t.k?"#0d9488":"#94a3b8",lineHeight:1}}>{t.l}</span>
+            {cfMobileTab===t.k&&<div style={{width:16,height:3,borderRadius:20,background:"#0d9488",marginTop:1}}/>}
+          </button>
+        ))}
       </div>
     </div>
   );
+
+  // ── DESKTOP VIEW (original) ──────────────────────────────────────────────
 }
 
 
@@ -9275,6 +9618,29 @@ export default function App() {
 
   const [user,        setUserState]   = useState(savedUser);
   const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":"menu");
+
+  // ── PWA: Service Worker + Meta tags ─────────────────────────────────────
+  useEffect(()=>{
+    if("serviceWorker" in navigator)
+      navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    // manifest
+    if(!document.querySelector('link[rel="manifest"]')){
+      const l=document.createElement("link");l.rel="manifest";l.href="/manifest.json";document.head.appendChild(l);
+    }
+    // theme-color
+    if(!document.querySelector('meta[name="theme-color"]')){
+      const m=document.createElement("meta");m.name="theme-color";m.content="#0d9488";document.head.appendChild(m);
+    }
+    // viewport mobile-friendly
+    let vp=document.querySelector('meta[name="viewport"]');
+    if(!vp){vp=document.createElement("meta");vp.name="viewport";document.head.appendChild(vp);}
+    vp.content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover";
+    // Apple PWA
+    [["apple-mobile-web-app-capable","yes"],["apple-mobile-web-app-status-bar-style","black-translucent"],
+     ["apple-mobile-web-app-title","Ammar Cell"],["mobile-web-app-capable","yes"]].forEach(([n,v])=>{
+      if(!document.querySelector(`meta[name="${n}"]`)){const m=document.createElement("meta");m.name=n;m.content=v;document.head.appendChild(m);}
+    });
+  },[]);
   const [products,    setProductsState] = useState([]);
   const [outlets,     setOutletsState]  = useState([]);
   const [stocks,      setStocksState]   = useState({});
