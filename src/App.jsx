@@ -8390,6 +8390,13 @@ function CfMobileTabRingkasan({ log }) {
 function CashflowPage({ transactions, outlets, onBack, notify }) {
   const [cfTab, setCfTab] = useState("kalkulator");
   const [cfLog, setCfLog] = useState([]);
+  const [cfMobileTab, setCfMobileTab] = useState("catat");
+  const [winWidth,    setWinWidth]    = useState(typeof window!=="undefined"?window.innerWidth:1200);
+  useEffect(()=>{
+    const onResize=()=>setWinWidth(window.innerWidth);
+    window.addEventListener("resize",onResize);
+    return()=>window.removeEventListener("resize",onResize);
+  },[]);
 
   // Load from Supabase + realtime
   const loadCfEntries = () => {
@@ -8486,13 +8493,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
   ];
 
-  // ── Mobile detection — reaktif, update saat resize ──────────────────────
-  const [winWidth, setWinWidth] = useState(typeof window!=="undefined"?window.innerWidth:1200);
-  useEffect(()=>{
-    const onResize=()=>setWinWidth(window.innerWidth);
-    window.addEventListener("resize",onResize);
-    return()=>window.removeEventListener("resize",onResize);
-  },[]);
+  // ── Mobile detection ─────────────────────────────────────────────────────
   const isMobile = winWidth <= 767;
 
   // Mobile add entry
