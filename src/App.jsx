@@ -7468,7 +7468,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
       entries.push({id:uid(),tgl:tglHari,jenis:"masuk",kat:"setoran",nama:`Setoran ${r.label}`,nominal:toNumCF(r.val)}));
     mKel.filter(r=>r.label&&toNumCF(r.val)>0).forEach(r=>
       entries.push({id:uid(),tgl:tglHari,jenis:"keluar",kat:"operasional",nama:r.label,nominal:toNumCF(r.val)}));
-    if(entries.length>0){setLog(p=>[...entries,...p]);setKirimOk(true);setTimeout(()=>setKirimOk(false),2500);}
+    if(entries.length>0){setLog(entries);setKirimOk(true);setTimeout(()=>setKirimOk(false),2500);}
   };
 
   const ColHead=({emoji,label,grad,glow})=>(
@@ -7601,7 +7601,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
 // ════════════════════════════════════════════════════════
 // TAB 2: JURNAL
 // ════════════════════════════════════════════════════════
-function CfTabJurnal({log,setLog,onDelete}) {
+function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
   const [form,setForm]=useState({nama:"",nominal:"",jenis:"masuk",kat:"setoran",tgl:today()});
   const [srch,setSrch]=useState(""); const [fltr,setFltr]=useState("semua"); const [saved,setSaved]=useState(false);
   const save=()=>{
@@ -7674,6 +7674,7 @@ function CfTabJurnal({log,setLog,onDelete}) {
             {f==="semua"?"Semua":f==="masuk"?"⬇ Masuk":"⬆ Keluar"}
           </button>
         ))}
+        {onRefresh&&<button onClick={onRefresh} style={{padding:"5px 10px",borderRadius:9,border:"2px solid #b2ede6",background:"#f0faf8",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🔄 Refresh</button>}
         <div style={{marginLeft:"auto",display:"flex",gap:10,fontSize:12,fontWeight:700}}>
           <span style={{color:"#16a34a"}}>+{fmtRp(tM)}</span>
           <span style={{color:"#dc2626"}}>-{fmtRp(tK)}</span>
@@ -8071,18 +8072,28 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
   const [cfLog, setCfLog] = useState([]);
 
   // Load from Supabase + realtime
-  useEffect(()=>{
+  const loadCfEntries = () => {
     dbCashflow.getEntries().then(entries=>{
-      setCfLog((entries||[]).map(e=>({
-        id:e.id, tgl:e.tgl, jenis:e.jenis,
-        kat:e.kategori||e.jenis, nama:e.nama, nominal:e.nominal
-      })));
-    }).catch(()=>{});
+      if(Array.isArray(entries)) {
+        setCfLog(entries.map(e=>({
+          id:e.id, tgl:e.tgl, jenis:e.jenis,
+          kat:e.kategori||e.jenis, nama:e.nama, nominal:e.nominal
+        })));
+      }
+    }).catch(err=>{ console.error('cashflow load error:',err); });
+  };
+  useEffect(()=>{
+    loadCfEntries();
     const ch = supabase.channel("cashflow-rt-v2")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"cashflow_entries"},(p)=>{
         const r=p.new; if(!r) return;
         const e={id:r.id,tgl:r.tgl,jenis:r.jenis,kat:r.kategori||r.jenis,nama:r.nama,nominal:r.nominal};
         setCfLog(prev=>prev.find(x=>x.id===r.id)?prev:[e,...prev]);
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"cashflow_entries"},(p)=>{
+        const r=p.new; if(!r) return;
+        const e={id:r.id,tgl:r.tgl,jenis:r.jenis,kat:r.kategori||r.jenis,nama:r.nama,nominal:r.nominal};
+        setCfLog(prev=>prev.map(x=>x.id===r.id?e:x));
       })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"cashflow_entries"},(p)=>{
         const id=p.old?.id; if(!id) return;
@@ -8092,12 +8103,27 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     return ()=>supabase.removeChannel(ch);
   },[]);
 
-  const cfAddEntries = async (entries) => {
-    const newOnes = entries.filter(e=>!cfLog.find(x=>x.id===e.id));
+  const cfAddEntries = async (entriesRaw) => {
+    // Support both array dan single entry
+    const arr = Array.isArray(entriesRaw) ? entriesRaw : [entriesRaw];
+    const newOnes = arr.filter(e=>e&&e.id&&!cfLog.find(x=>x.id===e.id));
+    if(newOnes.length===0) return;
+    // Update state dulu (optimistic)
     setCfLog(prev=>[...newOnes,...prev]);
+    // Simpan ke Supabase
     for(const e of newOnes) {
-      try { await dbCashflow.addEntry({id:e.id,tgl:e.tgl,jenis:e.jenis,nama:e.nama,nominal:e.nominal,sumber:"",kategori:e.kat||e.jenis}); }
-      catch(err) { console.warn("addEntry:",err); }
+      try {
+        await dbCashflow.addEntry({
+          id:e.id, tgl:e.tgl||today(), jenis:e.jenis||"masuk",
+          nama:e.nama||"", nominal:e.nominal||0,
+          sumber:"", kategori:e.kat||e.jenis||"lainnya"
+        });
+      } catch(err) {
+        console.error("cfAddEntry failed:", err);
+        // Rollback state jika gagal
+        setCfLog(prev=>prev.filter(x=>x.id!==e.id));
+        notify&&notify("Gagal simpan: "+e.nama, "error");
+      }
     }
   };
 
@@ -8110,6 +8136,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
   const outletNames = (outlets||[]).map(o=>o.nama);
 
   // KPI
+  const cfRefresh = () => loadCfEntries();
   const cfMasuk  = cfLog.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
   const cfKeluar = cfLog.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
   const cfLaba   = cfMasuk - cfKeluar;
@@ -8124,6 +8151,13 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
   const logMasukHari = cfLog.filter(e=>e.tgl===todayStr&&e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
   const sistemMasukHari = omsetHari + logMasukHari;
 
+  // Reload dari Supabase saat switch ke tab data
+  const handleCfTab = (k) => {
+    setCfTab(k);
+    if(["jurnal","besar","lapkeu","analisis"].includes(k)) {
+      loadCfEntries();
+    }
+  };
   const cfTabs=[
     {k:"kalkulator",l:"🧮 Kalkulator",   badge:"Cash"},
     {k:"jurnal",    l:"📋 Jurnal",        badge:"CSV"},
@@ -8153,7 +8187,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
         </div>
         <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.12)",overflowX:"auto"}}>
           {cfTabs.map(t=>(
-            <button key={t.k} onClick={()=>setCfTab(t.k)}
+            <button key={t.k} onClick={()=>handleCfTab(t.k)}
               style={{padding:"9px 14px",border:"none",borderBottom:`3px solid ${cfTab===t.k?"#fff":"transparent"}`,background:"transparent",color:cfTab===t.k?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
               {t.l}
               <span style={{fontSize:8,background:"rgba(255,255,255,.15)",borderRadius:20,padding:"1px 5px",color:cfTab===t.k?"#fff":"rgba(255,255,255,.4)",fontWeight:700}}>{t.badge}</span>
@@ -8162,8 +8196,8 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
         </div>
       </div>
       <div style={{padding:"14px 20px",maxWidth:1080,margin:"0 auto"}}>
-        {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={setCfLog} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
-        {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry}/>}
+        {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
+        {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
         {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
         {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
         {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
