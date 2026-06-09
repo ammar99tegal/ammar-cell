@@ -8487,7 +8487,6 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
   ];
 
   // ── Mobile detection ──────────────────────────────────────────────────────
-  const [cfMobileTab, setCfMobileTab] = useState("catat");
   const isMobile = typeof window!=="undefined" && window.innerWidth <= 767;
 
   // Mobile add entry
