@@ -7270,6 +7270,100 @@ function DynRows({rows, setRows, color, placeholder="Keterangan..."}) {
 
 const CO = "Ammar Cell"; // nama perusahaan untuk laporan keuangan
 const CF_KAT_NAMES_OUTLETS_DEFAULT = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
+function CashflowPage({ transactions, outlets, onBack, notify }) {
+  const [tab, setTab] = useState("log");
+  const [log, setLog] = useState([]);
+
+  // Load from Supabase on mount
+  useEffect(()=>{
+    dbCashflow.getEntries().then(entries=>{
+      setLog(entries.map(e=>({id:e.id,tgl:e.tgl,jenis:e.jenis,kat:e.kategori||e.jenis,nama:e.nama,nominal:e.nominal})));
+    }).catch(()=>{});
+
+    // Realtime
+    const ch = supabase.channel("cashflow-rt")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"cashflow_entries"},(payload)=>{
+        const r=payload.new; if(!r) return;
+        const e={id:r.id,tgl:r.tgl,jenis:r.jenis,kat:r.kategori||r.jenis,nama:r.nama,nominal:r.nominal};
+        setLog(prev=>prev.find(x=>x.id===r.id)?prev:[e,...prev]);
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"cashflow_entries"},(payload)=>{
+        const id=payload.old?.id; if(!id) return;
+        setLog(prev=>prev.filter(x=>x.id!==id));
+      })
+      .subscribe();
+    return ()=>supabase.removeChannel(ch);
+  },[]);
+
+  const addEntries = async (entries) => {
+    for(const e of entries) {
+      try { await dbCashflow.addEntry({id:e.id,tgl:e.tgl,jenis:e.jenis,nama:e.nama,nominal:e.nominal,sumber:"",kategori:e.kat||e.jenis}); }
+      catch(err) { console.warn("addEntry:",err); }
+    }
+  };
+
+  const deleteEntry = async (id) => {
+    try { await dbCashflow.deleteEntry(id); } catch(err) { console.warn("deleteEntry:",err); }
+  };
+
+  const masuk  = log.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const keluar = log.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+
+  const [cfMobileTab, setCfMobileTab] = useState("catat");
+  const [winWidth,    setWinWidth]    = useState(typeof window!=="undefined"?window.innerWidth:1200);
+  useEffect(()=>{
+    const onResize=()=>setWinWidth(window.innerWidth);
+    window.addEventListener("resize",onResize);
+    return()=>window.removeEventListener("resize",onResize);
+  },[]);
+  const isMobile = false; // TODO: re-enable after mobile fix
+
+  // ── Mobile add entry ─────────────────────────────────────────────────────
+  const handleMobileAdd = async (e) => {
+    setCfLog(prev=>[e,...prev]);
+    try { await dbCashflow.addEntry({id:e.id,tgl:e.tgl,jenis:e.jenis,nama:e.nama,nominal:e.nominal,sumber:"",kategori:e.kat||e.jenis}); }
+    catch(err) { setCfLog(prev=>prev.filter(x=>x.id!==e.id)); notify&&notify("Gagal simpan","error"); }
+  };
+
+  if(isMobile) return (
+    <div>Mobile view coming soon</div>
+  );
+
+  // ── DESKTOP VIEW ──────────────────────────────────────────────────────────
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.3)"}}>
+        <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center"}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",marginRight:12}}>← Menu</button>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>💼 Cashflow Manager</div>
+        </div>
+        <div style={{background:"rgba(0,0,0,.1)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"6px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {[{l:"Total Masuk",v:`Rp ${new Intl.NumberFormat("id-ID").format(masuk)}`,c:"#a7f3d0"},{l:"Total Keluar",v:`Rp ${new Intl.NumberFormat("id-ID").format(keluar)}`,c:"#fca5a5"},{l:"Saldo",v:`Rp ${new Intl.NumberFormat("id-ID").format(masuk-keluar)}`,c:"#fcd34d"}].map(k=>(
+            <div key={k.l} style={{textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:600}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)",overflowX:"auto"}}>
+          {[{k:"log",l:"📋 Log Harian"},{k:"besar",l:"📚 Buku Besar"},{k:"labarugi",l:"📊 Laba Rugi"},{k:"analisis",l:"🎯 Analisis"}].map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)}
+              style={{padding:"10px 16px",border:"none",borderBottom:`3px solid ${tab===t.k?"#fff":"transparent"}`,background:"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.55)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:"14px 20px",maxWidth:1000,margin:"0 auto"}}>
+        {tab==="log"      && <TabLog       log={log} setLog={setLog} onAddEntries={addEntries} onDelete={deleteEntry}/>}
+        {tab==="besar"    && <TabBukuBesar  log={log}/>}
+        {tab==="labarugi" && <TabLabaRugi   log={log}/>}
+        {tab==="analisis" && <TabAnalisis   log={log}/>}
+      </div>
+    </div>
+  );
+}
+
 const BANKS_CF = ["BRI","BCA","BSI"];
 const APPS_CF  = ["Digipos","Dana","GoPay","OVO","ShopeePay"];
 
@@ -8387,7 +8481,6 @@ function CfMobileTabRingkasan({ log }) {
   );
 }
 
-function CashflowPage({ transactions, outlets, onBack, notify }) {
   const [cfTab, setCfTab] = useState("kalkulator");
   const [cfLog, setCfLog] = useState([]);
   const [cfMobileTab, setCfMobileTab] = useState("catat");
@@ -8494,7 +8587,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
   ];
 
   // ── Mobile detection ─────────────────────────────────────────────────────
-  const isMobile = winWidth <= 767;
+  const isMobile = false; // disabled temporarily - use desktop view always
 
   // Mobile add entry
   const handleMobileAdd = async (e) => {
@@ -8553,7 +8646,38 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
   );
 
   // ── DESKTOP VIEW (original) ──────────────────────────────────────────────
-}
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.3)"}}>
+        <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center"}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",marginRight:12}}>← Menu</button>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>💼 Cashflow Manager</div>
+        </div>
+        <div style={{background:"rgba(0,0,0,.1)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"6px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {[{l:"Total Masuk",v:`Rp ${new Intl.NumberFormat("id-ID").format(masuk)}`,c:"#a7f3d0"},{l:"Total Keluar",v:`Rp ${new Intl.NumberFormat("id-ID").format(keluar)}`,c:"#fca5a5"},{l:"Saldo",v:`Rp ${new Intl.NumberFormat("id-ID").format(masuk-keluar)}`,c:"#fcd34d"}].map(k=>(
+            <div key={k.l} style={{textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:600}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)",overflowX:"auto"}}>
+          {[{k:"log",l:"📋 Log Harian"},{k:"besar",l:"📚 Buku Besar"},{k:"labarugi",l:"📊 Laba Rugi"},{k:"analisis",l:"🎯 Analisis"}].map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)}
+              style={{padding:"10px 16px",border:"none",borderBottom:`3px solid ${tab===t.k?"#fff":"transparent"}`,background:"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.55)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:"14px 20px",maxWidth:1000,margin:"0 auto"}}>
+        {tab==="log"      && <TabLog       log={log} setLog={setLog} onAddEntries={addEntries} onDelete={deleteEntry}/>}
+        {tab==="besar"    && <TabBukuBesar  log={log}/>}
+        {tab==="labarugi" && <TabLabaRugi   log={log}/>}
+        {tab==="analisis" && <TabAnalisis   log={log}/>}
+      </div>
+    </div>
+  );
 
 
 // ─── Chart component ──────────────────────────────────────────────────────────
