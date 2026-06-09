@@ -7274,464 +7274,9 @@ const CF_KAT_NAMES_OUTLETS_DEFAULT = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 
 // ── CF Tab Components (restored) ─────────────────────────────────────────────
 
-function TabLog({log,setLog,onAddEntries,onDelete}) {
-  const [tgl,      setTgl]     = useState(today());
-  const [rowsIn,   setRowsIn]  = useState([{id:uid(),label:"",nominal:""},{id:uid(),label:"",nominal:""},{id:uid(),label:"",nominal:""}]);
-  const [rowsOut,  setRowsOut] = useState([{id:uid(),label:"",nominal:""},{id:uid(),label:"",nominal:""},{id:uid(),label:"",nominal:""}]);
-  const [rowsAset, setRowsAset]= useState([{id:uid(),label:"",nominal:""},{id:uid(),label:"",nominal:""}]);
-  const [rowsMod,  setRowsMod] = useState([{id:uid(),label:"",nominal:""},{id:uid(),label:"",nominal:""}]);
-  const [saved,    setSaved]   = useState(false);
-
-  const totalIn   = rowsIn.reduce((s,r)=>s+toNumCF(r.nominal),0);
-  const totalOut  = rowsOut.reduce((s,r)=>s+toNumCF(r.nominal),0);
-  const totalAset = rowsAset.reduce((s,r)=>s+toNumCF(r.nominal),0);
-  const totalMod  = rowsMod.reduce((s,r)=>s+toNumCF(r.nominal),0);
-  const saldo     = totalIn-totalOut;
-
-  const save = async () => {
-    const entries=[];
-    rowsIn.forEach(r=>{ if(r.label&&toNumCF(r.nominal)>0) entries.push({id:uid(),tgl,jenis:"masuk",kat:"manual",nama:r.label,nominal:toNumCF(r.nominal)}); });
-    rowsOut.forEach(r=>{ if(r.label&&toNumCF(r.nominal)>0) entries.push({id:uid(),tgl,jenis:"keluar",kat:"manual",nama:r.label,nominal:toNumCF(r.nominal)}); });
-    rowsAset.forEach(r=>{ if(r.label&&toNumCF(r.nominal)>0) entries.push({id:uid(),tgl,jenis:"aset_barang",kat:"aset",nama:r.label,nominal:toNumCF(r.nominal)}); });
-    rowsMod.forEach(r=>{ if(r.label&&toNumCF(r.nominal)>0) entries.push({id:uid(),tgl,jenis:"aset_modal",kat:"modal",nama:r.label,nominal:toNumCF(r.nominal)}); });
-    if(!entries.length) return;
-    setLog(p=>[...entries,...p]); // optimistic
-    if(onAddEntries) await onAddEntries(entries);
-    setSaved(true); setTimeout(()=>setSaved(false),2000);
-  };
-
-  const handleDelete = async (id) => {
-    setLog(p=>p.filter(x=>x.id!==id));
-    if(onDelete) await onDelete(id);
-  };
-
-  return (
-    <div>
-      {/* Tanggal */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-        <span style={{fontSize:12,fontWeight:700,color:CF.muted,flexShrink:0}}>Tanggal:</span>
-        <input value={tgl} onChange={e=>setTgl(e.target.value)}
-          style={{padding:"6px 11px",borderRadius:9,border:`2px solid ${CF.border}`,fontSize:13,outline:"none",fontFamily:"inherit",fontWeight:600}}/>
-      </div>
-
-      {/* Pemasukan & Pengeluaran berdampingan */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        {/* PEMASUKAN */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.green}44`,overflow:"hidden"}}>
-          <div style={{background:`${CF.green}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.green}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontWeight:900,fontSize:13,color:CF.green}}>⬇ PEMASUKAN</span>
-            <span style={{fontWeight:800,fontSize:12,color:CF.green}}>{fmtRp(totalIn)}</span>
-          </div>
-          <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsIn} setRows={setRowsIn} color={CF.green} placeholder="Sumber pemasukan..."/>
-          </div>
-        </div>
-
-        {/* PENGELUARAN */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.red}44`,overflow:"hidden"}}>
-          <div style={{background:`${CF.red}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.red}22`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontWeight:900,fontSize:13,color:CF.red}}>⬆ PENGELUARAN</span>
-            <span style={{fontWeight:800,fontSize:12,color:CF.red}}>{fmtRp(totalOut)}</span>
-          </div>
-          <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsOut} setRows={setRowsOut} color={CF.red} placeholder="Jenis pengeluaran..."/>
-          </div>
-        </div>
-      </div>
-
-      {/* HASIL AKHIR GABUNGAN */}
-      <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.teal}44`,padding:"14px 16px",marginBottom:14}}>
-        <div style={{fontWeight:900,fontSize:13,color:CF.teal,marginBottom:12}}>📊 Hasil Akhir Hari Ini</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          <div style={{background:`${CF.green}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${CF.green}33`}}>
-            <div style={{fontSize:10,color:CF.green,fontWeight:700,marginBottom:3}}>TOTAL PEMASUKAN</div>
-            <div style={{fontWeight:900,fontSize:18,color:CF.green}}>{fmtRp(totalIn)}</div>
-          </div>
-          <div style={{background:`${CF.red}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${CF.red}33`}}>
-            <div style={{fontSize:10,color:CF.red,fontWeight:700,marginBottom:3}}>TOTAL PENGELUARAN</div>
-            <div style={{fontWeight:900,fontSize:18,color:CF.red}}>{fmtRp(totalOut)}</div>
-          </div>
-          <div style={{background:saldo>=0?`${CF.teal}12`:`${CF.red}12`,borderRadius:10,padding:"11px 13px",border:`1px solid ${saldo>=0?CF.teal:CF.red}33`}}>
-            <div style={{fontSize:10,color:saldo>=0?CF.teal:CF.red,fontWeight:700,marginBottom:3}}>SALDO BERSIH</div>
-            <div style={{fontWeight:900,fontSize:18,color:saldo>=0?CF.teal:CF.red}}>{saldo>=0?"+":"-"}{fmtRp(saldo)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ASET */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        {/* Aset Barang/Device */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.purple}44`,overflow:"hidden"}}>
-          <div style={{background:`${CF.purple}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.purple}22`}}>
-            <div style={{fontWeight:900,fontSize:13,color:CF.purple}}>🖥️ Aset Bertambah</div>
-            <div style={{fontSize:10,color:CF.purple,marginTop:2,opacity:.8}}>Device, komputer, barang konter, dll</div>
-          </div>
-          <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsAset} setRows={setRowsAset} color={CF.purple} placeholder="Nama aset barang..."/>
-          </div>
-          {totalAset>0&&<div style={{background:`${CF.purple}12`,padding:"8px 14px",borderTop:`1px solid ${CF.purple}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:12,color:CF.purple}}>Total Aset Bertambah</span>
-            <span style={{fontWeight:900,fontSize:13,color:CF.purple}}>{fmtRp(totalAset)}</span>
-          </div>}
-        </div>
-
-        {/* Aset Modal Berputar */}
-        <div style={{background:"#fff",borderRadius:14,border:`2px solid ${CF.blue}44`,overflow:"hidden"}}>
-          <div style={{background:`${CF.blue}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.blue}22`}}>
-            <div style={{fontWeight:900,fontSize:13,color:CF.blue}}>🔄 Aset Modal Diputar</div>
-            <div style={{fontSize:10,color:CF.blue,marginTop:2,opacity:.8}}>Voucer, SP, aksesoris, stok diputar</div>
-          </div>
-          <div style={{padding:"8px 14px 12px"}}>
-            <DynRows rows={rowsMod} setRows={setRowsMod} color={CF.blue} placeholder="Nama modal berputar..."/>
-          </div>
-          {totalMod>0&&<div style={{background:`${CF.blue}12`,padding:"8px 14px",borderTop:`1px solid ${CF.blue}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:12,color:CF.blue}}>Total Modal Diputar</span>
-            <span style={{fontWeight:900,fontSize:13,color:CF.blue}}>{fmtRp(totalMod)}</span>
-          </div>}
-        </div>
-      </div>
-
-      {/* Ringkasan aset */}
-      {(totalAset>0||totalMod>0)&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,padding:"13px 16px",marginBottom:14}}>
-          <div style={{fontWeight:800,fontSize:13,color:CF.text,marginBottom:10}}>💼 Ringkasan Aset Hari Ini</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-            <div style={{background:`${CF.purple}12`,borderRadius:9,padding:"9px 12px"}}>
-              <div style={{fontSize:10,color:CF.purple,fontWeight:700}}>ASET BARANG/DEVICE</div>
-              <div style={{fontWeight:900,fontSize:16,color:CF.purple,marginTop:2}}>{fmtRp(totalAset)}</div>
-            </div>
-            <div style={{background:`${CF.blue}12`,borderRadius:9,padding:"9px 12px"}}>
-              <div style={{fontSize:10,color:CF.blue,fontWeight:700}}>MODAL BERPUTAR</div>
-              <div style={{fontWeight:900,fontSize:16,color:CF.blue,marginTop:2}}>{fmtRp(totalMod)}</div>
-            </div>
-            <div style={{background:`${CF.orange}12`,borderRadius:9,padding:"9px 12px"}}>
-              <div style={{fontSize:10,color:CF.orange,fontWeight:700}}>TOTAL ASET</div>
-              <div style={{fontWeight:900,fontSize:16,color:CF.orange,marginTop:2}}>{fmtRp(totalAset+totalMod)}</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Simpan */}
-      <button onClick={save}
-        style={{width:"100%",background:saved?"#27ae60":`linear-gradient(135deg,${CF.teal},#14b8a6)`,border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",transition:"background .3s"}}>
-        {saved?"✅ Tersimpan!":"💾 Simpan Semua Entri"}
-      </button>
-
-      {/* Riwayat */}
-      {log.length>0&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,overflow:"hidden",marginTop:14}}>
-          <div style={{padding:"10px 14px",borderBottom:`1px solid ${CF.border}`,fontWeight:800,fontSize:13,color:CF.text}}>📋 Riwayat Log</div>
-          {[...new Set(log.map(e=>e.tgl))].map(tglRow=>(
-            <div key={tglRow}>
-              <div style={{background:CF.teal2,padding:"4px 14px",fontSize:11,fontWeight:800,color:CF.teal}}>{tglRow}</div>
-              {log.filter(e=>e.tgl===tglRow).map((e,i)=>{
-                const color=e.jenis==="masuk"?CF.green:e.jenis==="keluar"?CF.red:e.jenis==="aset_barang"?CF.purple:CF.blue;
-                const icon=e.jenis==="masuk"?"⬇":e.jenis==="keluar"?"⬆":e.jenis==="aset_barang"?"🖥️":"🔄";
-                return(
-                  <div key={e.id} style={{display:"flex",gap:8,padding:"7px 14px",borderTop:`1px solid ${CF.bg}`,background:i%2===0?"#fff":"#fafffe",alignItems:"center"}}>
-                    <span style={{fontSize:13,flexShrink:0}}>{icon}</span>
-                    <span style={{flex:1,fontSize:12,fontWeight:600}}>{e.nama}</span>
-                    <span style={{fontWeight:800,fontSize:12,color}}>{e.jenis==="keluar"?"-":"+"}{fmtRp(e.nominal)}</span>
-                    <button onClick={()=>handleDelete(e.id)} style={{background:"transparent",border:"none",color:"#ccc",fontSize:13,cursor:"pointer"}}>✕</button>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TabBukuBesar({log}) {
-  const byDate={};
-  log.forEach(e=>{
-    if(!byDate[e.tgl])byDate[e.tgl]={tgl:e.tgl,masuk:0,keluar:0,entries:[]};
-    byDate[e.tgl].entries.push(e);
-    if(e.jenis==="masuk")byDate[e.tgl].masuk+=e.nominal;
-    else if(e.jenis==="keluar")byDate[e.tgl].keluar+=e.nominal;
-  });
-  const rows=Object.values(byDate).sort((a,b)=>b.tgl.localeCompare(a.tgl));
-  const colorJenis=j=>j==="masuk"?CF.green:j==="keluar"?CF.red:j==="aset_barang"?CF.purple:CF.blue;
-  return(
-    <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,overflow:"hidden"}}>
-      <div style={{padding:"10px 14px",borderBottom:`1px solid ${CF.border}`,fontWeight:800,fontSize:13}}>📚 Buku Besar</div>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-        <thead><tr style={{background:CF.teal2}}>
-          {["Tgl","Keterangan","Jenis","Masuk","Keluar","Aset"].map(h=>(
-            <th key={h} style={{padding:"8px 11px",textAlign:"left",fontWeight:800,color:CF.teal}}>{h}</th>
-          ))}
-        </tr></thead>
-        <tbody>
-          {rows.flatMap((r,ri)=>[
-            ...r.entries.map((e,ei)=>(
-              <tr key={e.id} style={{borderTop:`1px solid ${CF.bg}`,background:ri%2===0?"#fff":"#fafffe"}}>
-                <td style={{padding:"5px 11px",color:CF.muted,fontSize:10}}>{ei===0?e.tgl:""}</td>
-                <td style={{padding:"5px 11px",fontWeight:600}}>{e.nama}</td>
-                <td style={{padding:"5px 11px"}}><span style={{background:colorJenis(e.jenis)+"15",color:colorJenis(e.jenis),fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20}}>{e.jenis}</span></td>
-                <td style={{padding:"5px 11px",color:CF.green,fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"—"}</td>
-                <td style={{padding:"5px 11px",color:CF.red,fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"—"}</td>
-                <td style={{padding:"5px 11px",color:CF.purple,fontWeight:700}}>{(e.jenis==="aset_barang"||e.jenis==="aset_modal")?fmtRp(e.nominal):"—"}</td>
-              </tr>
-            )),
-            <tr key={r.tgl+"s"} style={{borderTop:`2px solid ${CF.border}`,background:`${CF.teal}08`}}>
-              <td colSpan={2} style={{padding:"6px 11px",fontWeight:800,color:CF.teal,fontSize:11}}>Subtotal {r.tgl}</td>
-              <td style={{padding:"6px 11px"}}></td>
-              <td style={{padding:"6px 11px",fontWeight:900,color:CF.green}}>{fmtRp(r.masuk)}</td>
-              <td style={{padding:"6px 11px",fontWeight:900,color:CF.red}}>{fmtRp(r.keluar)}</td>
-              <td style={{padding:"6px 11px",fontWeight:900,color:(r.masuk-r.keluar)>=0?CF.teal:CF.red}}>{(r.masuk-r.keluar)>=0?"+":"-"}{fmtRp(r.masuk-r.keluar)}</td>
-            </tr>
-          ])}
-        </tbody>
-      </table>
-      {rows.length===0&&<div style={{textAlign:"center",color:"#ccc",padding:24}}>Belum ada data</div>}
-    </div>
-  );
-}
-
-function TabLabaRugi({log}) {
-  const tglNow=today(), co="Ammar Cell";
-  const inList=log.filter(e=>e.jenis==="masuk"), outList=log.filter(e=>e.jenis==="keluar");
-  const ti=inList.reduce((s,e)=>s+e.nominal,0), to=outList.reduce((s,e)=>s+e.nominal,0);
-  const lsb=ti-to, pjk=lsb>0?Math.floor(lsb*.01):0, lb=lsb-pjk;
-  const catIn=[...new Set(inList.map(e=>e.nama))], catOut=[...new Set(outList.map(e=>e.nama))];
-
-  const print=()=>{
-    const w=window.open("","_blank");
-    w.document.write(`<html><head><title>Laba Rugi</title><style>body{font-family:Arial;padding:40px;max-width:580px;margin:auto}h1{font-size:20px;text-align:center}h2,h3{text-align:center;font-weight:normal;color:#555;font-size:13px}.sec-title{font-weight:bold;text-transform:uppercase;font-size:12px;border-bottom:1px solid #ccc;padding-bottom:4px;margin:16px 0 8px}.row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}.indent{padding-left:20px;color:#444}.total{display:flex;justify-content:space-between;font-weight:bold;font-size:13px;border-top:1px solid #333;padding-top:5px;margin-top:4px}.grand{display:flex;justify-content:space-between;font-weight:bold;font-size:16px;border-top:3px double #333;border-bottom:3px double #333;padding:8px 6px;margin-top:10px;background:#f9f9f9}</style></head><body>
-    <h1>${co}</h1><h2>Laporan Laba Rugi</h2><h3>${tglNow}</h3>
-    <div class="sec-title">Pendapatan</div>
-    ${catIn.map(n=>`<div class="row indent"><span>${n}</span><span>${fmtRp(inList.filter(e=>e.nama===n).reduce((s,e)=>s+e.nominal,0))}</span></div>`).join("")}
-    <div class="total"><span>Total Pendapatan</span><span style="color:#27ae60">${fmtRp(ti)}</span></div>
-    <div class="sec-title">Beban</div>
-    ${catOut.map(n=>`<div class="row indent"><span>${n}</span><span>${fmtRp(outList.filter(e=>e.nama===n).reduce((s,e)=>s+e.nominal,0))}</span></div>`).join("")}
-    <div class="total"><span>Total Beban</span><span style="color:#e74c3c">${fmtRp(to)}</span></div>
-    <div class="row" style="margin-top:12px"><span>Laba sebelum pajak</span><span>${fmtRp(lsb)}</span></div>
-    <div class="row" style="color:#888;font-size:11px"><span>Pajak 1% (estimasi UMKM)</span><span>(${fmtRp(pjk)})</span></div>
-    <div class="grand"><span>Laba Bersih</span><span style="color:${lb>=0?"#27ae60":"#e74c3c"}">${fmtRp(lb)}</span></div>
-    </body></html>`);
-    w.document.close(); setTimeout(()=>w.print(),400);
-  };
-
-  return(
-    <div>
-      <div style={{background:"#fff",borderRadius:16,border:"2px solid #ddd",overflow:"hidden",maxWidth:600,margin:"0 auto",boxShadow:"0 4px 20px rgba(0,0,0,.08)"}}>
-        <div style={{padding:"24px 32px 14px",textAlign:"center",borderBottom:"2px solid #1a2e2a"}}>
-          <div style={{fontWeight:900,fontSize:20,color:"#1a2e2a"}}>{co}</div>
-          <div style={{fontSize:13,fontWeight:600,color:"#555",marginTop:2}}>Laporan Laba Rugi</div>
-          <div style={{fontSize:11,color:"#999",marginTop:1}}>{tglNow}</div>
-        </div>
-        <div style={{padding:"20px 32px"}}>
-          <div style={{fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:".5px",borderBottom:"1px solid #ddd",paddingBottom:5,marginBottom:10,color:"#1a2e2a"}}>Pendapatan</div>
-          {catIn.map(n=>{ const v=inList.filter(e=>e.nama===n).reduce((s,e)=>s+e.nominal,0); return(
-            <div key={n} style={{display:"flex",justifyContent:"space-between",padding:"4px 0 4px 20px",fontSize:13,borderBottom:"1px dotted #f0f0f0"}}>
-              <span style={{color:"#333"}}>{n}</span><span style={{fontWeight:600}}>{fmtRp(v)}</span>
-            </div>
-          );})}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",marginTop:4,borderTop:"1px solid #1a2e2a",fontWeight:800,fontSize:14,color:"#27ae60"}}>
-            <span>Total Pendapatan</span><span>{fmtRp(ti)}</span>
-          </div>
-          <div style={{fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:".5px",borderBottom:"1px solid #ddd",paddingBottom:5,margin:"16px 0 10px",color:"#1a2e2a"}}>Beban</div>
-          {catOut.map(n=>{ const v=outList.filter(e=>e.nama===n).reduce((s,e)=>s+e.nominal,0); return(
-            <div key={n} style={{display:"flex",justifyContent:"space-between",padding:"4px 0 4px 20px",fontSize:13,borderBottom:"1px dotted #f0f0f0"}}>
-              <span style={{color:"#333"}}>{n}</span><span style={{fontWeight:600}}>{fmtRp(v)}</span>
-            </div>
-          );})}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",marginTop:4,borderTop:"1px solid #1a2e2a",fontWeight:800,fontSize:14,color:"#e74c3c"}}>
-            <span>Total Beban</span><span>{fmtRp(to)}</span>
-          </div>
-          <div style={{borderTop:"1px solid #ccc",paddingTop:12,marginTop:4}}>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#333"}}>
-              <span>Laba sebelum pajak</span><span style={{fontWeight:700}}>{fmtRp(lsb)}</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:12,color:"#999"}}>
-              <span>Pajak (1% — estimasi UMKM)</span><span>({fmtRp(pjk)})</span>
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 8px",marginTop:8,borderTop:"3px double #1a2e2a",borderBottom:"3px double #1a2e2a",background:"#fafafa",borderRadius:4}}>
-            <span style={{fontWeight:900,fontSize:16,color:"#1a2e2a"}}>Laba Bersih</span>
-            <span style={{fontWeight:900,fontSize:22,color:lb>=0?"#27ae60":"#e74c3c"}}>{fmtRp(lb)}</span>
-          </div>
-          <div style={{marginTop:14,fontSize:10,color:"#bbb",textAlign:"center",lineHeight:1.7}}>
-            * Laporan otomatis dari data input. Konsultasikan akuntan untuk keperluan perpajakan resmi.
-          </div>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:14}}>
-        <button onClick={print} style={{background:"linear-gradient(135deg,#e74c3c,#ff6b6b)",border:"none",borderRadius:11,padding:"10px 22px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📄 Export & Print PDF</button>
-        <button onClick={()=>{
-          const rows=[["Tanggal","Jenis","Keterangan","Nominal"]];
-          log.forEach(e=>rows.push([e.tgl,e.jenis,e.nama,e.nominal]));
-          const a=document.createElement("a");
-          a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(rows.map(r=>r.join(",")).join("\n"));
-          a.download="laba-rugi.csv"; a.click();
-        }} style={{background:"linear-gradient(135deg,#27ae60,#2ecc71)",border:"none",borderRadius:11,padding:"10px 22px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📥 Export CSV</button>
-      </div>
-    </div>
-  );
-}
-
-function TabAnalisis({log}) {
-  const masuk   = log.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
-  const keluar  = log.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
-  const asetBrg = log.filter(e=>e.jenis==="aset_barang").reduce((s,e)=>s+e.nominal,0);
-  const asetMod = log.filter(e=>e.jenis==="aset_modal"||e.jenis==="aset_modal").reduce((s,e)=>s+e.nominal,0);
-  const laba    = masuk-keluar;
-  const margin  = masuk>0?((laba/masuk)*100):0;
-  const days    = [...new Set(log.map(e=>e.tgl))].length||1;
-  const rataHari= masuk/days;
-  const kondisi = margin>=20?"sehat":margin>=10?"cukup":"perhatian";
-  const kColor  = kondisi==="sehat"?CF.green:kondisi==="cukup"?CF.orange:CF.red;
-
-  // Aset per item
-  const asetBrgList = log.filter(e=>e.jenis==="aset_barang");
-  const asetModList = log.filter(e=>e.jenis==="aset_modal");
-
-  return (
-    <div>
-      {/* Status */}
-      <div style={{background:`${kColor}12`,border:`2px solid ${kColor}`,borderRadius:13,padding:"14px",marginBottom:14,display:"flex",gap:12,alignItems:"center"}}>
-        <div style={{width:44,height:44,borderRadius:12,background:kColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
-          {kondisi==="sehat"?"✅":kondisi==="cukup"?"⚠️":"❗"}
-        </div>
-        <div>
-          <div style={{fontWeight:900,fontSize:14,color:kColor}}>Kondisi Bisnis: {kondisi.toUpperCase()}</div>
-          <div style={{fontSize:11,color:CF.muted}}>Margin {margin.toFixed(1)}% · Rata {fmtRp(rataHari)}/hari</div>
-        </div>
-      </div>
-
-      {/* Aset Barang/Device */}
-      {asetBrgList.length>0&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.purple}33`,overflow:"hidden",marginBottom:14}}>
-          <div style={{background:`${CF.purple}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.purple}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:13,color:CF.purple}}>🖥️ Aset Barang / Device Konter</span>
-            <span style={{fontWeight:900,fontSize:13,color:CF.purple}}>{fmtRp(asetBrg)}</span>
-          </div>
-          {asetBrgList.map((e,i)=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderTop:i>0?`1px solid ${CF.bg}`:"none",fontSize:12}}>
-              <span style={{fontWeight:600}}>{e.nama}</span>
-              <span style={{fontWeight:800,color:CF.purple}}>{fmtRp(e.nominal)}</span>
-            </div>
-          ))}
-          <div style={{background:`${CF.purple}08`,padding:"8px 14px",borderTop:`1px solid ${CF.purple}22`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:900,color:CF.purple}}>
-            <span>Total Aset Barang</span><span>{fmtRp(asetBrg)}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Aset Modal Berputar */}
-      {asetModList.length>0&&(
-        <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.blue}33`,overflow:"hidden",marginBottom:14}}>
-          <div style={{background:`${CF.blue}12`,padding:"10px 14px",borderBottom:`1px solid ${CF.blue}22`,display:"flex",justifyContent:"space-between"}}>
-            <span style={{fontWeight:800,fontSize:13,color:CF.blue}}>🔄 Aset Modal Diputar (Voucer, SP, dll)</span>
-            <span style={{fontWeight:900,fontSize:13,color:CF.blue}}>{fmtRp(asetMod)}</span>
-          </div>
-          {asetModList.map((e,i)=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 14px",borderTop:i>0?`1px solid ${CF.bg}`:"none",fontSize:12}}>
-              <span style={{fontWeight:600}}>{e.nama}</span>
-              <span style={{fontWeight:800,color:CF.blue}}>{fmtRp(e.nominal)}</span>
-            </div>
-          ))}
-          <div style={{background:`${CF.blue}08`,padding:"8px 14px",borderTop:`1px solid ${CF.blue}22`,display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:900,color:CF.blue}}>
-            <span>Total Modal Diputar</span><span>{fmtRp(asetMod)}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Total aset gabungan */}
-      {(asetBrg+asetMod)>0&&(
-        <div style={{background:`linear-gradient(135deg,${CF.purple},${CF.blue})`,borderRadius:13,padding:"13px 16px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div>
-            <div style={{fontWeight:800,fontSize:12,color:"rgba(255,255,255,.8)"}}>TOTAL ASET KESELURUHAN</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.6)"}}>Barang {fmtRp(asetBrg)} + Modal {fmtRp(asetMod)}</div>
-          </div>
-          <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(asetBrg+asetMod)}</div>
-        </div>
-      )}
-
-      {/* Saran pisah rekening */}
-      {laba>0&&(
-        <div style={{background:"#fff8e1",border:`2px solid ${CF.orange}`,borderRadius:13,padding:"13px",marginBottom:14}}>
-          <div style={{fontWeight:800,fontSize:13,color:CF.orange,marginBottom:8}}>💡 Saran Pisah Rekening dari Laba {fmtRp(laba)}</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {[
-              {l:"💰 Tabungan (30%)",v:Math.floor(laba*.3/10000)*10000,c:CF.teal},
-              {l:"🔄 Modal Usaha (40%)",v:Math.floor(laba*.4/10000)*10000,c:CF.blue},
-              {l:"📦 Stok Cadangan (20%)",v:Math.floor(laba*.2/10000)*10000,c:CF.purple},
-              {l:"🎯 Dana Darurat (10%)",v:Math.floor(laba*.1/10000)*10000,c:CF.orange},
-            ].map(s=>(
-              <div key={s.l} style={{background:`${s.c}12`,borderRadius:9,padding:"9px 12px",border:`1px solid ${s.c}33`}}>
-                <div style={{fontSize:10,color:s.c,fontWeight:700}}>{s.l}</div>
-                <div style={{fontWeight:900,fontSize:15,color:s.c,marginTop:2}}>{fmtRp(s.v)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Proyeksi */}
-      <div style={{background:"#fff",borderRadius:13,border:`2px solid ${CF.border}`,padding:"13px",marginBottom:14}}>
-        <div style={{fontWeight:800,fontSize:13,marginBottom:10}}>📈 Proyeksi 3 Bulan</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-          {[{b:"Bulan 1",m:1.0},{b:"Bulan 2",m:1.05},{b:"Bulan 3",m:1.1}].map(p=>{
-            const pm=masuk*p.m*30/days, pl=pm-keluar*30/days;
-            return(
-              <div key={p.b} style={{background:CF.bg,borderRadius:9,padding:"10px 11px",border:`1px solid ${CF.border}`}}>
-                <div style={{fontWeight:800,fontSize:12,marginBottom:4}}>{p.b}</div>
-                <div style={{fontWeight:800,fontSize:13,color:CF.green}}>{fmtRp(pm)}</div>
-                <div style={{fontSize:10,color:CF.muted}}>est. masuk</div>
-                <div style={{fontWeight:800,fontSize:12,color:pl>=0?CF.teal:CF.red,marginTop:3}}>{pl>=0?"+":"-"}{fmtRp(pl)}</div>
-                <div style={{fontSize:10,color:CF.muted}}>est. laba</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CashflowPage({ transactions, outlets, onBack, notify }) {
-  const [tab, setTab] = useState("log");
-  const [log, setLog] = useState([]);
-
-  // Load from Supabase on mount
-  useEffect(()=>{
-    dbCashflow.getEntries().then(entries=>{
-      setLog(entries.map(e=>({id:e.id,tgl:e.tgl,jenis:e.jenis,kat:e.kategori||e.jenis,nama:e.nama,nominal:e.nominal})));
-    }).catch(()=>{});
-
-    // Realtime
-    const ch = supabase.channel("cashflow-rt")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"cashflow_entries"},(payload)=>{
-        const r=payload.new; if(!r) return;
-        const e={id:r.id,tgl:r.tgl,jenis:r.jenis,kat:r.kategori||r.jenis,nama:r.nama,nominal:r.nominal};
-        setLog(prev=>prev.find(x=>x.id===r.id)?prev:[e,...prev]);
-      })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"cashflow_entries"},(payload)=>{
-        const id=payload.old?.id; if(!id) return;
-        setLog(prev=>prev.filter(x=>x.id!==id));
-      })
-      .subscribe();
-    return ()=>supabase.removeChannel(ch);
-  },[]);
-
-  const addEntries = async (entries) => {
-    for(const e of entries) {
-      try { await dbCashflow.addEntry({id:e.id,tgl:e.tgl,jenis:e.jenis,nama:e.nama,nominal:e.nominal,sumber:"",kategori:e.kat||e.jenis}); }
-      catch(err) { console.warn("addEntry:",err); }
-    }
-  };
-
-  const deleteEntry = async (id) => {
-    try { await dbCashflow.deleteEntry(id); } catch(err) { console.warn("deleteEntry:",err); }
-  };
-
-  const masuk  = log.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
-  const keluar = log.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
-
+  const [cfTab,       setCfTab]       = useState("kalkulator");
+  const [cfLog,       setCfLog]       = useState([]);
   const [cfMobileTab, setCfMobileTab] = useState("catat");
   const [winWidth,    setWinWidth]    = useState(typeof window!=="undefined"?window.innerWidth:1200);
   useEffect(()=>{
@@ -7739,49 +7284,123 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     window.addEventListener("resize",onResize);
     return()=>window.removeEventListener("resize",onResize);
   },[]);
-  const isMobile = false; // TODO: re-enable after mobile fix
+  const isMobile = false; // TODO: enable mobile view
 
-  // ── Mobile add entry ─────────────────────────────────────────────────────
-  const handleMobileAdd = async (e) => {
-    setCfLog(prev=>[e,...prev]);
-    try { await dbCashflow.addEntry({id:e.id,tgl:e.tgl,jenis:e.jenis,nama:e.nama,nominal:e.nominal,sumber:"",kategori:e.kat||e.jenis}); }
-    catch(err) { setCfLog(prev=>prev.filter(x=>x.id!==e.id)); notify&&notify("Gagal simpan","error"); }
+  const loadCfEntries = () => {
+    dbCashflow.getEntries().then(entries=>{
+      if(Array.isArray(entries)) {
+        setCfLog(entries.map(e=>({
+          id:e.id, tgl:e.tgl, jenis:e.jenis,
+          kat:e.kategori||e.jenis, nama:e.nama, nominal:e.nominal
+        })));
+      }
+    }).catch(err=>{ console.error('cashflow load error:',err); });
   };
 
-  if(isMobile) return (
-    <div>Mobile view coming soon</div>
-  );
+  useEffect(()=>{
+    loadCfEntries();
+    const ch = supabase.channel("cashflow-rt-v2")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"cashflow_entries"},(p)=>{
+        const r=p.new; if(!r) return;
+        const e={id:r.id,tgl:r.tgl,jenis:r.jenis,kat:r.kategori||r.jenis,nama:r.nama,nominal:r.nominal};
+        setCfLog(prev=>prev.find(x=>x.id===r.id)?prev:[e,...prev]);
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"cashflow_entries"},(p)=>{
+        const r=p.new; if(!r) return;
+        const e={id:r.id,tgl:r.tgl,jenis:r.jenis,kat:r.kategori||r.jenis,nama:r.nama,nominal:r.nominal};
+        setCfLog(prev=>prev.map(x=>x.id===r.id?e:x));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"cashflow_entries"},(p)=>{
+        const id=p.old?.id; if(!id) return;
+        setCfLog(prev=>prev.filter(x=>x.id!==id));
+      })
+      .subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[]);
 
-  // ── DESKTOP VIEW ──────────────────────────────────────────────────────────
+  const cfAddEntries = async (entriesRaw) => {
+    const arr = Array.isArray(entriesRaw) ? entriesRaw : [entriesRaw];
+    const newOnes = arr.filter(e=>e&&e.id&&!cfLog.find(x=>x.id===e.id));
+    if(!newOnes.length) return;
+    setCfLog(prev=>[...newOnes,...prev]);
+    for(const e of newOnes) {
+      try {
+        await dbCashflow.addEntry({
+          id:e.id, tgl:e.tgl||today(), jenis:e.jenis||"masuk",
+          nama:e.nama||"", nominal:e.nominal||0,
+          sumber:"", kategori:e.kat||e.jenis||"lainnya"
+        });
+      } catch(err) {
+        setCfLog(prev=>prev.filter(x=>x.id!==e.id));
+        notify&&notify("Gagal simpan: "+e.nama,"error");
+      }
+    }
+  };
+
+  const cfDeleteEntry = async (id) => {
+    setCfLog(prev=>prev.filter(x=>x.id!==id));
+    try { await dbCashflow.deleteEntry(id); } catch(err){ console.warn("deleteEntry:",err); }
+  };
+
+  const cfRefresh = () => loadCfEntries();
+
+  const outletNames     = (outlets||[]).map(o=>o.nama);
+  const sistemMasukHari = 0;
+  const cfMasuk  = cfLog.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const cfKeluar = cfLog.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+  const cfLaba   = cfMasuk - cfKeluar;
+  const cfMargin = cfMasuk>0?(cfLaba/cfMasuk*100):0;
+
+  const handleCfTab = (k) => {
+    setCfTab(k);
+    if(["jurnal","besar","lapkeu","analisis"].includes(k)) loadCfEntries();
+  };
+
+  const cfTabs=[
+    {k:"kalkulator",l:"🧮 Kalkulator",   badge:"Cash"},
+    {k:"jurnal",    l:"📋 Jurnal",        badge:"CSV"},
+    {k:"besar",     l:"📚 Buku Besar",    badge:"CSV"},
+    {k:"lapkeu",    l:"📊 Lap. Keuangan", badge:"LR+AK+Neraca"},
+    {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
+  ];
+
+  if(isMobile) return <div>Mobile</div>;
+
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.3)"}}>
-        <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center"}}>
-          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",marginRight:12}}>← Menu</button>
-          <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>💼 Cashflow Manager</div>
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
+        <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>
+          <div style={{fontSize:18}}>💼</div>
+          <div>
+            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>Laporan Keuangan</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>Ammar Cell</div>
+          </div>
+          <div className="cf-header-kpi" style={{marginLeft:"auto",display:"flex",gap:6}}>
+            {[{l:"Masuk",v:fmtRp(cfMasuk),c:"#a7f3d0"},{l:"Keluar",v:fmtRp(cfKeluar),c:"#fca5a5"},{l:"Laba",v:fmtRp(cfLaba),c:cfLaba>=0?"#a7f3d0":"#fca5a5"},{l:"Margin",v:`${cfMargin.toFixed(1)}%`,c:"#fcd34d"}].map(k=>(
+              <div key={k.l} style={{textAlign:"center",background:"rgba(255,255,255,.1)",borderRadius:9,padding:"4px 10px",border:"1px solid rgba(255,255,255,.15)"}}>
+                <div style={{fontWeight:900,fontSize:12,color:k.c}}>{k.v}</div>
+                <div style={{fontSize:9,color:"rgba(255,255,255,.5)",fontWeight:700}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div style={{background:"rgba(0,0,0,.1)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"6px 20px",display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-          {[{l:"Total Masuk",v:`Rp ${new Intl.NumberFormat("id-ID").format(masuk)}`,c:"#a7f3d0"},{l:"Total Keluar",v:`Rp ${new Intl.NumberFormat("id-ID").format(keluar)}`,c:"#fca5a5"},{l:"Saldo",v:`Rp ${new Intl.NumberFormat("id-ID").format(masuk-keluar)}`,c:"#fcd34d"}].map(k=>(
-            <div key={k.l} style={{textAlign:"center"}}>
-              <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
-              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:600}}>{k.l}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)",overflowX:"auto"}}>
-          {[{k:"log",l:"📋 Log Harian"},{k:"besar",l:"📚 Buku Besar"},{k:"labarugi",l:"📊 Laba Rugi"},{k:"analisis",l:"🎯 Analisis"}].map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)}
-              style={{padding:"10px 16px",border:"none",borderBottom:`3px solid ${tab===t.k?"#fff":"transparent"}`,background:"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.55)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+        <div className="cf-tabs-header" style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.12)",overflowX:"auto"}}>
+          {cfTabs.map(t=>(
+            <button key={t.k} onClick={()=>handleCfTab(t.k)} className="cf-tab-btn"
+              style={{padding:"9px 14px",border:"none",borderBottom:`3px solid ${cfTab===t.k?"#fff":"transparent"}`,background:"transparent",color:cfTab===t.k?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}>
               {t.l}
+              <span style={{fontSize:8,background:"rgba(255,255,255,.15)",borderRadius:20,padding:"1px 5px",color:cfTab===t.k?"#fff":"rgba(255,255,255,.4)",fontWeight:700}}>{t.badge}</span>
             </button>
           ))}
         </div>
       </div>
-      <div style={{padding:"14px 20px",maxWidth:1000,margin:"0 auto"}}>
-        {tab==="log"      && <TabLog       log={log} setLog={setLog} onAddEntries={addEntries} onDelete={deleteEntry}/>}
-        {tab==="besar"    && <TabBukuBesar  log={log}/>}
-        {tab==="labarugi" && <TabLabaRugi   log={log}/>}
-        {tab==="analisis" && <TabAnalisis   log={log}/>}
+      <div className="cf-main-content cf-content" style={{padding:"14px 20px",maxWidth:1080,margin:"0 auto"}}>
+        {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
+        {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
+        {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
+        {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
+        {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
       </div>
     </div>
   );
