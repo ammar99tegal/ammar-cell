@@ -9618,11 +9618,18 @@ export default function App() {
   const [user,        setUserState]   = useState(savedUser);
   const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":"menu");
 
-  // ── PWA: Service Worker + Meta tags ─────────────────────────────────────
+  // ── PWA: Unregister old SW + register new ──────────────────────────────
   useEffect(()=>{
-    if("serviceWorker" in navigator)
-      navigator.serviceWorker.register("/sw.js").catch(()=>{});
-    // manifest
+    if("serviceWorker" in navigator){
+      // Unregister semua SW lama dulu
+      navigator.serviceWorker.getRegistrations().then(regs=>{
+        regs.forEach(r=>r.unregister());
+      }).then(()=>{
+        // Register SW baru setelah clear
+        navigator.serviceWorker.register("/sw.js").catch(()=>{});
+      });
+    }
+    // Inject manifest
     if(!document.querySelector('link[rel="manifest"]')){
       const l=document.createElement("link");l.rel="manifest";l.href="/manifest.json";document.head.appendChild(l);
     }
@@ -9630,15 +9637,6 @@ export default function App() {
     if(!document.querySelector('meta[name="theme-color"]')){
       const m=document.createElement("meta");m.name="theme-color";m.content="#0d9488";document.head.appendChild(m);
     }
-    // viewport mobile-friendly
-    let vp=document.querySelector('meta[name="viewport"]');
-    if(!vp){vp=document.createElement("meta");vp.name="viewport";document.head.appendChild(vp);}
-    vp.content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover";
-    // Apple PWA
-    [["apple-mobile-web-app-capable","yes"],["apple-mobile-web-app-status-bar-style","black-translucent"],
-     ["apple-mobile-web-app-title","Ammar Cell"],["mobile-web-app-capable","yes"]].forEach(([n,v])=>{
-      if(!document.querySelector(`meta[name="${n}"]`)){const m=document.createElement("meta");m.name=n;m.content=v;document.head.appendChild(m);}
-    });
   },[]);
   const [products,    setProductsState] = useState([]);
   const [outlets,     setOutletsState]  = useState([]);
