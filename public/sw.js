@@ -1,26 +1,29 @@
-// Service Worker — Ammar Cell Kasir PWA
-const CACHE = "ammar-cell-v1";
-const STATIC = ["/", "/index.html"];
+// Service Worker — Ammar Cell Kasir PWA v2
+const CACHE = "ammar-cell-v2";
 
-self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(STATIC)).then(() => self.skipWaiting())
-  );
-});
+// Install: skip waiting langsung aktif
+self.addEventListener("install", () => self.skipWaiting());
 
+// Activate: hapus cache lama, claim clients
 self.addEventListener("activate", e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
+// Fetch: network first, jangan cache HTML (biar selalu fresh)
 self.addEventListener("fetch", e => {
-  // Skip non-GET dan Supabase (selalu online)
   if(e.request.method !== "GET") return;
+  // Supabase & API: jangan di-cache
   if(e.request.url.includes("supabase.co")) return;
-
+  // HTML: selalu dari network
+  if(e.request.headers.get("accept")?.includes("text/html")) {
+    e.respondWith(fetch(e.request).catch(() => caches.match("/")));
+    return;
+  }
+  // Assets lain: network first
   e.respondWith(
     fetch(e.request)
       .then(res => {
@@ -28,6 +31,6 @@ self.addEventListener("fetch", e => {
         caches.open(CACHE).then(c => c.put(e.request, clone));
         return res;
       })
-      .catch(() => caches.match(e.request).then(cached => cached || caches.match("/")))
+      .catch(() => caches.match(e.request))
   );
 });
