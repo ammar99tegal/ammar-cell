@@ -9026,7 +9026,7 @@ function PulseDotM({color="#27ae60",size=8}){
   );
 }
 
-function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products: productsProp, onBack, notify }) {
+function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products: productsProp, prodOrder: prodOrderProp, onBack, notify }) {
   const isMonitorRole = user?.role==="monitor";
   const monitorOutletIds = user?.outletIds||[];
   const visibleOutlets = isMonitorRole && monitorOutletIds.length>0
@@ -9049,14 +9049,16 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
   // -- Live Stok state --
   const [liveStocks,   setLiveStocks]  = useState(stocksProp||{});
   const [liveProducts, setLiveProducts]= useState(productsProp||[]);
+  const [liveProdOrder,setLiveProdOrder]= useState(prodOrderProp||null);
   const [stokOutlet,   setStokOutlet]  = useState("semua");
   const [stokSearch,   setStokSearch]  = useState("");
-  const [stokSort,     setStokSort]    = useState("nama"); // nama|stok|modal
-  const [stokFilter,   setStokFilter]  = useState("semua"); // semua|menipis|habis
+  const [stokSort,     setStokSort]    = useState("urutan"); // urutan|nama|stok_asc|stok_desc|modal
+  const [stokFilter,   setStokFilter]  = useState("semua");
 
-  // Sync props kalau berubah dari parent
-  useEffect(()=>{ if(stocksProp) setLiveStocks(stocksProp); },[stocksProp]);
+  // Sync props kalau berubah dari parent (termasuk prodOrder)
+  useEffect(()=>{ if(stocksProp)        setLiveStocks(stocksProp); },[stocksProp]);
   useEffect(()=>{ if(productsProp?.length) setLiveProducts(productsProp); },[productsProp]);
+  useEffect(()=>{ if(prodOrderProp)     setLiveProdOrder(prodOrderProp); },[prodOrderProp]);
 
   useEffect(()=>{ const iv=setInterval(()=>setClock(now()),1000); return()=>clearInterval(iv); },[]);
 
@@ -9124,6 +9126,9 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         }
         const { data:prodRows } = await supabase.from('products').select('*');
         if(prodRows) setLiveProducts(prodRows);
+        // Load urutan produk
+        const ord = await dbProductOrder.getOrder().catch(()=>[]);
+        if(ord&&ord.length) setLiveProdOrder(ord.map(String));
       } catch(e){ console.warn('loadStok monitor:',e); }
     };
     loadStok();
@@ -9144,6 +9149,12 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         if(p.eventType==='DELETE') setLiveProducts(prev=>prev.filter(x=>x.id!==r.id));
         else if(p.eventType==='INSERT') setLiveProducts(prev=>[...prev.filter(x=>x.id!==r.id),r]);
         else setLiveProducts(prev=>prev.map(x=>x.id===r.id?{...x,...r}:x));
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'product_order'},()=>{
+        // Urutan produk diubah dari menu Produk & Stok — sync ke monitor
+        dbProductOrder.getOrder().then(ord=>{
+          if(ord&&ord.length) setLiveProdOrder(ord.map(String));
+        }).catch(()=>{});
       })
       .subscribe();
     return()=>supabase.removeChannel(chStok);
@@ -9202,6 +9213,12 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
   };
 
   // -- Stok helpers --
+  // Produk diurutkan sesuai prodOrder (identik dengan menu Produk & Stok)
+  const orderedProducts = liveProdOrder && liveProdOrder.length
+    ? [...liveProdOrder.map(id=>liveProducts.find(p=>String(p.id)===String(id))).filter(Boolean),
+       ...liveProducts.filter(p=>!liveProdOrder.map(String).includes(String(p.id)))]
+    : liveProducts;
+
   const getStokStats = (outletId) => {
     const s = liveStocks[outletId]||{};
     const items = liveProducts.map(p=>({ ...p, qty:s[p.id]??0, nilai:(s[p.id]??0)*(p.modal||0) }));
@@ -9215,15 +9232,18 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
   };
 
   const getStokFiltered = (outletId) => {
-    const stats = getStokStats(outletId);
-    let list = stats.items;
+    const s = liveStocks[outletId]||{};
+    // Mulai dari orderedProducts agar urutan sama persis dengan menu Produk & Stok
+    let list = orderedProducts.map(p=>({ ...p, qty:s[p.id]??0, nilai:(s[p.id]??0)*(p.modal||0) }));
     if(stokFilter==="habis")   list = list.filter(p=>p.qty===0);
     if(stokFilter==="menipis") list = list.filter(p=>p.qty>0&&p.qty<=5);
     if(stokSearch) list = list.filter(p=>p.name?.toLowerCase().includes(stokSearch.toLowerCase())||p.category?.toLowerCase().includes(stokSearch.toLowerCase()));
+    // "urutan" = urutan prodOrder, tidak di-sort ulang
     if(stokSort==="stok_asc")  list.sort((a,b)=>a.qty-b.qty);
     else if(stokSort==="stok_desc") list.sort((a,b)=>b.qty-a.qty);
     else if(stokSort==="modal") list.sort((a,b)=>b.nilai-a.nilai);
-    else list.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+    else if(stokSort==="nama") list.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+    // stokSort==="urutan" -> tidak diapa-apakan, urutan prodOrder dipertahankan
     return list;
   };
 
@@ -9605,6 +9625,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
               {/* Sort */}
               <select value={stokSort} onChange={e=>setStokSort(e.target.value)}
                 style={{padding:"5px 10px",borderRadius:9,border:"2px solid #e0f5f1",fontSize:10,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff",color:"#0d9488"}}>
+                <option value="urutan">Urutan Produk ✓</option>
                 <option value="nama">A-Z</option>
                 <option value="stok_asc">Stok ↑</option>
                 <option value="stok_desc">Stok ↓</option>
@@ -9716,6 +9737,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
               <div style={{width:1,height:20,background:"#e0f5f1",flexShrink:0}}/>
               <select value={stokSort} onChange={e=>setStokSort(e.target.value)}
                 style={{padding:"5px 10px",borderRadius:9,border:"2px solid #e0f5f1",fontSize:10,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff"}}>
+                <option value="urutan">Urutan Produk ✓</option>
                 <option value="nama">A-Z</option>
                 <option value="stok_asc">Stok ↑</option>
                 <option value="stok_desc">Stok ↓</option>
@@ -9753,7 +9775,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
 
               {/* Rows */}
               <div style={{maxHeight:520,overflowY:"auto"}}>
-                {liveProducts
+                {orderedProducts
                   .filter(p=>{
                     if(stokFilter==="habis")   return visibleOutlets.some(o=>(liveStocks[o.id]?.[p.id]??0)===0);
                     if(stokFilter==="menipis") return visibleOutlets.some(o=>{ const q=liveStocks[o.id]?.[p.id]??0; return q>0&&q<=5; });
@@ -9771,7 +9793,8 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
                       const qb=visibleOutlets.reduce((s,o)=>s+(liveStocks[o.id]?.[b.id]??0),0);
                       return qb-qa;
                     }
-                    return (a.name||"").localeCompare(b.name||"");
+                    if(stokSort==="nama") return (a.name||"").localeCompare(b.name||"");
+                    return 0; // "urutan" -> orderedProducts sudah terurut
                   })
                   .map((p,i)=>{
                     const qtys   = visibleOutlets.map(o=>liveStocks[o.id]?.[p.id]??0);
@@ -10469,7 +10492,7 @@ export default function App() {
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
+      {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
       {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
