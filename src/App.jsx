@@ -1746,17 +1746,6 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
           </>
         )}
 
-        {/* -- STOK TABS (Opname/Masuk/Keluar/Transfer/Log) -- */}
-        {["opname","masuk","keluar","transfer","log"].includes(mainTab)&&(
-          <StokPageInner
-            tab={mainTab}
-            products={products} outlets={outlets}
-            stocks={stocks} setStocks={setStocks}
-            selectedOutlet={selOutlet} notify={notify}
-            prodOrder={prodOrder}
-          />
-        )}
-
         {/* MASUK / KELUAR / TRANSFER */}
         {["masuk","keluar","transfer"].includes(tab)&&(()=>{
           const tc = {masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"}[tab];
