@@ -1466,8 +1466,12 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
 
   // -- BULK OPERATIONS --------------------------------------------------------
   const startBulk = (type) => {
+    const baseList = (_prodOrder&&_prodOrder.length)
+      ? [..._prodOrder.map(id=>products.find(p=>String(p.id)===String(id))).filter(Boolean),
+         ...products.filter(p=>!_prodOrder.map(String).includes(String(p.id)))]
+      : products;
     setBulkType(type);
-    setBulkRows(products.map(p=>({id:p.id, name:p.name, stokSaat:outletStock[p.id]??0, qty:"", note:""})));
+    setBulkRows(baseList.map(p=>({id:p.id, name:p.name, stokSaat:outletStock[p.id]??0, qty:"", note:""})));
     setBulkMode(true);
     setBulkTransferTo("");
   };
@@ -1742,37 +1746,102 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
           </>
         )}
 
+        {/* -- STOK TABS (Opname/Masuk/Keluar/Transfer/Log) -- */}
+        {["opname","masuk","keluar","transfer","log"].includes(mainTab)&&(
+          <StokPageInner
+            tab={mainTab}
+            products={products} outlets={outlets}
+            stocks={stocks} setStocks={setStocks}
+            selectedOutlet={selOutlet} notify={notify}
+            prodOrder={prodOrder}
+          />
+        )}
+
         {/* MASUK / KELUAR / TRANSFER */}
-        {["masuk","keluar","transfer"].includes(tab)&&(
-          <div style={{maxWidth:480}}>
-            <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"18px"}}>
-              <div style={{fontWeight:800,fontSize:14,color:{masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"}[tab],marginBottom:14}}>
-                {tab==="masuk"?"⬇ Stok Masuk":tab==="keluar"?"⬆ Stok Keluar":"⇄ Transfer Stok"}
+        {["masuk","keluar","transfer"].includes(tab)&&(()=>{
+          const tc = {masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"}[tab];
+          const tIcon = {masuk:"⬇",keluar:"⬆",transfer:"⇄"}[tab];
+          const tName = tab==="masuk"?"Stok Masuk":tab==="keluar"?"Stok Keluar":"Transfer Stok";
+          const baseList = (_prodOrder&&_prodOrder.length)
+            ? [..._prodOrder.map(id=>products.find(p=>String(p.id)===String(id))).filter(Boolean),
+               ...products.filter(p=>!_prodOrder.map(String).includes(String(p.id)))]
+            : products;
+          const initBulk = () => {
+            setBulkType(tab);
+            setBulkRows(baseList.map(p=>({id:p.id,name:p.name,stokSaat:outletStock[p.id]??0,qty:"",note:""})));
+            setBulkTransferTo("");
+            setBulkMode(true);
+          };
+          return (
+            <div>
+              {/* Toggle satuan / massal */}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+                <div style={{fontWeight:800,fontSize:14,color:tc}}>{tIcon} {tName}</div>
+                <div style={{marginLeft:"auto",display:"flex",gap:7}}>
+                  <button onClick={()=>setBulkMode(false)}
+                    style={{padding:"6px 16px",borderRadius:9,border:`2px solid ${!bulkMode?tc:"#e0f5f1"}`,
+                      background:!bulkMode?tc:"#fff",color:!bulkMode?"#fff":tc,
+                      fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                    📝 Satuan
+                  </button>
+                  <button onClick={initBulk}
+                    style={{padding:"6px 16px",borderRadius:9,border:`2px solid ${bulkMode?tc:"#e0f5f1"}`,
+                      background:bulkMode?tc:"#fff",color:bulkMode?"#fff":tc,
+                      fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all .15s",display:"flex",alignItems:"center",gap:5}}>
+                    📋 Input Massal
+                    {bulkMode&&bulkRows.filter(r=>r.qty&&+r.qty>0).length>0&&(
+                      <span style={{background:"rgba(255,255,255,.3)",borderRadius:20,padding:"0 6px",fontSize:10,fontWeight:800}}>
+                        {bulkRows.filter(r=>r.qty&&+r.qty>0).length} diisi
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
-              <div style={{marginBottom:10}}>
-                <label style={{...lbl}}>Produk *</label>
-                <select value={form.productId} onChange={e=>setForm(p=>({...p,productId:e.target.value}))} style={{...inp}}>
-                  <option value="">-- Pilih Produk --</option>
-                  {products.map(p=><option key={p.id} value={p.id}>{p.name} (stok: {outletStock[p.id]??0})</option>)}
-                </select>
-              </div>
-              {tab==="transfer"&&(
-                <div style={{marginBottom:10}}>
-                  <label style={{...lbl}}>Outlet Tujuan *</label>
-                  <select value={transferTo} onChange={e=>setTransferTo(e.target.value)} style={{...inp}}>
-                    <option value="">-- Pilih Outlet --</option>
-                    {outlets.filter(o=>o.id!==selectedOutlet).map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
-                  </select>
+
+              {/* -- SATUAN -- */}
+              {!bulkMode&&(
+                <div style={{maxWidth:480}}>
+                  <div style={{background:"#fff",borderRadius:14,border:`2px solid ${tc}25`,padding:"18px"}}>
+                    <div style={{marginBottom:10}}>
+                      <label style={{...lbl}}>Produk *</label>
+                      <select value={form.productId} onChange={e=>setForm(p=>({...p,productId:e.target.value}))} style={{...inp}}>
+                        <option value="">-- Pilih Produk --</option>
+                        {baseList.map(p=><option key={p.id} value={p.id}>{p.name} (stok: {outletStock[p.id]??0})</option>)}
+                      </select>
+                    </div>
+                    {tab==="transfer"&&(
+                      <div style={{marginBottom:10}}>
+                        <label style={{...lbl}}>Outlet Tujuan *</label>
+                        <select value={transferTo} onChange={e=>setTransferTo(e.target.value)} style={{...inp}}>
+                          <option value="">-- Pilih Outlet --</option>
+                          {outlets.filter(o=>o.id!==selectedOutlet).map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <Field label="Jumlah *" value={form.qty} onChange={e=>setForm(p=>({...p,qty:e.target.value}))} type="number" placeholder="0"/>
+                    <Field label="Catatan" value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="Opsional..."/>
+                    <button onClick={tab==="masuk"?doMasuk:tab==="keluar"?doKeluar:doTransfer}
+                      style={{width:"100%",background:`linear-gradient(135deg,${tab==="masuk"?"#27ae60,#2ecc71":tab==="keluar"?"#e74c3c,#ff6b6b":"#2980b9,#3498db"})`,
+                        border:"none",borderRadius:10,padding:12,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
+                      {tab==="masuk"?"Simpan Stok Masuk":tab==="keluar"?"Simpan Stok Keluar":"Lakukan Transfer"}
+                    </button>
+                  </div>
                 </div>
               )}
-              <Field label="Jumlah *" value={form.qty} onChange={e=>setForm(p=>({...p,qty:e.target.value}))} type="number" placeholder="0"/>
-              <Field label="Catatan" value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="Opsional..."/>
-              <button onClick={tab==="masuk"?doMasuk:tab==="keluar"?doKeluar:doTransfer} style={{width:"100%",background:`linear-gradient(135deg,${tab==="masuk"?"#27ae60,#2ecc71":tab==="keluar"?"#e74c3c,#ff6b6b":"#2980b9,#3498db"})`,border:"none",borderRadius:10,padding:12,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
-                {tab==="masuk"?"Simpan Stok Masuk":tab==="keluar"?"Simpan Stok Keluar":"Lakukan Transfer"}
-              </button>
+
+              {/* -- MASSAL -- bulkMode=true sudah dirender di awal sebagai full-screen view */}
+              {bulkMode&&(
+                <div style={{background:tc+"08",border:`2px dashed ${tc}40`,borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:20}}>📋</span>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:13,color:tc}}>Mode Input Massal Aktif</div>
+                    <div style={{fontSize:11,color:"#888",marginTop:2}}>Tabel massal ditampilkan di atas halaman ini.</div>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* LOG */}
         {tab==="log"&&(
