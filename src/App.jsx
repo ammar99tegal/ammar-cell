@@ -1,13 +1,13 @@
-// Ammar Cell App — build 20260602-1043
+// Ammar Cell App -- build 20260602-1043
 import { useState, useEffect, useCallback, useRef } from "react";
 import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // CONSTANTS
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 const DEFAULT_SALDO_APPS = ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay","LinkAja","M-Kios"];
 
-// ── Responsive helpers ────────────────────────────────────────────────────────
+// -- Responsive helpers --------------------------------------------------------
 const useDevice = () => {
   const [w, setW] = useState(window.innerWidth);
   useEffect(() => {
@@ -28,7 +28,7 @@ const fmtRp = n => `Rp ${fmt(n)}`;
 const pctGrowth = (a,b) => b>0?((a-b)/b*100).toFixed(1):"N/A";
 const growthColor = g => isNaN(+g)?"#94a3b8":+g>0?"#10b981":+g<0?"#f43f5e":"#94a3b8";
 const growthBg    = g => isNaN(+g)?"#f8fafc":+g>0?"#ecfdf5":+g<0?"#fff1f2":"#f8fafc";
-const growthIcon  = g => isNaN(+g)?"—":+g>0?"▲":+g<0?"▼":"—";
+const growthIcon  = g => isNaN(+g)?"--":+g>0?"▲":+g<0?"▼":"--";
 const fmtS  = n => n>=1000000?`${(n/1000000).toFixed(1)}jt`:n>=1000?`${(n/1000).toFixed(0)}rb`:String(Math.round(n));
 const safeDt = v => {
   if(!v) return null;
@@ -38,15 +38,15 @@ const safeDt = v => {
   if(m){ const d2=new Date(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`); if(!isNaN(d2)) return d2; }
   return null;
 };
-const fmtDT = v => { const d=safeDt(v); if(!d) return '—'; return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
-const fmtT  = v => { const d=safeDt(v); if(!d) return '—'; return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
+const fmtDT = v => { const d=safeDt(v); if(!d) return '--'; return d.toLocaleDateString('id-ID',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
+const fmtT  = v => { const d=safeDt(v); if(!d) return '--'; return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}); };
 const now   = () => new Date().toLocaleString("id-ID");
 const uid   = () => Math.random().toString(36).substr(2,8).toUpperCase();
 const today = () => new Date().toLocaleDateString("id-ID");
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // ICONS
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 const Ic = {
   Cart:     (s=22)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={s} height={s}><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>,
   Trash:    (s=14)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width={s} height={s}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>,
@@ -77,9 +77,9 @@ const Ic = {
   Chart: (s=22)=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width={s} height={s}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>,
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // HELPERS
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
   *{box-sizing:border-box;}
@@ -89,7 +89,7 @@ const css = `
   @keyframes fadeUp{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
   button,input,textarea,select{font-family:'Nunito',sans-serif;}
 
-  /* ── Responsive base ── */
+  /* -- Responsive base -- */
   html { font-size: 16px; }
 
   /* Desktop besar */
@@ -108,12 +108,12 @@ const css = `
   @media (max-width: 767px) and (orientation: landscape) {
     html { font-size: 12px; }
   }
-  /* HP portrait — sarankan landscape */
+  /* HP portrait -- sarankan landscape */
   @media (max-width: 767px) and (orientation: portrait) {
     html { font-size: 13px; }
   }
 
-  /* ── Cashflow Mobile ── */
+  /* -- Cashflow Mobile -- */
   @media (max-width: 767px) {
     .cf-kalkulator-grid { grid-template-columns: 1fr !important; }
     .cf-versus-row      { flex-direction: column !important; gap: 6px !important; }
@@ -230,9 +230,9 @@ function Field({label,value,onChange,type="text",placeholder="",note,style:sx={}
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // LOGIN
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function LoginPage({ users, onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -284,9 +284,9 @@ function LoginPage({ users, onLogin }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // MENU UTAMA
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function MenuUtama({ user, onNavigate, onLogout, stats }) {
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
@@ -375,9 +375,9 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // OUTLET MANAGEMENT
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, products, onBack, notify }) {
   const [tab,           setTab]           = useState("outlets"); // outlets | users
   const [showOutletForm,setShowOutletForm]= useState(false);
@@ -492,7 +492,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                   <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
                     <div>
                       <div style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{o.nama}</div>
-                      <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{o.alamat||"—"}</div>
+                      <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{o.alamat||"--"}</div>
                     </div>
                     <span style={{background:o.aktif?"#e0faf5":"#f0f0f0",color:o.aktif?"#0d9488":"#aaa",fontWeight:800,fontSize:10,padding:"2px 9px",borderRadius:20}}>{o.aktif?"🟢 Aktif":"⚫ Nonaktif"}</span>
                   </div>
@@ -529,7 +529,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
               </tr></thead>
               <tbody>
                 {Object.entries(users).map(([key,u],i)=>{
-                  const outletNama=outlets.find(o=>o.id===u.outletId)?.nama||"—";
+                  const outletNama=outlets.find(o=>o.id===u.outletId)?.nama||"--";
                   return (
                     <tr key={key} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
@@ -586,7 +586,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
           <Field label="Password" value={uForm.pass} onChange={e=>setUForm(p=>({...p,pass:e.target.value}))} placeholder={editUser?"Kosongkan jika tidak diubah":"Password baru..."} type="password"/>
           <Field label="Nama Lengkap *" value={uForm.nama} onChange={e=>setUForm(p=>({...p,nama:e.target.value}))} placeholder="Nama tampil..."/>
 
-          {/* Role — tombol visual */}
+          {/* Role -- tombol visual */}
           <div style={{marginBottom:14}}>
             <label style={{...lbl}}>Role *</label>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
@@ -604,13 +604,13 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
             </div>
           </div>
 
-          {/* Outlet checklist — semua role kecuali admin */}
+          {/* Outlet checklist -- semua role kecuali admin */}
           {uForm.role!=="admin"?(
             <div style={{marginBottom:14}}>
               <label style={{...lbl}}>
                 Outlet Tugasan
                 <span style={{color:uForm.role==="monitor"?"#d97706":"#0d9488",fontWeight:600,marginLeft:6,fontSize:10}}>
-                  {uForm.role==="monitor"?"— outlet yang dipantau":"— bisa pilih beberapa"}
+                  {uForm.role==="monitor"?"-- outlet yang dipantau":"-- bisa pilih beberapa"}
                 </span>
               </label>
               <div style={{border:"2px solid #b2ede6",borderRadius:11,padding:"8px 10px",background:"#fafffe"}}>
@@ -674,7 +674,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   );
 }
 
-// ── Komponen baris edit kategori (useState tidak boleh di dalam .map()) ──────
+// -- Komponen baris edit kategori (useState tidak boleh di dalam .map()) ------
 function CategoryEditRow({ cat, onSave }) {
   const [val, setVal] = useState(cat);
   return (
@@ -689,7 +689,7 @@ function CategoryEditRow({ cat, onSave }) {
   );
 }
 
-// ── StokPageInner — reuse StokPage body dengan tab dari parent ──────────────
+// -- StokPageInner -- reuse StokPage body dengan tab dari parent --------------
 function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutlet, notify, prodOrder }) {
   return (
     <StokPage
@@ -702,7 +702,7 @@ function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutl
   );
 }
 
-// ── StokAktifTab — kelola produk aktif per outlet ──────────────────────────────
+// -- StokAktifTab -- kelola produk aktif per outlet ------------------------------
 function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifProds, notify }) {
   const [saved,  setSaved]  = useState(false);
   const [search, setSearch] = useState("");
@@ -747,7 +747,7 @@ function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifP
     <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
         {[
-          {l:`Aktif — ${outlet?.nama?.replace("Ammar Cell ","")||""}`,v:`${aktifCount}/${products.length}`,c:"#27ae60",bg:"#e8f8f0"},
+          {l:`Aktif -- ${outlet?.nama?.replace("Ammar Cell ","")||""}`,v:`${aktifCount}/${products.length}`,c:"#27ae60",bg:"#e8f8f0"},
           {l:"Nonaktif",v:products.length-aktifCount,c:"#e74c3c",bg:"#fff0f0"},
           {l:"Total Produk",v:products.length,c:"#2980b9",bg:"#e8f4fd"},
         ].map(k=>(
@@ -797,9 +797,9 @@ function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifP
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// PRODUK (Master Produk — tanpa stok, stok ada di per outlet)
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
+// PRODUK (Master Produk -- tanpa stok, stok ada di per outlet)
+// ==============================================================================
 function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack, notify, prodOrderRoot, setProdOrderRoot, aktifProdsRoot, setAktifProdsRoot }) {
   const [mainTab,      setMainTab]     = useState("produk"); // produk|opname|masuk|keluar|transfer|aktif|log
   const [selOutlet,    setSelOutlet]   = useState(outlets?.[0]?.id||"");
@@ -818,7 +818,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   const [importText,  setImportText]  = useState("");
   const [importError, setImportError] = useState("");
   const [saving,      setSaving]      = useState(false);
-  // prodOrder local — init dari prodOrderRoot (App root) agar sudah terisi saat buka
+  // prodOrder local -- init dari prodOrderRoot (App root) agar sudah terisi saat buka
   const [prodOrder,   setProdOrder]   = useState(prodOrderRoot||null);
   const [sortProd,    setSortProd]    = useState("default");
   const dragProdIdx  = useRef(null);
@@ -910,7 +910,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
     catch{ notify("Gagal update kategori!","err"); }
   };
 
-  // ── EXPORT MASSAL ──────────────────────────────────────────────────────────
+  // -- EXPORT MASSAL ----------------------------------------------------------
   const exportCSV = () => {
     const rows=[["Nama Produk","Barcode","Kategori","Harga Modal","Harga Jual"]];
     products.forEach(p=>rows.push([p.name, p.barcode||"", p.category, p.modal, p.price]));
@@ -921,7 +921,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
     notify(`Export ${products.length} produk berhasil!`,"ok");
   };
 
-  // ── EDIT MASSAL ────────────────────────────────────────────────────────────
+  // -- EDIT MASSAL ------------------------------------------------------------
   const startBulkEdit = () => { setBulkData(fp.map(p=>({...p}))); setBulkMode(true); };
   const updateBulkRow = (id, field, val) => setBulkData(prev=>prev.map(p=>p.id===id?{...p,[field]:val}:p));
   const saveBulkEdit = async () => {
@@ -934,7 +934,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
     setSaving(false);
   };
 
-  // ── IMPORT MASSAL CSV ──────────────────────────────────────────────────────
+  // -- IMPORT MASSAL CSV ------------------------------------------------------
   const handleImportFile = e => {
     const file=e.target.files[0]; if(!file) return;
     const reader=new FileReader();
@@ -976,7 +976,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
           <div style={{fontWeight:900,fontSize:15,color:"#fff",flex:1}}>📦 Produk & Stok</div>
         </div>
-        {/* Outlet selector — hanya tab stok */}
+        {/* Outlet selector -- hanya tab stok */}
         {["opname","masuk","keluar","transfer","aktif","log"].includes(mainTab)&&(
           <div style={{background:"rgba(0,0,0,.1)",padding:"5px 18px",display:"flex",gap:7,overflowX:"auto"}}>
             <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.7)",flexShrink:0,paddingTop:3}}>Outlet:</span>
@@ -999,11 +999,11 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         </div>
       </div>
 
-      {/* ── BULK EDIT TABLE ── */}
+      {/* -- BULK EDIT TABLE -- */}
       {bulkMode&&(
         <div style={{padding:"14px 18px",maxWidth:1000,margin:"0 auto"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📝 Edit Massal — {bulkData.length} produk</div>
+            <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📝 Edit Massal -- {bulkData.length} produk</div>
             <div style={{display:"flex",gap:7}}>
               <button onClick={()=>setBulkMode(false)} style={{background:"#f0f0f0",border:"none",borderRadius:9,padding:"7px 14px",fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
               <button onClick={saveBulkEdit} disabled={saving} style={{background:saving?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"7px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
@@ -1037,7 +1037,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         </div>
       )}
 
-      {/* ── IMPORT MODAL ── */}
+      {/* -- IMPORT MODAL -- */}
       {showImport&&(
         <Modal onClose={()=>setShowImport(false)} title="📥 Import Produk dari CSV">
           <div style={{background:"#f0faf8",borderRadius:9,padding:"10px 13px",marginBottom:12,fontSize:12}}>
@@ -1047,7 +1047,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
               VC ISAT 6GB, 8991101152, INDOSAT, 9295, 11000<br/>
               Kabel Data, , AKSESORIS, 15000, 25000
             </code>
-            <div style={{fontSize:10,color:"#aaa",marginTop:4}}>* Baris pertama (header) boleh ada atau tidak · Barcode boleh kosong</div>
+            <div style={{fontSize:10,color:"#aaa",marginTop:4}}>* Baris pertama (header) boleh ada atau tidak . Barcode boleh kosong</div>
           </div>
           <div style={{marginBottom:10}}>
             <label style={{fontSize:11,fontWeight:700,color:"#444",marginBottom:5,display:"block"}}>Upload File CSV / TXT</label>
@@ -1075,7 +1075,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         </Modal>
       )}
 
-      {/* ── NORMAL VIEW (Produk tab) ── */}
+      {/* -- NORMAL VIEW (Produk tab) -- */}
       {!bulkMode&&mainTab==="produk"&&(
       <div style={{padding:"14px 18px",maxWidth:920,margin:"0 auto"}}>
 
@@ -1091,7 +1091,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           </div>
         )}
 
-        {/* ── Action Toolbar ── */}
+        {/* -- Action Toolbar -- */}
         <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap",alignItems:"center",background:"#fff",borderRadius:13,padding:"10px 14px",border:"2px solid #e0f5f1",boxShadow:"0 1px 6px rgba(13,148,136,.06)"}}>
           <button onClick={openAdd}
             style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"7px 16px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 8px rgba(13,148,136,.3)"}}>
@@ -1116,7 +1116,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           </button>
         </div>
 
-        {/* ── Search + Category Filter ── */}
+        {/* -- Search + Category Filter -- */}
         <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{position:"relative",flex:1,minWidth:200}}>
             <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
@@ -1219,7 +1219,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
                   <td style={{padding:"9px 12px",color:"#ccc",fontWeight:600}}>{i+1}</td>
                   <td style={{padding:"9px 6px",color:isDragging?"#0d9488":"#b2ede6",fontSize:18,cursor:isDragging?"grabbing":"grab",userSelect:"none",textAlign:"center",transition:"color .15s"}} title="Drag untuk atur urutan">⠿</td>
                   <td style={{padding:"9px 12px",fontWeight:800}}>{p.name}</td>
-                  <td style={{padding:"9px 12px",color:"#888",fontFamily:"monospace",fontSize:11}}>{p.barcode||"—"}</td>
+                  <td style={{padding:"9px 12px",color:"#888",fontFamily:"monospace",fontSize:11}}>{p.barcode||"--"}</td>
                   <td style={{padding:"9px 12px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 8px",borderRadius:6}}>{p.category}</span></td>
                   <td style={{padding:"9px 12px",color:"#888"}}>{fmtRp(p.modal)}</td>
                   <td style={{padding:"9px 12px",fontWeight:800,color:"#0d9488"}}>{fmtRp(p.price)}</td>
@@ -1270,7 +1270,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
       )}
       {confirmDel&&<ConfirmModal msg={`Hapus produk "${confirmDel.name}"?`} onConfirm={()=>del(confirmDel.id)} onCancel={()=>setConfirmDel(null)}/>}
 
-      {/* ── STOK TABS (Opname/Masuk/Keluar/Transfer/Log) ── */}
+      {/* -- STOK TABS (Opname/Masuk/Keluar/Transfer/Log) -- */}
       {["opname","masuk","keluar","transfer","log"].includes(mainTab)&&(
         <StokPageInner
           tab={mainTab}
@@ -1281,7 +1281,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         />
       )}
 
-      {/* ── TAB AKTIF ── */}
+      {/* -- TAB AKTIF -- */}
       {mainTab==="aktif"&&(
         <StokAktifTab
           products={products} outlets={outlets}
@@ -1298,7 +1298,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   );
 }
 
-// ── LogRow: edit & hapus per baris log stok ──────────────────────────────────
+// -- LogRow: edit & hapus per baris log stok ----------------------------------
 const LOG_TYPE_COLOR = {masuk:"#27ae60", keluar:"#e74c3c", transfer:"#2980b9"};
 const LOG_TYPE_ICON  = {masuk:"⬇ Masuk", keluar:"⬆ Keluar", transfer:"⇄ Transfer"};
 
@@ -1346,7 +1346,7 @@ function LogRow({ l, i, onEdit, onDelete }) {
       <td style={{...cellStyle,fontWeight:700,fontSize:11}}>{l.outletNama}</td>
       <td style={{...cellStyle,fontWeight:700}}>{l.productName}</td>
       <td style={{...cellStyle,fontWeight:900,color:tc}}>{l.type==="masuk"?"+":"-"}{l.qty}</td>
-      <td style={{...cellStyle,color:"#888",fontStyle:"italic"}}>{l.note||"—"}</td>
+      <td style={{...cellStyle,color:"#888",fontStyle:"italic"}}>{l.note||"--"}</td>
       <td style={cellStyle}>
         <div style={{display:"flex",gap:5}}>
           <button onClick={()=>setEditing(true)} style={{background:"#e0faf5",border:"none",borderRadius:6,padding:"4px 10px",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:3}}>{Ic.Edit(11)} Edit</button>
@@ -1357,9 +1357,9 @@ function LogRow({ l, i, onEdit, onDelete }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // STOK (per outlet, stok masuk/keluar/transfer)
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initTab, _initOutlet, _prodOrder }) {
   const [selectedOutlet, setSelectedOutlet] = useState(_initOutlet||outlets[0]?.id||"");
   const [tab,            setTab]            = useState(_initTab||"opname");
@@ -1464,7 +1464,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     notify("Stok opname disimpan ✓","ok");
   };
 
-  // ── BULK OPERATIONS ────────────────────────────────────────────────────────
+  // -- BULK OPERATIONS --------------------------------------------------------
   const startBulk = (type) => {
     setBulkType(type);
     setBulkRows(products.map(p=>({id:p.id, name:p.name, stokSaat:outletStock[p.id]??0, qty:"", note:""})));
@@ -1550,7 +1550,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
   const typeColor={masuk:"#27ae60",keluar:"#e74c3c",transfer:"#2980b9"};
   const typeIcon={masuk:"⬇ Masuk",keluar:"⬆ Keluar",transfer:"⇄ Transfer"};
 
-  // ── BULK TABLE VIEW ────────────────────────────────────────────────────────
+  // -- BULK TABLE VIEW --------------------------------------------------------
   if(bulkMode) return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <SubHeader title={`📦 ${bulkType==="masuk"?"Stok Masuk Massal":bulkType==="keluar"?"Stok Keluar Massal":"Transfer Massal"}`} onBack={()=>setBulkMode(false)}
@@ -1559,7 +1559,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
             {bulkType==="transfer"&&(
               <select value={bulkTransferTo} onChange={e=>setBulkTransferTo(e.target.value)}
                 style={{padding:"6px 10px",borderRadius:9,border:"2px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.15)",color:"#fff",fontWeight:700,fontSize:12,fontFamily:"inherit",outline:"none"}}>
-                <option value="" style={{color:"#000"}}>— Outlet Tujuan —</option>
+                <option value="" style={{color:"#000"}}>-- Outlet Tujuan --</option>
                 {outlets.filter(o=>o.id!==selectedOutlet).map(o=><option key={o.id} value={o.id} style={{color:"#000"}}>{o.nama}</option>)}
               </select>
             )}
@@ -1571,7 +1571,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
       />
       <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
         <div style={{background:"#fff8e1",border:"2px solid #f39c12",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#b7770d",fontWeight:600}}>
-          💡 Outlet: <b>{outlet?.nama}</b> · Isi kolom QTY untuk produk yang mau diproses · Kosongkan untuk skip
+          💡 Outlet: <b>{outlet?.nama}</b> . Isi kolom QTY untuk produk yang mau diproses . Kosongkan untuk skip
         </div>
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -1612,7 +1612,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
       {onBack&&<SubHeader title="📦 Stok" onBack={onBack}/>}
       <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
 
-        {/* Pilih outlet — hanya tampil saat standalone */}
+        {/* Pilih outlet -- hanya tampil saat standalone */}
         {onBack&&(
         <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#555"}}>Outlet:</span>
@@ -1622,7 +1622,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
         </div>
         )}
 
-        {/* Bulk action buttons — hanya di standalone */}
+        {/* Bulk action buttons -- hanya di standalone */}
         {onBack&&(
         <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
           <button onClick={()=>startBulk("masuk")} style={{background:"linear-gradient(135deg,#27ae60,#2ecc71)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
@@ -1637,7 +1637,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
         </div>
         )}
 
-        {/* Tabs — hanya di standalone */}
+        {/* Tabs -- hanya di standalone */}
         {onBack&&(
         <div style={{display:"flex",gap:0,marginBottom:14,background:"#fff",borderRadius:12,padding:4,border:"2px solid #e0f5f1",width:"fit-content",flexWrap:"wrap"}}>
           {[{k:"opname",l:"📋 Opname"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"},{k:"transfer",l:"⇄ Transfer"},{k:"log",l:"📜 Log"}].map(t=>(
@@ -1752,7 +1752,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
               <div style={{marginBottom:10}}>
                 <label style={{...lbl}}>Produk *</label>
                 <select value={form.productId} onChange={e=>setForm(p=>({...p,productId:e.target.value}))} style={{...inp}}>
-                  <option value="">— Pilih Produk —</option>
+                  <option value="">-- Pilih Produk --</option>
                   {products.map(p=><option key={p.id} value={p.id}>{p.name} (stok: {outletStock[p.id]??0})</option>)}
                 </select>
               </div>
@@ -1760,7 +1760,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
                 <div style={{marginBottom:10}}>
                   <label style={{...lbl}}>Outlet Tujuan *</label>
                   <select value={transferTo} onChange={e=>setTransferTo(e.target.value)} style={{...inp}}>
-                    <option value="">— Pilih Outlet —</option>
+                    <option value="">-- Pilih Outlet --</option>
                     {outlets.filter(o=>o.id!==selectedOutlet).map(o=><option key={o.id} value={o.id}>{o.nama}</option>)}
                   </select>
                 </div>
@@ -1803,14 +1803,14 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
   );
 }
 
-// ── helper: parse "dd/mm/yyyy" → Date ────────────────────────────────────────
+// -- helper: parse "dd/mm/yyyy" → Date ----------------------------------------
 const parseDate = s => { try { const [d,m,y]=s.split("/"); return new Date(+y,+m-1,+d); } catch { return null; } };
 const toInputDate = d => { const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
 const fromInputDate = s => { const [y,m,d]=s.split("-"); return new Date(+y,+m-1,+d); };
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // DASHBOARD
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   const [chartMetric,  setChartMetric]  = useState("omset");
   const [period,       setPeriod]       = useState("daily");   // daily|monthly|yearly|custom
@@ -1825,7 +1825,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   const calcOmset  = list => list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
   const calcProfit = list => list.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+(i.price-(i.modal||0))*i.qty,0),0);
 
-  // ── Filter transactions by date range ──────────────────────────────────────
+  // -- Filter transactions by date range --------------------------------------
   const isInRange = t => {
     const td = parseDate(t.date);
     if (!td) return false;
@@ -1847,7 +1847,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   const totalItems = todayTrx.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
   const allLowStock= products.filter(p=>outlets.some(o=>(stocks[o.id]?.[p.id]??0)<=2));
 
-  // ── Preset shortcuts ────────────────────────────────────────────────────────
+  // -- Preset shortcuts --------------------------------------------------------
   const applyPreset = preset => {
     const n=new Date();
     if (preset==="today")     { setDateFrom(toInputDate(n)); setDateTo(toInputDate(n)); }
@@ -1858,7 +1858,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
     setPeriod("custom");
   };
 
-  // ── Chart data ──────────────────────────────────────────────────────────────
+  // -- Chart data --------------------------------------------------------------
   const getChartData = () => {
     const now=new Date(); const pts=[];
     if (period==="custom") {
@@ -2007,7 +2007,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
               </div>
             </div>
           </div>
-          {/* ── Interactive Stock-style Chart ── */}
+          {/* -- Interactive Stock-style Chart -- */}
           <div style={{overflowX:"auto",position:"relative"}}>
             {/* Tooltip floating */}
             {hoverIdx!==null&&pts2[hoverIdx]&&(()=>{
@@ -2133,7 +2133,7 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
                         {p.label}
                       </text>
                     )}
-                    {/* Value label above dot — always show if few points or on hover */}
+                    {/* Value label above dot -- always show if few points or on hover */}
                     {(showLabel&&p.val>0)&&(
                       <text x={p.x} y={p.y-(isHover?10:8)} textAnchor="middle" fontSize={isHover?"11":"9"}
                         fill={tC} fontWeight="800" fontFamily="Nunito,sans-serif">
@@ -2283,10 +2283,10 @@ function DashboardPage({ transactions, products, outlets, stocks, onBack }) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // LAPORAN (per outlet + per shift)
-// ══════════════════════════════════════════════════════════════════════════════
-// ── Bank Shift Detail Modal ───────────────────────────────────────────────────
+// ==============================================================================
+// -- Bank Shift Detail Modal ---------------------------------------------------
 function BankShiftDetailModal({ shift: sh, onClose }) {
   const [modalTab, setModalTab] = useState('ringkasan');
   const masuk  = sh.trx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
@@ -2331,19 +2331,19 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
       </div>
       {/* Content */}
       <div style={{overflowY:'auto',flex:1,padding:'16px 20px'}}>
-        {/* ── Ringkasan ── */}
+        {/* -- Ringkasan -- */}
         {modalTab==='ringkasan'&&(
           <div>
             {!isAct&&sel!==null&&(
               <div style={{background:sel===0?'linear-gradient(135deg,#065f46,#059669)':sel>0?'linear-gradient(135deg,#78350f,#b45309)':'linear-gradient(135deg,#7f1d1d,#dc2626)',borderRadius:16,padding:'16px 18px',marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
                 <div style={{fontSize:36}}>{sel===0?'✅':sel>0?'📈':'📉'}</div>
                 <div>
-                  <div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{sel===0?'Kas Balance — Mantap!':sel>0?`Kelebihan ${fmtRp(sel)}`:`Kekurangan ${fmtRp(Math.abs(sel))}`}</div>
-                  <div style={{fontSize:11,color:'rgba(255,255,255,.75)',marginTop:2}}>Sistem: {fmtRp(sistemAkhir)} · Fisik: {fmtRp(sc.uangLaci||0)}</div>
+                  <div style={{fontWeight:900,fontSize:16,color:'#fff'}}>{sel===0?'Kas Balance -- Mantap!':sel>0?`Kelebihan ${fmtRp(sel)}`:`Kekurangan ${fmtRp(Math.abs(sel))}`}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,.75)',marginTop:2}}>Sistem: {fmtRp(sistemAkhir)} . Fisik: {fmtRp(sc.uangLaci||0)}</div>
                 </div>
               </div>
             )}
-            {isAct&&<div style={{background:'linear-gradient(135deg,#065f46,#059669)',borderRadius:14,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}><div style={{fontSize:28}}>🟢</div><div style={{fontWeight:800,fontSize:14,color:'#fff'}}>Shift Sedang Aktif — Belum Tutup</div></div>}
+            {isAct&&<div style={{background:'linear-gradient(135deg,#065f46,#059669)',borderRadius:14,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}><div style={{fontSize:28}}>🟢</div><div style={{fontWeight:800,fontSize:14,color:'#fff'}}>Shift Sedang Aktif -- Belum Tutup</div></div>}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
               {[{l:'Total Masuk',v:fmtRp(masuk),c:'#0d9488',bg:'#e0faf5'},{l:'Total Keluar',v:fmtRp(keluar),c:'#e74c3c',bg:'#fff0f0'},{l:'Total Fee',v:fmtRp(fee),c:'#d97706',bg:'#fffbeb'},{l:'Uang Sistem',v:fmtRp(sistemAkhir),c:'#555',bg:'#f9fafb'}].map(k=>(
                 <div key={k.l} style={{background:k.bg,borderRadius:12,padding:'12px 14px',border:`1px solid ${k.c}22`}}>
@@ -2355,7 +2355,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
             <div style={{background:'#f8fffe',borderRadius:12,padding:'12px 14px',border:'1px solid #e0f5f1',marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:12,color:'#0d9488',marginBottom:8}}>⏱ Info Shift</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                {[{l:'Nama',v:sh.nama},{l:'Kasir',v:sh.userId||'—'},{l:'Buka',v:fmtDT(sh.start_time)},{l:'Tutup',v:sh.end_time?fmtDT(sh.end_time):'Belum tutup'}].map(r=>(
+                {[{l:'Nama',v:sh.nama},{l:'Kasir',v:sh.userId||'--'},{l:'Buka',v:fmtDT(sh.start_time)},{l:'Tutup',v:sh.end_time?fmtDT(sh.end_time):'Belum tutup'}].map(r=>(
                   <div key={r.l}><div style={{fontSize:10,color:'#aaa',fontWeight:600}}>{r.l}</div><div style={{fontSize:12,fontWeight:700,color:'#1a2e2a',marginTop:1}}>{r.v}</div></div>
                 ))}
               </div>
@@ -2383,7 +2383,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
             )}
           </div>
         )}
-        {/* ── Saldo ── */}
+        {/* -- Saldo -- */}
         {modalTab==='saldo'&&(
           <div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
@@ -2413,7 +2413,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
               {[{l:'Cash Kembalian Awal',v:so.cashKemb||0,c:'#0d9488'},{l:'+ Total Masuk',v:masuk,c:'#16a34a'},{l:'− Total Keluar',v:-keluar,c:'#dc2626'},{l:'= Uang Sistem',v:sistemAkhir,c:'#0d9488',bold:true},{l:'Uang Fisik (hitung)',v:sc.uangLaci??null,c:'#555'},{l:'Selisih',v:sel,c:sel===0?'#16a34a':sel>0?'#ca8a04':'#dc2626',bold:true}].map((r,i)=>(
                 <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderTop:i>0?'1px dotted #f0f0f0':'none',fontWeight:r.bold?800:600,fontSize:r.bold?13:12}}>
                   <span style={{color:'#555'}}>{r.l}</span>
-                  <span style={{color:r.c}}>{r.v===null?'—':fmtRp(Math.abs(r.v||0))}</span>
+                  <span style={{color:r.c}}>{r.v===null?'--':fmtRp(Math.abs(r.v||0))}</span>
                 </div>
               ))}
             </div>
@@ -2427,8 +2427,8 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
                     return(<tr key={app} style={{borderTop:'1px solid #f0faf8',background:i%2===0?'#fff':'#fafffe'}}>
                       <td style={{padding:'8px 13px',fontWeight:700}}>{app}</td>
                       <td style={{padding:'8px 13px',color:'#888'}}>{fmtRp(awal)}</td>
-                      <td style={{padding:'8px 13px',fontWeight:700,color:'#0d9488'}}>{akhir!=null?fmtRp(akhir):'—'}</td>
-                      <td style={{padding:'8px 13px',fontWeight:800,color:delta==null?'#ccc':delta>=0?'#16a34a':'#dc2626'}}>{delta==null?'—':(delta>=0?'+':'')+fmtRp(delta)}</td>
+                      <td style={{padding:'8px 13px',fontWeight:700,color:'#0d9488'}}>{akhir!=null?fmtRp(akhir):'--'}</td>
+                      <td style={{padding:'8px 13px',fontWeight:800,color:delta==null?'#ccc':delta>=0?'#16a34a':'#dc2626'}}>{delta==null?'--':(delta>=0?'+':'')+fmtRp(delta)}</td>
                     </tr>);
                   })}</tbody>
                 </table>
@@ -2436,7 +2436,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
             )}
           </div>
         )}
-        {/* ── Transaksi ── */}
+        {/* -- Transaksi -- */}
         {modalTab==='transaksi'&&(
           <div>
             {sh.trx.length===0?<div style={{textAlign:'center',color:'#ccc',padding:32}}>Belum ada transaksi</div>
@@ -2472,7 +2472,7 @@ function BankShiftDetailModal({ shift: sh, onClose }) {
 }
 
 
-// ── Laporan Bank List (realtime) — per outlet + per shift accordion ─────────
+// -- Laporan Bank List (realtime) -- per outlet + per shift accordion ---------
 function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filterOutlet, dateFrom, dateTo, onSelectShift }) {
   const [bankTrx,       setBankTrx]       = useState([]);
   const [bankShiftData, setBankShiftData] = useState([]);
@@ -2551,7 +2551,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
       const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s,t)=>s+(t.netNominal||0),0);
       const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s,t)=>s+Math.abs(t.netNominal||0),0);
       const fee     = trxList.reduce((s,t)=>s+(t.fee||0),0);
-      const outletObj = outlets.find(o=>o.id===l.outlet_id)||{nama:'—'};
+      const outletObj = outlets.find(o=>o.id===l.outlet_id)||{nama:'--'};
       result.push({
         id:l.id, outletId:l.outlet_id, outletNama:outletObj.nama,
         nama:l._namaShift||(l.saldo_open?.namaShift)||l.nama||l.user_id||'Shift',
@@ -2579,7 +2579,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
       const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s2,t)=>s2+(t.netNominal||0),0);
       const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s2,t)=>s2+Math.abs(t.netNominal||0),0);
       const fee     = trxList.reduce((s2,t)=>s2+(t.fee||0),0);
-      const outletObj = outlets.find(o=>o.id===s.outlet_id)||{nama:'—'};
+      const outletObj = outlets.find(o=>o.id===s.outlet_id)||{nama:'--'};
       result.push({
         id:s.id, outletId:s.outlet_id, outletNama:outletObj.nama,
         nama:sd.namaShift||s.nama||s.user_id||'Shift Aktif',
@@ -2608,10 +2608,10 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
 
   return (
     <div>
-      {/* Filter bar — Live + Refresh */}
+      {/* Filter bar -- Live + Refresh */}
       <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
         <div style={{display:'flex',alignItems:'center',gap:6,background:'#e0faf5',borderRadius:9,padding:'5px 12px',fontSize:11,color:'#0d9488',fontWeight:700}}>
-          🔴 Live{lastRefresh&&<span style={{opacity:.7}}> · {lastRefresh}</span>}
+          🔴 Live{lastRefresh&&<span style={{opacity:.7}}> . {lastRefresh}</span>}
         </div>
         <span style={{fontSize:11,color:'#94a3b8',fontWeight:600}}>{shifts.length} shift</span>
         <button onClick={loadAll} style={{marginLeft:'auto',background:'#f0faf8',border:'2px solid #b2ede6',borderRadius:9,padding:'5px 12px',fontSize:11,fontWeight:700,color:'#0d9488',cursor:'pointer',fontFamily:'inherit'}}>🔄 Refresh</button>
@@ -2626,7 +2626,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
         </div>
       )}
 
-      {/* Shift cards — identik layout dengan Laporan Kasir */}
+      {/* Shift cards -- identik layout dengan Laporan Kasir */}
       {shifts.map(s=>{
         const startDate = s.start_time ? new Date(s.start_time) : null;
         const isActive  = s.status==='active';
@@ -2647,7 +2647,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
             <div style={{display:'flex',alignItems:'flex-start',gap:12,flex:1,minWidth:0}}>
 
-              {/* Date badge — identik dengan kasir */}
+              {/* Date badge -- identik dengan kasir */}
               {startDate&&!isNaN(startDate)&&(
                 <div style={{background:isActive?'#e0faf5':'#f8fafc',
                   borderRadius:10,padding:'8px 10px',textAlign:'center',flexShrink:0,
@@ -2707,7 +2707,7 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
         );
       })}
 
-      {/* Modal detail — komponen BankShiftDetailModal tidak diubah */}
+      {/* Modal detail -- komponen BankShiftDetailModal tidak diubah */}
       {selShift&&<BankShiftDetailModal shift={selShift} onClose={()=>setSelShift(null)}/>}
     </div>
   );
@@ -2730,7 +2730,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
   const [shiftLogsLoading, setShiftLogsLoading] = useState(true);
   const [refreshTrigger,   setRefreshTrigger]   = useState(0);
   const [freshTransactions,setFreshTransactions] = useState(null); // null = belum load
-  // ── Filter tanggal di Laporan ─────────────────────────────────────────────
+  // -- Filter tanggal di Laporan ---------------------------------------------
   const [laporanDateFrom, setLaporanDateFrom] = useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split('T')[0];});
   const [laporanDateTo,   setLaporanDateTo]   = useState(()=>new Date().toISOString().split('T')[0]);
   const applyLaporanPreset = (k) => {
@@ -2782,7 +2782,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const key=t.shiftId||"no-shift";
     const logEntry=shiftLogs[t.shiftId];
     const label=logEntry?.namaShift||t.shiftNama||t.kasir||"Tanpa Shift";
-    const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||t.outletId||"—";
+    const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||t.outletId||"--";
     if(!groups[key]) groups[key]={key,label,outletNama,outletId:t.outletId,items:[]};
     groups[key].items.push(t);
   });
@@ -2795,7 +2795,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const oId=v.outletId||'';
     if(filterOutlet!=="all"&&oId&&oId!==filterOutlet) return;
     if(filterShift!=="all"&&k!==filterShift) return;
-    const outletNama=outlets.find(o=>o.id===oId)?.nama||oId||"—";
+    const outletNama=outlets.find(o=>o.id===oId)?.nama||oId||"--";
     groups[k]={key:k,label:v.namaShift||"Shift",outletNama,outletId:oId,items:[]};
   });
   const groupArr=Object.values(groups).sort((a,b)=>{
@@ -2809,7 +2809,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
   const omsetTotal=calcOmset(filtered);
   const itemTotal =filtered.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
 
-  // ── Detail shift: ringkasan produk terjual + saldo ──────────────────────
+  // -- Detail shift: ringkasan produk terjual + saldo ----------------------
   const getShiftDetail = (group) => {
     const prodMap={};
     group.items.forEach(t=>{
@@ -2956,8 +2956,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
         setBankTrxMap(btm);
 
       } catch(e){
-        console.warn('[Laporan] loadLogs error — fallback localStorage:', e.message||e);
-        // Jangan kosongkan data yang sudah ada — pakai yang terakhir berhasil
+        console.warn('[Laporan] loadLogs error -- fallback localStorage:', e.message||e);
+        // Jangan kosongkan data yang sudah ada -- pakai yang terakhir berhasil
         // freshTx dari localStorage backup
         try{
           const backupTx = JSON.parse(localStorage.getItem('laporan_tx_backup')||'[]');
@@ -2975,10 +2975,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
       setShiftLogsLoading(false);
     };
     loadLogs();
-    // Reload setiap 5 detik — lebih responsif
+    // Reload setiap 5 detik -- lebih responsif
     const iv = setInterval(loadLogs, 5000);
 
-    // Realtime komprehensif — semua event yang bisa mengubah laporan shift
+    // Realtime komprehensif -- semua event yang bisa mengubah laporan shift
     const ch = supabase.channel('laporan-shift-rt-v2')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'shift_logs'},()=>{ loadLogs(); })
@@ -3023,7 +3023,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     return null;
   };
 
-  // ── Modal detail shift ────────────────────────────────────────────────────
+  // -- Modal detail shift ----------------------------------------------------
   if(selectedShift){
     const group=selectedShift;
     const detail=getShiftDetail(group);
@@ -3086,7 +3086,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
         <div style={{padding:"14px 18px",maxWidth:860,margin:"0 auto"}}>
 
-          {/* ── STATUS SHIFT ── */}
+          {/* -- STATUS SHIFT -- */}
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
             <div style={{background:isActive?"#e8f8f4":"#f0f0f0",border:`2px solid ${isActive?"#2ecc71":"#aaa"}`,borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:800,color:isActive?"#2ecc71":"#888",display:"flex",alignItems:"center",gap:5}}>
               {isActive?"🟢 SHIFT MASIH AKTIF":"⚫ SHIFT SUDAH DITUTUP"}
@@ -3107,7 +3107,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
             )}
           </div>
 
-          {/* ══ TAB KASIR ══ */}
+          {/* == TAB KASIR == */}
           {detailTab==="kasir"&&(<>
 
           {/* Ringkasan shift */}
@@ -3142,14 +3142,14 @@ function LaporanPage({ transactions, outlets, onBack }) {
             <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>
                 🟢 Saldo Awal (Buka Shift)
-                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"—"}</div>
+                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuBuka||"--"}</div>
               </div>
               {saldo?.saldoApps && Object.keys(saldo.saldoApps).length>0 ? (
                 <>
                   {Object.entries(saldo.saldoApps).map(([app,val])=>(
                     <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
                       <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
-                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"--"}</span>
                     </div>
                   ))}
                   {saldo.cashKembalian>0&&(
@@ -3174,14 +3174,14 @@ function LaporanPage({ transactions, outlets, onBack }) {
             <div style={{background:"#fff",borderRadius:13,border:`2px solid ${isClosed?"#ffe0e0":"#e0faf5"}`,padding:"14px 16px"}}>
               <div style={{fontWeight:800,fontSize:13,color:isClosed?"#e74c3c":"#aaa",marginBottom:10}}>
                 {isClosed?"🔴 Saldo Akhir (Tutup Shift)":"⏳ Shift Belum Ditutup"}
-                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuTutup||"—"}</div>
+                <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginTop:2}}>{saldo?.waktuTutup||"--"}</div>
               </div>
               {isClosed&&saldo?.saldoAppsAkhir&&Object.keys(saldo.saldoAppsAkhir).length>0?(
                 <>
                   {Object.entries(saldo.saldoAppsAkhir).map(([app,val])=>(
                     <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f0faf8"}}>
                       <span style={{fontSize:12,fontWeight:600,color:"#555"}}>{app}</span>
-                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                      <span style={{fontSize:12,fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"--"}</span>
                     </div>
                   ))}
                   {saldo.cashKembClose>0&&(
@@ -3254,7 +3254,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                         {saldo.selisih===0?"✅ Kas Sesuai / Balance!":saldo.selisih>0?"📈 Kas Lebih":"📉 Kas Kurang"}
                       </div>
                       <div style={{fontSize:11,color:"#888",marginTop:2}}>
-                        Sistem: {fmtRp(saldo.kasNyataSystem||0)} · Fisik: {fmtRp(saldo.kasNyataFisik||0)}
+                        Sistem: {fmtRp(saldo.kasNyataSystem||0)} . Fisik: {fmtRp(saldo.kasNyataFisik||0)}
                       </div>
                     </div>
                     <span style={{fontWeight:900,fontSize:28,color:saldo.selisih===0?"#2ecc71":saldo.selisih>0?"#f39c12":"#ff4757"}}>
@@ -3264,8 +3264,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
                   {saldo.selisih!==0&&(
                     <div style={{fontSize:11,color:saldo.selisih>0?"#b7770d":"#c0392b",fontWeight:600,background:"rgba(0,0,0,.04)",borderRadius:7,padding:"6px 10px"}}>
                       {saldo.selisih>0
-                        ?"Uang fisik lebih dari sistem — ada kelebihan kas atau input kurang tepat"
-                        :"Uang fisik kurang dari sistem — ada selisih yang perlu diperiksa"}
+                        ?"Uang fisik lebih dari sistem -- ada kelebihan kas atau input kurang tepat"
+                        :"Uang fisik kurang dari sistem -- ada selisih yang perlu diperiksa"}
                     </div>
                   )}
                 </div>
@@ -3334,7 +3334,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
           </>)}
 
-          {/* ══ TAB BANK ══ */}
+          {/* == TAB BANK == */}
           {detailTab==="bank"&&(<>
 
           {/* KPI Bank */}
@@ -3359,7 +3359,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                 {Object.entries(bankData.saldoAwal||{}).map(([app,val])=>(
                   <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #f5faf8",fontSize:12}}>
                     <span style={{color:"#555",fontWeight:600}}>{app}</span>
-                    <span style={{fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                    <span style={{fontWeight:800,color:+val>0?"#0d9488":"#ccc"}}>{+val>0?fmtRp(+val):"--"}</span>
                   </div>
                 ))}
                 {bankData.cashKemb>0&&(
@@ -3374,7 +3374,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                 {Object.entries(bankData.saldoAkhir||{}).map(([app,val])=>(
                   <div key={app} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:"1px solid #f5faf8",fontSize:12}}>
                     <span style={{color:"#555",fontWeight:600}}>{app}</span>
-                    <span style={{fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"—"}</span>
+                    <span style={{fontWeight:800,color:+val>0?"#e74c3c":"#ccc"}}>{+val>0?fmtRp(+val):"--"}</span>
                   </div>
                 ))}
               </div>
@@ -3415,7 +3415,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                         {selB===0?"✅ Balance!":selB>0?"📈 Uang Lebih":"📉 Uang Kurang"}
                       </div>
                       <div style={{fontSize:11,color:"#888",marginTop:2}}>
-                        Sistem: {fmtRp(uangSistemBank)} · Fisik: {fmtRp(bankData.uangLaci)}
+                        Sistem: {fmtRp(uangSistemBank)} . Fisik: {fmtRp(bankData.uangLaci)}
                       </div>
                     </div>
                     <span style={{fontWeight:900,fontSize:28,color:selB===0?"#2ecc71":selB>0?"#f39c12":"#ff4757"}}>
@@ -3424,8 +3424,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
                   </div>
                   {selB!==0&&(
                     <div style={{fontSize:11,color:selB>0?"#b7770d":"#c0392b",fontWeight:600,background:"rgba(0,0,0,.04)",borderRadius:8,padding:"6px 10px"}}>
-                      {selB>0?"Uang laci lebih dari sistem — ada kelebihan atau input kurang tepat"
-                             :"Uang laci kurang dari sistem — ada selisih yang perlu diperiksa"}
+                      {selB>0?"Uang laci lebih dari sistem -- ada kelebihan atau input kurang tepat"
+                             :"Uang laci kurang dari sistem -- ada selisih yang perlu diperiksa"}
                     </div>
                   )}
                 </div>
@@ -3478,7 +3478,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     );
   } // end if(selectedShift)
 
-  // ── MAIN LAPORAN LIST ──────────────────────────────────────────────────────
+  // -- MAIN LAPORAN LIST ------------------------------------------------------
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.3)"}}>
@@ -3505,7 +3505,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
           <div style={{display:"flex",alignItems:"center",gap:5,background:"#f8fafc",borderRadius:9,padding:"5px 10px",border:"1px solid #e2e8f0"}}>
             <input type="date" value={laporanDateFrom} onChange={e=>setLaporanDateFrom(e.target.value)}
               style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
-            <span style={{color:"#cbd5e1",fontWeight:700}}>—</span>
+            <span style={{color:"#cbd5e1",fontWeight:700}}>--</span>
             <input type="date" value={laporanDateTo} onChange={e=>setLaporanDateTo(e.target.value)}
               style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
           </div>
@@ -3544,7 +3544,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
           )}
         </div>
 
-        {/* ── TAB KASIR ── */}
+        {/* -- TAB KASIR -- */}
         {mainTab==="kasir"&&(<>
           {shiftLogsLoading&&<div style={{textAlign:"center",color:"#0d9488",padding:20,fontSize:13,fontWeight:700}}>⏳ Memuat data shift...</div>}
           {!shiftLogsLoading&&groupArr.filter(isInLaporanRange).map(group=>{
@@ -3576,7 +3576,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                       }catch{return null;}
                     })()}
                   </div>
-                  <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} · {group.items.length} transaksi</div>
+                  <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{group.outletNama} . {group.items.length} transaksi</div>
                 </div>
                 <div style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                   <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{fmtRp(calcOmset(group.items))}</div>
@@ -3604,7 +3604,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
           </div>}
         </>)}
 
-        {/* ── TAB BANK ── */}
+        {/* -- TAB BANK -- */}
         {mainTab==="bank"&&(
           <LaporanBankList
             bankTrxMap={bankTrxMap}
@@ -3695,7 +3695,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   return (
     <div style={{padding:"14px 18px",maxWidth:820,margin:"0 auto",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-        <div style={{fontWeight:800,fontSize:15,color:"#0d9488"}}>📦 Stok Opname — {outletNama}</div>
+        <div style={{fontWeight:800,fontSize:15,color:"#0d9488"}}>📦 Stok Opname -- {outletNama}</div>
         <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
@@ -3809,16 +3809,16 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // KASIR APP (per outlet)
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{} }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
   const outletStock = stocks[selectedOutlet]||{};
 
-  // ── Persist shift & cart ke localStorage DAN Supabase ────────────────────
+  // -- Persist shift & cart ke localStorage DAN Supabase --------------------
   const shiftKey = `ammar_shift_${selectedOutlet}`;
   const cartKey  = `ammar_cart_${selectedOutlet}`;
 
@@ -3838,7 +3838,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const [refundModal, setRefundModal] = useState(null);
   const [refundReason,setRefundReason]= useState("");
 
-  // ── Periodic shift heartbeat: cek tiap 30 detik (bukan dari DELETE realtime) ─
+  // -- Periodic shift heartbeat: cek tiap 30 detik (bukan dari DELETE realtime) -
   useEffect(()=>{
     if(!shift?.id) return;
     const verifyShift = async () => {
@@ -3857,7 +3857,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           const {data:log}=await supabase.from('shift_logs').select('id').eq('id',shift.id)
             .limit(1).catch(()=>({data:null}));
           if(log && log.length>0){
-            // Terkonfirmasi sudah tutup — baru null
+            // Terkonfirmasi sudah tutup -- baru null
             setShiftState(null);
             try{localStorage.removeItem(shiftKey);}catch{}
             notify("⚠ Shift telah ditutup dari perangkat lain","warn");
@@ -3867,15 +3867,15 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         // Update localStorage dengan data terbaru
         if(s) try{localStorage.setItem(shiftKey, JSON.stringify(s));}catch{}
       }catch(e){
-        // Timeout atau error koneksi — SKIP, jangan null shift
-        console.log('[ShiftVerify] Skip — koneksi bermasalah:', e.message);
+        // Timeout atau error koneksi -- SKIP, jangan null shift
+        console.log('[ShiftVerify] Skip -- koneksi bermasalah:', e.message);
       }
     };
     const iv = setInterval(verifyShift, 30000);
     return ()=>clearInterval(iv);
   },[shift?.id, selectedOutlet]);
 
-  // ── Load shift dari Supabase — cross-check dengan shift_logs ──────────────
+  // -- Load shift dari Supabase -- cross-check dengan shift_logs --------------
   useEffect(()=>{
     setShiftLoading(true);
     const loadShift = async () => {
@@ -3886,22 +3886,22 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           const { data: logCheck } = await supabase
             .from('shift_logs').select('id').eq('id', s.id).limit(1);
           if(logCheck && logCheck.length > 0){
-            // Shift sudah ditutup tapi active_shifts belum bersih — hapus
+            // Shift sudah ditutup tapi active_shifts belum bersih -- hapus
             console.warn('[Shift] Stale shift ditemukan, membersihkan:', s.id);
             await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
             setShiftState(null);
             try{ localStorage.removeItem(shiftKey); }catch{}
           } else {
-            // Aktif — simpan juga ke localStorage sebagai backup
+            // Aktif -- simpan juga ke localStorage sebagai backup
             setShiftState(s);
             try{ localStorage.setItem(shiftKey, JSON.stringify(s)); }catch{}
           }
         } else {
           // Tidak ada shift aktif di DB
-          // Cek localStorage — mungkin shift baru dibuka tapi belum sync
+          // Cek localStorage -- mungkin shift baru dibuka tapi belum sync
           const localShift = (() => { try{ const v=localStorage.getItem(shiftKey); return v?JSON.parse(v):null; }catch{return null;} })();
           if(localShift && navigator.onLine){
-            // Ada di lokal tapi tidak di DB — kemungkinan koneksi putus saat openShift
+            // Ada di lokal tapi tidak di DB -- kemungkinan koneksi putus saat openShift
             // Coba re-sync ke Supabase
             console.warn('[Shift] Shift lokal tidak ada di DB, re-sync...');
             try{
@@ -3913,8 +3913,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
               setShiftState(localShift); // pakai lokal saja dulu
             }
           } else if(localShift && !navigator.onLine){
-            // Offline — pakai shift dari localStorage, jangan null
-            console.log('[Shift] Offline — pakai shift dari localStorage');
+            // Offline -- pakai shift dari localStorage, jangan null
+            console.log('[Shift] Offline -- pakai shift dari localStorage');
             setShiftState(localShift);
           } else {
             setShiftState(null);
@@ -3922,15 +3922,15 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           }
         }
       }catch(e){
-        // ── KRITIS: JANGAN null shift karena error koneksi ──────────────────
+        // -- KRITIS: JANGAN null shift karena error koneksi ------------------
         // Coba fallback ke localStorage
-        console.warn('[Shift] loadShift error — fallback localStorage:', e.message||e);
+        console.warn('[Shift] loadShift error -- fallback localStorage:', e.message||e);
         const localShift = (() => { try{ const v=localStorage.getItem(shiftKey); return v?JSON.parse(v):null; }catch{return null;} })();
         if(localShift){
           console.log('[Shift] Pakai shift dari localStorage:', localShift.id);
           setShiftState(localShift); // JANGAN null! pakai lokal
         }
-        // Jika tidak ada lokal pun, jangan set null — biarkan state sebelumnya
+        // Jika tidak ada lokal pun, jangan set null -- biarkan state sebelumnya
         // setShiftState(null) DIHAPUS dari sini
       } finally {
         setShiftLoading(false);
@@ -3939,14 +3939,14 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     loadShift();
   },[selectedOutlet]);
 
-  // Wrapper setShift — TIDAK simpan ke localStorage (Supabase = source of truth)
+  // Wrapper setShift -- TIDAK simpan ke localStorage (Supabase = source of truth)
   const setShift = (val) => {
     setShiftState(val);
     // Hanya hapus localStorage kalau null (tutup shift)
     if(!val) try{ localStorage.removeItem(shiftKey); }catch{}
   };
 
-  // Wrapper setCart — auto simpan ke localStorage
+  // Wrapper setCart -- auto simpan ke localStorage
   const setCartPersist = (fn) => {
     setCart(prev=>{
       const next = typeof fn==="function" ? fn(prev) : fn;
@@ -3995,7 +3995,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     const cashFinal=cashNum>=total?cashNum:total;
     const trx={id:uid(),time:now(),date:today(),shiftId:shift?.id,shiftNama:shift?.nama,kasir:user.nama,outletId:selectedOutlet,
       items:cart.map(i=>({...i,refunded:false,refundReason:""})),total,cash:cashFinal,kembalian:cashFinal-total};
-    // ── Offline: simpan ke antrian lokal ──────────────────────────────────
+    // -- Offline: simpan ke antrian lokal ----------------------------------
     if(!navigator.onLine || connStatus==="offline"){
       try{
         const qKey=`offline_queue_${selectedOutlet}`;
@@ -4005,7 +4005,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       setOfflineQueue(prev=>[...prev,{type:"transaction",data:trx}]);
       setTx(prev=>[trx,...prev]); // tetap tampilkan di UI
       setCartPersist([]);setCashInput("");setShowPayment(false);
-      notify("📵 Offline — Transaksi tersimpan lokal, dikirim saat online","warn");
+      notify("📵 Offline -- Transaksi tersimpan lokal, dikirim saat online","warn");
       return;
     }
     // Simpan ke localStorage dulu sebagai backup
@@ -4037,7 +4037,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         }
       }catch{}
       setOfflineQueue(prev=>prev.find(x=>x.data?.id===trx.id)?prev:[...prev,{type:"transaction",data:trx}]);
-      notify("⚠ Koneksi lemah — transaksi tersimpan, akan sync otomatis","warn");
+      notify("⚠ Koneksi lemah -- transaksi tersimpan, akan sync otomatis","warn");
     };
     syncTrx();
     setStocks(prev=>{
@@ -4071,12 +4071,12 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       totalSaldoApps: data.totalSaldoApps||0,
       waktuBuka: now(),
     };
-    // ── Simpan ke localStorage DULU (sebelum Supabase) ──────────────────
+    // -- Simpan ke localStorage DULU (sebelum Supabase) ------------------
     // Jadi kalau koneksi putus, shift tetap ada
     try{ localStorage.setItem(shiftKey, JSON.stringify(s)); }catch{}
     try{ localStorage.setItem(`ammar_shift_saldo_${s.id}`, JSON.stringify({type:"open",...saldoData})); }catch{}
     
-    // Set state UI dulu — tidak perlu tunggu Supabase
+    // Set state UI dulu -- tidak perlu tunggu Supabase
     setShift(s);
     setShowShift(false);
     notify("Shift dibuka!","ok");
@@ -4093,16 +4093,16 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           if(i<retries-1) await new Promise(r=>setTimeout(r,2000*(i+1)));
         }
       }
-      // Semua retry gagal — shift tetap ada di lokal, akan sync saat koneksi balik
+      // Semua retry gagal -- shift tetap ada di lokal, akan sync saat koneksi balik
       notify("⚠ Shift tersimpan lokal, belum sync ke server","warn");
     };
     syncToSupabase();
   };
 
   const closeShift = async (data) => {
-    // ── Guard: jangan tutup shift saat offline ─────────────────────────────
+    // -- Guard: jangan tutup shift saat offline -----------------------------
     if(!navigator.onLine || connStatus==="offline"){
-      notify("📵 Tidak bisa tutup shift — tidak ada koneksi internet. Pastikan tersambung dulu.","err");
+      notify("📵 Tidak bisa tutup shift -- tidak ada koneksi internet. Pastikan tersambung dulu.","err");
       return;
     }
     const closeData={...data, waktuTutup:now()};
@@ -4163,7 +4163,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           <div style={{fontWeight:900,fontSize:14,color:"#fff",lineHeight:1.1}}>{outlet?.nama||"Kasir"}</div>
           <div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>{user.nama}</div>
         </div>
-        {/* ── Conn dot — satu-satunya tambahan visual ── */}
+        {/* -- Conn dot -- satu-satunya tambahan visual -- */}
         {(()=>{
           const dc=connStatus==="offline"?"#f87171":connStatus==="online"?"#4ade80":"#fbbf24";
           const dp=connStatus!=="online";
@@ -4192,7 +4192,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       {page==="kasir"&&(
         <div className="kasir-layout" style={{position:"relative"}}>
 
-          {/* ── OVERLAY: Loading shift / Shift belum dibuka ── */}
+          {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
           {(shiftLoading||!shift)&&(
             <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,backdropFilter:"blur(6px)",fontFamily:"'Nunito',sans-serif"}}>
               {shiftLoading?(
@@ -4342,7 +4342,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
             return (
               <div key={group.key} style={{marginBottom:16}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:"12px 12px 0 0",padding:"10px 15px",color:"#fff"}}>
-                  <div><span style={{fontWeight:900,fontSize:14}}>⏱ {group.label}</span><span style={{fontSize:11,opacity:.8,marginLeft:8}}>{group.items.length} trx · {gI} item</span></div>
+                  <div><span style={{fontWeight:900,fontSize:14}}>⏱ {group.label}</span><span style={{fontSize:11,opacity:.8,marginLeft:8}}>{group.items.length} trx . {gI} item</span></div>
                   <div style={{textAlign:"right"}}><div style={{fontWeight:900,fontSize:16}}>{fmtRp(gO)}</div><div style={{fontSize:10,opacity:.75}}>omset bersih</div></div>
                 </div>
                 <div style={{background:"#fff",border:"2px solid #e0f5f1",borderTop:"none",borderRadius:"0 0 12px 12px",overflow:"hidden"}}>
@@ -4391,7 +4391,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         </div>
       )}
 
-      {/* STOK OUTLET — opname lengkap untuk karyawan */}
+      {/* STOK OUTLET -- opname lengkap untuk karyawan */}
       {page==="stok"&&(
         <KasirStokPage
           products={products}
@@ -4437,9 +4437,9 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SALDO APPS PAGE — kelola list saldo aplikasi (Admin only)
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
+// SALDO APPS PAGE -- kelola list saldo aplikasi (Admin only)
+// ==============================================================================
 function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title, onBack, notify }) {
   const [kasirList, setKasirList] = useState([...(saldoApps||[])]);
   const [bankList,  setBankList]  = useState([...(saldoBank||[])]);
@@ -4504,7 +4504,7 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title
 
       <div style={{padding:"16px 20px",maxWidth:560,margin:"0 auto"}}>
         <div style={{background:"#fff8e1",border:"2px solid #f39c1233",borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:11,color:"#b7770d",fontWeight:600,lineHeight:1.6}}>
-          💡 List berlaku <b>semua outlet</b> — tampil saat buka/tutup shift.
+          💡 List berlaku <b>semua outlet</b> -- tampil saat buka/tutup shift.
           Drag <b>⠿</b> atau ↑↓ untuk atur urutan.
         </div>
 
@@ -4530,7 +4530,7 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title
             <span style={{fontSize:11,color:"#aaa"}}>{list.length} aplikasi</span>
           </div>
           {list.length===0 ? (
-            <div style={{textAlign:"center",color:"#ccc",padding:24,fontSize:13}}>Belum ada — tambah di atas</div>
+            <div style={{textAlign:"center",color:"#ccc",padding:24,fontSize:13}}>Belum ada -- tambah di atas</div>
           ) : list.map((app,i)=>(
             <div key={i}
               draggable
@@ -4577,9 +4577,9 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title
 }
 
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // SHIFT MODAL
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onCancel }) {
   const APPS = saldoApps || DEFAULT_SALDO_APPS;
   const blank=()=>{const m={};APPS.forEach(a=>{m[a]="";});return m;};
@@ -4657,11 +4657,11 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
             <div style={{marginBottom:10}}><label style={{...lS,color:"#aaa"}}>Note Pengeluaran</label><input type="text" value={noteKlr} onChange={e=>setNoteKlr(e.target.value)} placeholder="Contoh: beli plastik..." style={iS}/></div>
             <div style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:10,padding:"10px 13px",marginBottom:10,fontSize:12}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#0d9488",fontWeight:700}}>Total Penjualan Bersih</span><b style={{color:"#0d9488"}}>{fmtRp(totalP)}</b></div>
-              <div style={{fontSize:10,color:"#aaa",marginBottom:5}}>({shiftTrx.length} transaksi · sudah dikurangi refund)</div>
-              {st>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( – ) Setor Tunai</span><b style={{color:"#e74c3c"}}>{fmtRp(st)}</b></div>}
-              {htg>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( – ) Hutang</span><b style={{color:"#e74c3c"}}>{fmtRp(htg)}</b></div>}
-              {pnd>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( – ) Pending</span><b style={{color:"#e74c3c"}}>{fmtRp(pnd)}</b></div>}
-              {pk>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( – ) Pengeluaran {noteKlr&&<span style={{fontSize:10,color:"#aaa",fontStyle:"italic"}}>({noteKlr})</span>}</span><b style={{color:"#e74c3c"}}>{fmtRp(pk)}</b></div>}
+              <div style={{fontSize:10,color:"#aaa",marginBottom:5}}>({shiftTrx.length} transaksi . sudah dikurangi refund)</div>
+              {st>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( - ) Setor Tunai</span><b style={{color:"#e74c3c"}}>{fmtRp(st)}</b></div>}
+              {htg>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( - ) Hutang</span><b style={{color:"#e74c3c"}}>{fmtRp(htg)}</b></div>}
+              {pnd>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( - ) Pending</span><b style={{color:"#e74c3c"}}>{fmtRp(pnd)}</b></div>}
+              {pk>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:"#e74c3c"}}>( - ) Pengeluaran {noteKlr&&<span style={{fontSize:10,color:"#aaa",fontStyle:"italic"}}>({noteKlr})</span>}</span><b style={{color:"#e74c3c"}}>{fmtRp(pk)}</b></div>}
               <div style={{display:"flex",justifyContent:"space-between",paddingTop:7,borderTop:"2px solid #b2ede6",marginTop:4}}><span style={{fontWeight:900,fontSize:13}}>= Kas Nyata di Laci (Sistem)</span><b style={{fontSize:16,color:"#0d9488"}}>{fmtRp(kasSystem)}</b></div>
             </div>
             <div style={{marginBottom:10}}>
@@ -4699,10 +4699,10 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
 // Running text motivasi untuk BankPage
 function BankMotivasi() {
   const texts = [
-    "🌟 Kejujuran adalah fondasi kepercayaan — jaga setiap transaksi dengan integritas",
-    "💪 Bersama kita tumbuh — setiap rupiah yang tercatat adalah bukti kerja keras kita",
+    "🌟 Kejujuran adalah fondasi kepercayaan -- jaga setiap transaksi dengan integritas",
+    "💪 Bersama kita tumbuh -- setiap rupiah yang tercatat adalah bukti kerja keras kita",
     "🎯 Transparansi bukan pilihan, tapi komitmen kita untuk bisnis yang sehat",
-    "🤝 Kepercayaan dibangun dari hal kecil — catat dengan jujur, laporkan dengan tepat",
+    "🤝 Kepercayaan dibangun dari hal kecil -- catat dengan jujur, laporkan dengan tepat",
     "✨ Ammar Cell berkembang karena tim yang solid dan penuh integritas",
   ];
   const [idx, setIdx] = useState(0);
@@ -4718,9 +4718,9 @@ function BankMotivasi() {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// BANK PAGE — Pencatatan Bank (terintegrasi Supabase Realtime)
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
+// BANK PAGE -- Pencatatan Bank (terintegrasi Supabase Realtime)
+// ==============================================================================
 function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   const selectedOutlet = user.outletId || outlets[0]?.id || "";
   const outletNama     = outlets.find(o=>o.id===selectedOutlet)?.nama || "Ammar Cell";
@@ -4746,7 +4746,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
   const [histExpanded, setHistExpanded] = useState({});
   const [histSelected, setHistSelected] = useState(null); // untuk modal konfirmasi
 
-  // ── Load semua data ────────────────────────────────────────────────────────
+  // -- Load semua data --------------------------------------------------------
   const loadAll = async (showLoading=false) => {
     if(showLoading) setLoading(true);
     try {
@@ -4824,7 +4824,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           };
         });
 
-        // Load juga dari bank_shifts (semua shift aktif di outlet ini — bukan hanya milik user ini)
+        // Load juga dari bank_shifts (semua shift aktif di outlet ini -- bukan hanya milik user ini)
         // Ini untuk menampilkan shift orang lain yang mungkin overlap
         const { data: activeAll } = await supabase
           .from('bank_shifts')
@@ -4868,7 +4868,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
 
   useEffect(()=>{ loadAll(true); },[selectedOutlet]);
 
-  // ── Realtime ──────────────────────────────────────────────────────────────
+  // -- Realtime --------------------------------------------------------------
   useEffect(()=>{
     const chTrx = supabase.channel(`bank-trx-${selectedOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
@@ -4890,7 +4890,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     const chShift = supabase.channel(`bank-shift-${selectedOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},(payload)=>{
         if(payload.eventType==='DELETE'){
-          // Verifikasi dulu ke Supabase — jangan langsung null
+          // Verifikasi dulu ke Supabase -- jangan langsung null
           const deletedId     = payload.old?.id;
           const deletedOutlet = payload.old?.outlet_id;
           setShiftState(prev=>{
@@ -4968,14 +4968,14 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     setTimeout(()=>loadAll(false), 600);
   };
 
-  // ── Lanjutkan shift dari riwayat (baru) ────────────────────────────────────
-  // ── ▶️ Lanjutkan Shift ────────────────────────────────────────────────────
+  // -- Lanjutkan shift dari riwayat (baru) ------------------------------------
+  // -- ▶️ Lanjutkan Shift ----------------------------------------------------
   // Pakai ID shift LAMA, tidak buat baru → semua transaksi lama ikut otomatis
   const lanjutkanShift = async (histShift) => {
     setHistSelected(null);
     try {
       const s = {
-        id:        histShift.id,                         // ID LAMA — transaksi lama tetap linked
+        id:        histShift.id,                         // ID LAMA -- transaksi lama tetap linked
         nama:      histShift.nama,
         start:     histShift.start_time || now(),        // pertahankan waktu buka asli
         outletId:  selectedOutlet,
@@ -4998,7 +4998,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     }
   };
 
-  // ── 🔗 Gabung dengan Shift Aktif ─────────────────────────────────────────
+  // -- 🔗 Gabung dengan Shift Aktif -----------------------------------------
   const lanjutGabung = async (histShift) => {
     setHistSelected(null);
     if(!shift) {
@@ -5029,7 +5029,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
       // Simpan ke saldo_close.catatan (kolom yang sudah ada) agar tidak 400 error
       const catatanGabung = `[DIGABUNG] ke shift ${shift.nama||shift.id} oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`;
       if(histShift.status==="closed") {
-        // Update saldo_close.catatan saja — tidak butuh kolom baru
+        // Update saldo_close.catatan saja -- tidak butuh kolom baru
         const existing = histShift.saldo_close || {};
         try{
           await supabase.from('bank_shift_logs')
@@ -5037,7 +5037,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
             .eq('id', histShift.id);
         }catch(e2){ console.warn('update log catatan:',e2); }
       } else {
-        // Shift masih aktif di bank_shifts — hapus dari sana
+        // Shift masih aktif di bank_shifts -- hapus dari sana
         try{ await supabase.from('bank_shifts').delete().eq('id', histShift.id); }catch(e2){ console.warn('del shift:',e2); }
         // Insert ke bank_shift_logs dengan catatan gabung (tanpa kolom hidden yang mungkin belum ada)
         try{
@@ -5078,14 +5078,14 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
     }
   };
 
-  // ── 🙈 Sembunyikan dari Karyawan ─────────────────────────────────────────
+  // -- 🙈 Sembunyikan dari Karyawan -----------------------------------------
   // Data TETAP ada di database untuk admin. Tandai di saldo_close.catatan.
   const hapusRiwayat = async (histShift) => {
     setHistSelected(null);
     const catatanHidden = `[DISEMBUNYIKAN] oleh ${user.username} pada ${new Date().toLocaleString('id-ID')}`;
     try {
       if(histShift.status==="active") {
-        // Shift aktif di bank_shifts — pindah ke bank_shift_logs dengan catatan
+        // Shift aktif di bank_shifts -- pindah ke bank_shift_logs dengan catatan
         try{ await supabase.from('bank_shifts').delete().eq('id', histShift.id); }catch(e2){ console.warn(e2); }
         try{
           await supabase.from('bank_shift_logs').insert({
@@ -5100,7 +5100,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           });
         }catch(e2){ console.warn('insert hidden log:',e2); }
       } else {
-        // Shift sudah closed — update saldo_close.catatan saja (kolom yang sudah ada)
+        // Shift sudah closed -- update saldo_close.catatan saja (kolom yang sudah ada)
         const existing = histShift.saldo_close || {};
         try{
           await supabase.from('bank_shift_logs')
@@ -5110,7 +5110,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
       }
       // Hapus dari tampilan karyawan (filter lokal)
       setShiftHistory(prev=>prev.filter(s=>s.id!==histShift.id));
-      notify("🙈 Riwayat disembunyikan — masih ada di laporan admin","ok");
+      notify("🙈 Riwayat disembunyikan -- masih ada di laporan admin","ok");
     } catch(e){
       console.error("hapusRiwayat error:", e);
       // Fallback: sembunyikan dari tampilan walau Supabase error
@@ -5157,7 +5157,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         <div style={{padding:"0 16px",display:"flex",alignItems:"center",minHeight:50}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",marginRight:10,fontFamily:"inherit"}}>← Menu</button>
           <div style={{marginRight:"auto"}}>
-            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>{outletNama} <span style={{opacity:.7,fontWeight:600,fontSize:12}}>· Bank</span></div>
+            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>{outletNama} <span style={{opacity:.7,fontWeight:600,fontSize:12}}>. Bank</span></div>
             <div style={{fontSize:10,color:"rgba(255,255,255,.6)",fontWeight:600}}>{user.nama}</div>
           </div>
           <button onClick={()=>loadAll(false)} style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",borderRadius:20,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",marginRight:6}}>🔄</button>
@@ -5180,10 +5180,10 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
             style={{background:"#fff",border:"none",borderRadius:14,padding:"14px 32px",color:"#0d9488",fontWeight:900,fontSize:16,cursor:"pointer",fontFamily:"inherit",marginTop:6,boxShadow:"0 8px 28px rgba(0,0,0,.2)"}}>
             🟢 Buka Shift Sekarang
           </button>
-          {/* Riwayat shift di layar lock — bisa langsung lanjutkan */}
+          {/* Riwayat shift di layar lock -- bisa langsung lanjutkan */}
           {shiftHistory.length>0&&(
             <div style={{marginTop:10,width:"100%",maxWidth:400}}>
-              <div style={{fontWeight:700,fontSize:12,color:"rgba(255,255,255,.7)",textAlign:"center",marginBottom:8}}>— atau lanjutkan shift sebelumnya —</div>
+              <div style={{fontWeight:700,fontSize:12,color:"rgba(255,255,255,.7)",textAlign:"center",marginBottom:8}}>-- atau lanjutkan shift sebelumnya --</div>
               {shiftHistory.slice(0,3).map(s=>{
                 const sel = s.saldo_close?.selisih??null;
                 return (
@@ -5194,8 +5194,8 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                         <div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:2}}>
                           {(()=>{
                             const dt=s.end_time?new Date(s.end_time):s.start_time?new Date(s.start_time):null;
-                            if(!dt||isNaN(dt)) return s.status==="active"?"🟢 Shift Aktif":"—";
-                            return (s.status==="active"?"🟢 Aktif · ":"") + dt.toLocaleDateString("id-ID",{day:"2-digit",month:"short"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
+                            if(!dt||isNaN(dt)) return s.status==="active"?"🟢 Shift Aktif":"--";
+                            return (s.status==="active"?"🟢 Aktif . ":"") + dt.toLocaleDateString("id-ID",{day:"2-digit",month:"short"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
                           })()}
                           {sel===0&&<span style={{marginLeft:6,color:"#4ade80",fontWeight:700}}>✅ Balance</span>}
                           {sel!==null&&sel<0&&<span style={{marginLeft:6,color:"#fca5a5",fontWeight:700}}>📉 {fmtRp(Math.abs(sel))}</span>}
@@ -5224,7 +5224,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
             <button onClick={()=>setShowBalance(true)} style={{marginTop:9,background:"rgba(255,255,255,.18)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"4px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:5}}>
               🔄 Cek Balance {lastBalance&&<span style={{opacity:.6}}>{lastBalance.jam}</span>}
             </button>
-            {lastBalance&&<div style={{fontSize:10,color:"rgba(255,255,255,.65)",marginTop:5}}>Laci: {fmtRp(lastBalance.uang)} · <span style={{color:lastBalance.selisih===0?"#a7f3d0":lastBalance.selisih>0?"#fcd34d":"#fca5a5",fontWeight:700}}>{lastBalance.selisih===0?"✓ Balance":(lastBalance.selisih>0?"+":"")+fmtRp(lastBalance.selisih)}</span></div>}
+            {lastBalance&&<div style={{fontSize:10,color:"rgba(255,255,255,.65)",marginTop:5}}>Laci: {fmtRp(lastBalance.uang)} . <span style={{color:lastBalance.selisih===0?"#a7f3d0":lastBalance.selisih>0?"#fcd34d":"#fca5a5",fontWeight:700}}>{lastBalance.selisih===0?"✓ Balance":(lastBalance.selisih>0?"+":"")+fmtRp(lastBalance.selisih)}</span></div>}
             {totalSaldo>0&&<div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:4}}>Saldo Aplikasi: {fmtRp(totalSaldo)}</div>}
           </div>
           <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",border:"2px solid #e0faf5"}}>
@@ -5251,7 +5251,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
             <div>
               <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📋 Transaksi Shift Ini</div>
-              {shift&&<div style={{fontSize:10,color:"#aaa",marginTop:2}}>Shift: {shift.nama} · {shiftTrxList.length} transaksi</div>}
+              {shift&&<div style={{fontSize:10,color:"#aaa",marginTop:2}}>Shift: {shift.nama} . {shiftTrxList.length} transaksi</div>}
             </div>
             <div style={{display:"flex",gap:6}}>
               {[{k:"semua",l:"Semua"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"}].map(f=>(
@@ -5282,7 +5282,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
           }
         </div>
 
-        {/* ── RIWAYAT SHIFT ── */}
+        {/* -- RIWAYAT SHIFT -- */}
         {shiftHistory.length>0&&(
           <div style={{marginTop:20}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
@@ -5320,7 +5320,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                             if(!dt||isNaN(dt)) {
                               const ds = s.start_time?new Date(s.start_time):null;
                               if(ds&&!isNaN(ds)) return "Dibuka "+ds.toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"});
-                              return "—";
+                              return "--";
                             }
                             return "Tutup "+dt.toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
                           })()}
@@ -5400,7 +5400,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                 {(()=>{
                   if(histSelected.status==="active") return "🟢 Sedang Aktif";
                   const dt=histSelected.end_time?new Date(histSelected.end_time):histSelected.start_time?new Date(histSelected.start_time):null;
-                  if(!dt||isNaN(dt)) return "—";
+                  if(!dt||isNaN(dt)) return "--";
                   return dt.toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"})+" "+dt.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"});
                 })()}
               </div>
@@ -5432,14 +5432,14 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                 {histSelected.status==="active"?"🟢 Shift ini masih aktif":"⚫ Shift sudah ditutup"}
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {/* Pilihan 1: Lanjutkan shift — pakai ID lama */}
+                {/* Pilihan 1: Lanjutkan shift -- pakai ID lama */}
                 <button onClick={()=>lanjutkanShift(histSelected)}
                   style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"12px 14px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(13,148,136,.3)",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:22,flexShrink:0}}>▶️</span>
                   <div>
                     <div>Lanjutkan Shift Ini</div>
                     <div style={{fontSize:10,fontWeight:600,opacity:.8}}>
-                      Pakai ID shift lama — cocok saat shift baru belum ada transaksi
+                      Pakai ID shift lama -- cocok saat shift baru belum ada transaksi
                     </div>
                   </div>
                 </button>
@@ -5451,7 +5451,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                     <div>Gabung ke Shift Aktif</div>
                     <div style={{fontSize:10,fontWeight:600,opacity:.8}}>
                       {shift
-                        ? `Transaksi lama pindah ke "${shift.nama}" — total masuk/keluar ikut terjumlah`
+                        ? `Transaksi lama pindah ke "${shift.nama}" -- total masuk/keluar ikut terjumlah`
                         : "⚠ Buka shift dulu sebelum menggabung"}
                     </div>
                   </div>
@@ -5462,7 +5462,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
                   <span style={{fontSize:20,flexShrink:0}}>🙈</span>
                   <div>
                     <div>Sembunyikan dari Tampilan</div>
-                    <div style={{fontSize:10,fontWeight:600,opacity:.7}}>Data tetap ada di laporan admin — hanya disembunyikan dari karyawan</div>
+                    <div style={{fontSize:10,fontWeight:600,opacity:.7}}>Data tetap ada di laporan admin -- hanya disembunyikan dari karyawan</div>
                   </div>
                 </button>
                 <button onClick={()=>setHistSelected(null)}
@@ -5483,7 +5483,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
           <div style={{background:"#fff",borderRadius:18,padding:22,width:360,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
             <div style={{fontWeight:900,fontSize:15,color:"#e74c3c",marginBottom:3}}>⬆ Setor Tunai</div>
-            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Uang keluar dari laci — disetor ke pusat/bank</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Uang keluar dari laci -- disetor ke pusat/bank</div>
             <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>KETERANGAN</label>
             <input value={setorNama} onChange={e=>setSetorNama(e.target.value.toUpperCase())}
               style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
@@ -5515,7 +5515,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify }) {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900}}>
           <div style={{background:"#fff",borderRadius:18,padding:22,width:360,fontFamily:"'Nunito',sans-serif",boxShadow:"0 20px 55px rgba(0,0,0,.25)"}}>
             <div style={{fontWeight:900,fontSize:15,color:"#0d9488",marginBottom:3}}>⬇ Bank Pinjam Voucher</div>
-            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Uang masuk ke laci — bank meminjam dari voucher/kasir</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Uang masuk ke laci -- bank meminjam dari voucher/kasir</div>
             <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>KETERANGAN</label>
             <input value={pinjamNama} onChange={e=>setPinjamNama(e.target.value.toUpperCase())}
               style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
@@ -5577,12 +5577,12 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
   const APPS = (saldoApps && saldoApps.length > 0) ? saldoApps : ["Digipos","Sidiva","Rita","OK","Dana","OVO","GoPay","ShopeePay"];
   const blank = ()=>Object.fromEntries(APPS.map(a=>[a,""]));
 
-  // ── State Buka Shift ──────────────────────────────────────────────────────
+  // -- State Buka Shift ------------------------------------------------------
   const [namaShift, setNamaShift] = useState("");
   const [cashKemb,  setCashKemb]  = useState("");
   const [saldoForm, setSaldoForm] = useState(blank());
 
-  // ── State Tutup Shift — load draft dari localStorage ──────────────────────
+  // -- State Tutup Shift -- load draft dari localStorage ----------------------
   const draftKey = `bank_saldo_draft_${shift?.id||"x"}`;
   const [saldoClose, setSaldoClose] = useState(()=>{
     try{ const d=localStorage.getItem(draftKey); return d?JSON.parse(d):blank(); }catch{ return blank(); }
@@ -5638,14 +5638,14 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
           )}
         </div>
 
-        {/* ── BUKA SHIFT ── */}
+        {/* -- BUKA SHIFT -- */}
         {mode==="open"&&(
           <>
             <label style={lbl}>Nama Shift *</label>
             <input value={namaShift} onChange={e=>setNamaShift(e.target.value)} placeholder="Pagi / Siang / Malam..."
               style={{...inp,fontWeight:700}}/>
 
-            <SH t="💵 Cash Kembalian — Otomatis Masuk Saldo Sistem"/>
+            <SH t="💵 Cash Kembalian -- Otomatis Masuk Saldo Sistem"/>
             <div style={{background:"#e0faf512",border:"1px solid #0d948822",borderRadius:9,padding:"8px 12px",marginBottom:8,fontSize:11,color:"#555",lineHeight:1.6}}>
               ✅ <b>Cash kembalian langsung tercatat sebagai saldo awal.</b> Tidak perlu input manual saat closing.
             </div>
@@ -5656,9 +5656,9 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
                 style={{...inp,paddingLeft:38,fontSize:18,fontWeight:900,textAlign:"right",border:`2px solid ${cashKembNum>0?"#0d9488":"#b2ede6"}`,marginBottom:0}}/>
             </div>
 
-            <SH t="📱 Saldo Aplikasi Awal (Catatan — tidak masuk uang sistem)"/>
+            <SH t="📱 Saldo Aplikasi Awal (Catatan -- tidak masuk uang sistem)"/>
             <div style={{background:"#fffbe6",border:"1px solid #f39c1222",borderRadius:9,padding:"8px 12px",marginBottom:8,fontSize:11,color:"#b7770d",lineHeight:1.5}}>
-              📌 Saldo aplikasi hanya untuk <b>pengecekan Anda</b> — tidak mempengaruhi uang sistem.
+              📌 Saldo aplikasi hanya untuk <b>pengecekan Anda</b> -- tidak mempengaruhi uang sistem.
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
               {APPS.map(app=>(
@@ -5670,13 +5670,13 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
               ))}
             </div>
 
-            {/* Total saldo aplikasi — TERPISAH dari uang sistem */}
+            {/* Total saldo aplikasi -- TERPISAH dari uang sistem */}
             <div style={{background:"#e0faf5",borderRadius:10,padding:"11px 14px",border:"2px solid #0d948833",marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>📱 Total Saldo Aplikasi</span>
                 <span style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>{fmtRp(totalSaldoF)}</span>
               </div>
-              <div style={{fontSize:10,color:"#aaa",marginTop:4}}>* Hanya catatan — tidak masuk perhitungan uang sistem</div>
+              <div style={{fontSize:10,color:"#aaa",marginTop:4}}>* Hanya catatan -- tidak masuk perhitungan uang sistem</div>
             </div>
 
             {/* Uang sistem awal = cash kembalian saja */}
@@ -5684,17 +5684,17 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
               <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:10,padding:"11px 14px"}}>
                 <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.75)",marginBottom:4}}>💵 UANG SISTEM AWAL</div>
                 <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(totalSistemBuka)}</div>
-                <div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:3}}>= Cash Kembalian saja · Saldo aplikasi tidak dihitung</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,.6)",marginTop:3}}>= Cash Kembalian saja . Saldo aplikasi tidak dihitung</div>
               </div>
             )}
           </>
         )}
 
-        {/* ── TUTUP SHIFT ── */}
+        {/* -- TUTUP SHIFT -- */}
         {mode==="close"&&(
           <>
             <div style={{background:"#f0faf8",borderRadius:9,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#555"}}>
-              Shift: <b style={{color:"#0d9488"}}>{shift?.nama}</b> · {shift?.start}
+              Shift: <b style={{color:"#0d9488"}}>{shift?.nama}</b> . {shift?.start}
             </div>
 
             {/* Rekap sistem */}
@@ -5721,8 +5721,8 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
               <div style={{fontSize:10,color:"#aaa",marginTop:3}}>{shiftTrx.length} transaksi dalam shift ini</div>
             </div>
 
-            {/* Saldo Aplikasi Akhir — auto-save */}
-            <SH t="📱 Saldo Aplikasi Akhir — Auto Tersimpan"/>
+            {/* Saldo Aplikasi Akhir -- auto-save */}
+            <SH t="📱 Saldo Aplikasi Akhir -- Auto Tersimpan"/>
             <div style={{background:"#fffbe6",border:"1px solid #f39c1233",borderRadius:9,padding:"8px 12px",marginBottom:8,fontSize:11,color:"#b7770d",lineHeight:1.6}}>
               💡 <b>Input saldo sekarang, lanjutkan nanti.</b> Data tidak hilang meski modal ditutup. Tap ✕ untuk hapus jika salah.
             </div>
@@ -5810,7 +5810,7 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
   );
 }
 
-// ── BankTrxForm (komponen terpisah) ───────────────────────────────────────────
+// -- BankTrxForm (komponen terpisah) -------------------------------------------
 function BankTrxForm({editData, onSave, onCancel}) {
   const [nama,    setNama]    = useState(editData?.nama||"");
   const [jenis,   setJenis]   = useState(editData?.jenis||"masuk");
@@ -5850,7 +5850,7 @@ function BankTrxForm({editData, onSave, onCancel}) {
 
   const handleSave = () => {
     if(!nama.trim()||!nomNum) return;
-    // Kirim semua data ke onSave — parent (saveTrx) yang handle TARIK 2 baris
+    // Kirim semua data ke onSave -- parent (saveTrx) yang handle TARIK 2 baris
     const net = feeType==="tarik" ? -nomNum :
                 feeType==="include" ? (jenis==="masuk"?nomNum:-nomNum) :
                 feeType==="fee"     ? (jenis==="masuk"?nomNum+feeNum:-(nomNum+feeNum)) :
@@ -5891,7 +5891,7 @@ function BankTrxForm({editData, onSave, onCancel}) {
             style={{...inp,fontSize:24,fontWeight:900,textAlign:"right",border:`2px solid ${nomNum>0?"#0d9488":"#b2ede6"}`,paddingLeft:40,marginBottom:0}}/>
         </div>
 
-        {/* Tipe Fee — 4 pilihan saat KELUAR, 3 saat MASUK */}
+        {/* Tipe Fee -- 4 pilihan saat KELUAR, 3 saat MASUK */}
         <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:7,marginTop:10}}>TIPE FEE</label>
         <div style={{display:"grid",gridTemplateColumns:`repeat(${jenis==="keluar"?4:3},1fr)`,gap:7,marginBottom:12}}>
           {FEE_TYPES.map(f=>(
@@ -5932,7 +5932,7 @@ function BankTrxForm({editData, onSave, onCancel}) {
           </div>
         )}
 
-        {/* Tombol — X kecil + Simpan */}
+        {/* Tombol -- X kecil + Simpan */}
         <div style={{display:"flex",gap:8,marginTop:14}}>
           <button onClick={onCancel}
             style={{width:44,height:44,borderRadius:10,border:"2px solid #b2ede6",background:"#fff",color:"#aaa",fontSize:18,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -5948,11 +5948,11 @@ function BankTrxForm({editData, onSave, onCancel}) {
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// FAST MOVING — helpers & tab components
-// ════════════════════════════════════════════════════════════════════════════
+// ============================================================================
+// FAST MOVING -- helpers & tab components
+// ============================================================================
 
-// ── Fast Moving helpers (shared by OutletFmPanel, ComparisonBar, MonthlyHistoryTab) ──
+// -- Fast Moving helpers (shared by OutletFmPanel, ComparisonBar, MonthlyHistoryTab) --
 const FM_PERIOD_OPTS = [
   {k:"3d",  l:"3 Hari",   days:3},
   {k:"7d",  l:"1 Minggu", days:7},
@@ -5979,7 +5979,7 @@ function OutletFmPanel({outlet,data,globalMax,selectedProduct,onHover}){
       <div style={{background:`linear-gradient(135deg,${outlet.color},${outlet.color}cc)`,padding:"11px 14px",display:"flex",alignItems:"center",gap:8}}>
         <div style={{flex:1}}>
           <div style={{fontWeight:900,fontSize:"clamp(11px,1vw,13px)",color:"#fff"}}>{outlet.nama.replace("Ammar Cell ","")}</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{(data||[]).filter(d=>d.qty>0).length} produk · hal {page}/{pages||1}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{(data||[]).filter(d=>d.qty>0).length} produk . hal {page}/{pages||1}</div>
         </div>
         <div style={{background:"rgba(255,255,255,.2)",borderRadius:10,padding:"4px 10px",textAlign:"center"}}>
           <div style={{fontWeight:900,fontSize:16,color:"#fff"}}>{(data||[]).reduce((s,d)=>s+d.qty,0)}</div>
@@ -6019,7 +6019,7 @@ function OutletFmPanel({outlet,data,globalMax,selectedProduct,onHover}){
                 </div>
                 <div style={{flexShrink:0,fontWeight:900,fontSize:"clamp(10px,0.95vw,12px)",
                   color:noSale?"#e2e8f0":outlet.color,minWidth:28,textAlign:"right"}}>
-                  {noSale?"—":p.qty}<span style={{fontSize:8,opacity:.65,fontWeight:600}}>{noSale?"":" pcs"}</span>
+                  {noSale?"--":p.qty}<span style={{fontSize:8,opacity:.65,fontWeight:600}}>{noSale?"":" pcs"}</span>
                 </div>
               </div>
             </div>
@@ -6063,7 +6063,7 @@ function ComparisonBar({product,outlets,fmPerOutlet}){
             <div style={{flex:1,height:7,background:"#f1f5f9",borderRadius:20,overflow:"hidden"}}>
               <div style={{height:"100%",width:`${pct}%`,background:qty===0?"#e2e8f0":o.color,borderRadius:20,transition:"width .5s"}}/>
             </div>
-            <span style={{width:24,textAlign:"right",fontSize:10,fontWeight:800,color:qty===0?"#cbd5e1":o.color,flexShrink:0}}>{qty||"—"}</span>
+            <span style={{width:24,textAlign:"right",fontSize:10,fontWeight:800,color:qty===0?"#cbd5e1":o.color,flexShrink:0}}>{qty||"--"}</span>
           </div>
         );
       })}
@@ -6147,7 +6147,7 @@ function MonthlyHistoryTab({transactions,outlets}){
         <div style={{flex:1}}>
           <div style={{fontWeight:900,fontSize:"clamp(14px,1.4vw,18px)",color:"#fff"}}>{monthData?.label}</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:2}}>
-            {monthData?.days} hari · {filtered.filter(p=>p.qty>0).length} produk terjual
+            {monthData?.days} hari . {filtered.filter(p=>p.qty>0).length} produk terjual
             {monthData?.note&&<span style={{marginLeft:8,background:"#f59e0b",borderRadius:20,padding:"1px 7px",fontSize:9,color:"#1e293b",fontWeight:800}}>{monthData.note}</span>}
           </div>
         </div>
@@ -6205,7 +6205,7 @@ function MonthlyHistoryTab({transactions,outlets}){
                   <div style={{padding:"6px 6px",fontSize:9,fontWeight:700,color:"#1e293b",alignSelf:"center"}}>{fmtRp(p.omset)}</div>
                   <div style={{padding:"6px 6px",fontSize:9,fontWeight:700,color:"#10b981",alignSelf:"center"}}>{fmtRp(p.profit)}</div>
                   <div style={{padding:"6px 6px",alignSelf:"center"}}>
-                    {diff===null?<span style={{fontSize:8,color:"#cbd5e1"}}>—</span>:
+                    {diff===null?<span style={{fontSize:8,color:"#cbd5e1"}}>--</span>:
                     <span style={{fontSize:9,fontWeight:800,color:diff>0?"#10b981":diff<0?"#f43f5e":"#94a3b8"}}>
                       {diff>0?"▲":diff<0?"▼":"="}{Math.abs(diff)}
                       {diffPct&&<span style={{fontSize:7,opacity:.8}}> ({diffPct}%)</span>}
@@ -6222,7 +6222,7 @@ function MonthlyHistoryTab({transactions,outlets}){
           {/* Top 5 */}
           <div style={{background:"#fff",borderRadius:12,border:"2px solid #e0f5f1",overflow:"hidden"}}>
             <div style={{padding:"9px 12px",background:"#f0fdfb",borderBottom:"2px solid #e0f5f1",fontWeight:800,fontSize:11,color:"#0d9488",display:"flex",gap:6,alignItems:"center"}}>
-              🏆 Top 5 Terlaris — {monthData?.label}
+              🏆 Top 5 Terlaris -- {monthData?.label}
             </div>
             {filtered.slice(0,5).map((p,i)=>(
               <div key={p.name} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderTop:i>0?"1px solid #f0faf8":"none"}}>
@@ -6355,7 +6355,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
         )}
       </div>
 
-      {/* ══ SPLIT VIEW ══ */}
+      {/* == SPLIT VIEW == */}
       {mainTab==="split"&&(
       <div style={{display:"grid",gridTemplateColumns:"clamp(320px,38%,500px) 1fr",gap:"clamp(8px,1vw,16px)"}}>
         {/* Kiri: Daftar global */}
@@ -6365,14 +6365,14 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
               style={{flex:1,padding:"8px 12px",borderRadius:10,border:"2px solid #e2e8f0",fontSize:11,fontFamily:"inherit",outline:"none",background:"#fff"}}
               onFocus={e=>e.currentTarget.style.borderColor="#0d9488"}
               onBlur={e=>e.currentTarget.style.borderColor="#e2e8f0"}/>
-            <span style={{fontSize:10,color:"#94a3b8",fontWeight:600,flexShrink:0}}>{filtered.length} produk · {DAYS} hari</span>
+            <span style={{fontSize:10,color:"#94a3b8",fontWeight:600,flexShrink:0}}>{filtered.length} produk . {DAYS} hari</span>
           </div>
           {/* KPI status */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:7,marginBottom:10}}>
             {[
               {label:"Fast Moving",icon:"🔥",count:FM_LIST.filter(p=>p.qty/DAYS>=1).length,   sub:"≥1 pcs/hari",c:"#f59e0b",bg:"#fffbeb"},
-              {label:"Normal",     icon:"✅",count:FM_LIST.filter(p=>{const s=p.qty/DAYS;return s>=0.3&&s<1;}).length,sub:"0.3–1/hari",c:"#10b981",bg:"#ecfdf5"},
-              {label:"Lambat",     icon:"🐢",count:FM_LIST.filter(p=>{const s=p.qty/DAYS;return s>=0.1&&s<0.3;}).length,sub:"0.1–0.3/hari",c:"#94a3b8",bg:"#f1f5f9"},
+              {label:"Normal",     icon:"✅",count:FM_LIST.filter(p=>{const s=p.qty/DAYS;return s>=0.3&&s<1;}).length,sub:"0.3-1/hari",c:"#10b981",bg:"#ecfdf5"},
+              {label:"Lambat",     icon:"🐢",count:FM_LIST.filter(p=>{const s=p.qty/DAYS;return s>=0.1&&s<0.3;}).length,sub:"0.1-0.3/hari",c:"#94a3b8",bg:"#f1f5f9"},
               {label:"Stok Mati",  icon:"💀",count:FM_LIST.filter(p=>p.qty/DAYS<0.1).length,  sub:"<0.1/hari",c:"#f43f5e",bg:"#fff1f2"},
             ].map(k=>(
               <div key={k.label} style={{background:k.bg,borderRadius:11,padding:"9px 10px",border:`1px solid ${k.c}22`}}>
@@ -6465,7 +6465,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
               <div style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",borderRadius:14,padding:"11px 16px",marginTop:10,display:"flex",alignItems:"center",gap:12}}>
                 <div style={{fontSize:24}}>{st.icon}</div>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:800,fontSize:11,color:"#fff",marginBottom:2}}>{p.name} — <span style={{color:"#fcd34d"}}>{st.label}</span></div>
+                  <div style={{fontWeight:800,fontSize:11,color:"#fff",marginBottom:2}}>{p.name} -- <span style={{color:"#fcd34d"}}>{st.label}</span></div>
                   <div style={{fontSize:10,color:"rgba(255,255,255,.85)",display:"flex",gap:10,flexWrap:"wrap"}}>
                     <span>📍 Terlaris di <b style={{color:"#fcd34d"}}>{best.nama}</b> ({best.qty} pcs)</span>
                     {missing.length>0&&<span>⚠ Belum terjual: <b style={{color:"#fca5a5"}}>{missing.map(o=>o.nama).join(", ")}</b></span>}
@@ -6479,8 +6479,8 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
             <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"11px 16px",marginTop:10}}>
               <div style={{fontWeight:700,fontSize:11,color:"#0d9488",marginBottom:7}}>📋 Panduan Strategi Stok</div>
               {[
-                {icon:"🔥",text:"Fast (≥1/hari) → Min 7–10 pcs per outlet",c:"#f59e0b"},
-                {icon:"✅",text:"Normal (0.3–1/hari) → 3–5 pcs, reorder saat ≤2",c:"#10b981"},
+                {icon:"🔥",text:"Fast (≥1/hari) → Min 7-10 pcs per outlet",c:"#f59e0b"},
+                {icon:"✅",text:"Normal (0.3-1/hari) → 3-5 pcs, reorder saat ≤2",c:"#10b981"},
                 {icon:"🐢",text:"Lambat → Tahan stok, fokus outlet terlaris",c:"#94a3b8"},
                 {icon:"💡",text:"Hover produk untuk lihat distribusi outlet",c:"#6366f1"},
               ].map((r,i)=>(
@@ -6494,7 +6494,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
       </div>
       )}
 
-      {/* ══ COMPARE VIEW ══ */}
+      {/* == COMPARE VIEW == */}
       {mainTab==="compare"&&(
       <div style={{background:"#fff",borderRadius:14,border:"2px solid #e2e8f0",overflow:"hidden"}}>
         <div style={{padding:"10px 16px",borderBottom:"2px solid #f1f5f9",display:"flex",alignItems:"center",gap:10}}>
@@ -6515,12 +6515,12 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
           <ComparisonBar key={p.name} product={p} outlets={OUTLET_LIST} fmPerOutlet={fmOutlet}/>
         ))}
         <div style={{padding:"12px 16px",background:"#f8fffe",borderTop:"2px solid #e0f5f1"}}>
-          <div style={{fontWeight:700,fontSize:11,color:"#0d9488",marginBottom:8}}>💡 Insight Strategi Stok — {curPeriod.l}</div>
+          <div style={{fontWeight:700,fontSize:11,color:"#0d9488",marginBottom:8}}>💡 Insight Strategi Stok -- {curPeriod.l}</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
             {[
-              {icon:"📊",title:"Top Produk Periode Ini",desc:`${FM_LIST.filter(p=>p.qty>0).slice(0,3).map(p=>p.name).join(", ")} — paling banyak terjual`,c:"#6366f1"},
+              {icon:"📊",title:"Top Produk Periode Ini",desc:`${FM_LIST.filter(p=>p.qty>0).slice(0,3).map(p=>p.name).join(", ")} -- paling banyak terjual`,c:"#6366f1"},
               {icon:"🔑",title:"Distribusi Antar Outlet",desc:"Lihat bar mana yang paling panjang untuk keputusan stok per lokasi",c:"#06b6d4"},
-              {icon:"💡",title:"Produk Belum Terjual",desc:`${FM_LIST.filter(p=>p.qty===0).length} produk belum ada penjualan — pertimbangkan reposisi stok`,c:"#f59e0b"},
+              {icon:"💡",title:"Produk Belum Terjual",desc:`${FM_LIST.filter(p=>p.qty===0).length} produk belum ada penjualan -- pertimbangkan reposisi stok`,c:"#f59e0b"},
             ].map(k=>(
               <div key={k.title} style={{background:`${k.c}08`,borderRadius:11,padding:"10px 12px",border:`1px solid ${k.c}22`}}>
                 <div style={{fontSize:13,marginBottom:3}}>{k.icon}</div>
@@ -6533,7 +6533,7 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
       </div>
       )}
 
-      {/* ══ RIWAYAT BULANAN ══ */}
+      {/* == RIWAYAT BULANAN == */}
       {mainTab==="history"&&(
         <MonthlyHistoryTab transactions={transactions} outlets={outlets}/>
       )}
@@ -6542,9 +6542,9 @@ function FastMovingTab({transactions, outlets, fmData, fmDataByPeriod}){
 }
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// DASHBOARD OVERALL — v2 (CRM style, realtime)
-// ════════════════════════════════════════════════════════════════════════════
+// ============================================================================
+// DASHBOARD OVERALL -- v2 (CRM style, realtime)
+// ============================================================================
 
 function QBarChart({data,keys,colors,labels}){
   const [hover,setHover]=useState(null);
@@ -6754,7 +6754,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[]}){
           )}
           <div style={{background:"#f0fdf4",borderRadius:12,padding:"12px 14px",border:"2px solid #bbf7d0",marginTop:10}}>
             <div style={{fontWeight:700,fontSize:11,color:"#15803d",marginBottom:6}}>Format Export</div>
-            {["File CSV — bisa dibuka di Excel/Google Sheets","Encoding UTF-8 dengan BOM","Satu file per jenis data yang dipilih"].map((t,i)=>(
+            {["File CSV -- bisa dibuka di Excel/Google Sheets","Encoding UTF-8 dengan BOM","Satu file per jenis data yang dipilih"].map((t,i)=>(
               <div key={i} style={{fontSize:10,color:"#166534",marginBottom:3,display:"flex",gap:5}}><span>✓</span><span>{t}</span></div>
             ))}
           </div>
@@ -6782,7 +6782,7 @@ function AnalisisTab({transactions=[],outlets=[],outletStats=[]}){ // real data 
   return (
     <div style={{padding:"20px 24px",maxWidth:900,margin:"0 auto"}}>
       <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",borderRadius:18,padding:"22px 24px",marginBottom:18}}>
-        <div style={{fontWeight:800,fontSize:12,color:"rgba(255,255,255,.7)",marginBottom:14}}>ANALISIS GROWTH — {curr.q} {new Date().getFullYear()}</div>
+        <div style={{fontWeight:800,fontSize:12,color:"rgba(255,255,255,.7)",marginBottom:14}}>ANALISIS GROWTH -- {curr.q} {new Date().getFullYear()}</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
           {[
             {l:"Omset Growth",v:fmtS(curr.omset),g:og,icon:"💰"},
@@ -6822,10 +6822,10 @@ function AnalisisTab({transactions=[],outlets=[],outletStats=[]}){ // real data 
               return (
                 <tr key={row.q} style={{background:isCurr?"#eef2ff":"#fff",borderTop:"1px solid #f1f5f9"}}>
                   <td style={{padding:"9px 12px",fontWeight:isCurr?900:700,color:isCurr?"#4338ca":"#1e293b"}}>{row.q}{isCurr?" ★":""}</td>
-                  <td style={{padding:"9px 12px",fontWeight:700,color:isCurr?"#6366f1":"#1e293b"}}>{row.omset>0?fmtRp(row.omset):"—"}</td>
-                  <td style={{padding:"9px 12px",fontWeight:700,color:isCurr?"#10b981":"#1e293b"}}>{row.profit>0?fmtRp(row.profit):"—"}</td>
-                  <td style={{padding:"9px 12px",color:"#64748b"}}>{row.trx>0?row.trx:"—"}</td>
-                  <td style={{padding:"9px 12px"}}>{g!==null&&row.omset>0?<GrowthBadge g={g}/>:<span style={{color:"#e2e8f0"}}>—</span>}</td>
+                  <td style={{padding:"9px 12px",fontWeight:700,color:isCurr?"#6366f1":"#1e293b"}}>{row.omset>0?fmtRp(row.omset):"--"}</td>
+                  <td style={{padding:"9px 12px",fontWeight:700,color:isCurr?"#10b981":"#1e293b"}}>{row.profit>0?fmtRp(row.profit):"--"}</td>
+                  <td style={{padding:"9px 12px",color:"#64748b"}}>{row.trx>0?row.trx:"--"}</td>
+                  <td style={{padding:"9px 12px"}}>{g!==null&&row.omset>0?<GrowthBadge g={g}/>:<span style={{color:"#e2e8f0"}}>--</span>}</td>
                 </tr>
               );
             })}</tbody>
@@ -6840,7 +6840,7 @@ function AnalisisTab({transactions=[],outlets=[],outletStats=[]}){ // real data 
                 <div style={{width:34,height:34,borderRadius:10,background:`${o.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>🏪</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:700,fontSize:11,color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.nama}</div>
-                  <div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>Margin: {o.omset>0?(o.profit/o.omset*100).toFixed(1):"0"}% · {o.trx} trx</div>
+                  <div style={{fontSize:9,color:"#94a3b8",marginTop:1}}>Margin: {o.omset>0?(o.profit/o.omset*100).toFixed(1):"0"}% . {o.trx} trx</div>
                 </div>
                 <GrowthBadge g={mg}/>
               </div>
@@ -6881,7 +6881,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
     else if(p==="year"){const d=new Date(n.getFullYear(),0,1);setDateFrom(d.toISOString().split('T')[0]);setDateTo(n.toISOString().split('T')[0]);}
   };
   const TABS=[{k:"overview",l:"Overview",icon:"📊"},{k:"peroutlet",l:"Per Outlet",icon:"🏪"},{k:"fastmoving",l:"Fast Moving",icon:"🚀"},{k:"analisis",l:"Analisis",icon:"🧠"},{k:"export",l:"Export",icon:"📤"}];
-  // ── Compute real data from props ─────────────────────────────────────────
+  // -- Compute real data from props -----------------------------------------
   const parseDate = s => { if(!s) return null; const p=s.split('/'); if(p.length===3) return new Date(p[2],p[1]-1,p[0]); return new Date(s); };
   const calcOmset = list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
   const calcProfit= list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv-(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.buyPrice||0)*i.qty,0); },0);
@@ -6982,7 +6982,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
         </div>
         <div style={{display:"flex",alignItems:"center",gap:5,background:"rgba(255,255,255,.1)",borderRadius:9,padding:"4px 10px",border:"1px solid rgba(255,255,255,.15)"}}>
           <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{background:"none",border:"none",color:"#fff",fontSize:10,fontFamily:"inherit",outline:"none",width:82}}/>
-          <span style={{color:"rgba(255,255,255,.3)"}}>—</span>
+          <span style={{color:"rgba(255,255,255,.3)"}}>--</span>
           <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{background:"none",border:"none",color:"#fff",fontSize:10,fontFamily:"inherit",outline:"none",width:82}}/>
         </div>
         <button onClick={onBack} style={{background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)",borderRadius:22,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
@@ -7015,7 +7015,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div>
                 <div style={{fontWeight:800,fontSize:13,color:"#1e293b"}}>Tren Per Kuartal 2026</div>
-                <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Hover untuk detail · Growth QoQ otomatis</div>
+                <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Hover untuk detail . Growth QoQ otomatis</div>
               </div>
               <div style={{display:"flex",gap:8}}>
                 {[{c:"#6366f1",l:"Omset"},{c:"#10b981",l:"Profit"},{c:"#06b6d4",l:"Bank"}].map(lg=>(
@@ -7196,7 +7196,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
   );
 }
 
-// ── Drag & Drop sort hook ─────────────────────────────────────────────────────
+// -- Drag & Drop sort hook -----------------------------------------------------
 function useDragSort(initialItems, onReorder) {
   const [items, setItems] = useState(initialItems);
   const dragIdx = useRef(null);
@@ -7215,10 +7215,10 @@ function useDragSort(initialItems, onReorder) {
   return { items, onDragStart, onDragOver, onDrop };
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // CASHFLOW PAGE
-// ══════════════════════════════════════════════════════════════════════════════
-// ── Sub-components extracted from preview v3 ────────────────────────────────
+// ==============================================================================
+// -- Sub-components extracted from preview v3 --------------------------------
 const toNumCF = s => +String(s||"").replace(/[^\d]/g,"")||0;
 const toFmtCF = s => { const r=String(s||"").replace(/[^\d]/g,""); return r?new Intl.NumberFormat("id-ID").format(+r):""; };
 // Color constants for cashflow components
@@ -7259,20 +7259,20 @@ function DynRows({rows, setRows, color, placeholder="Keterangan..."}) {
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// CASHFLOW — SISTEM LAPORAN KEUANGAN TERINTEGRASI
+// ==============================================================================
+// CASHFLOW -- SISTEM LAPORAN KEUANGAN TERINTEGRASI
 // Alur: Kalkulator Cash → Jurnal → Buku Besar → Laba Rugi → Neraca → Analisis
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 
-// ════════════════════════════════════════════════════════════════════════════
-// CASHFLOW — LAPORAN KEUANGAN (v2 — identik lapkeu-v2.jsx)
-// ════════════════════════════════════════════════════════════════════════════
+// ============================================================================
+// CASHFLOW -- LAPORAN KEUANGAN (v2 -- identik lapkeu-v2.jsx)
+// ============================================================================
 
 const CO = "Ammar Cell"; // nama perusahaan untuk laporan keuangan
 const CF_KAT_NAMES_OUTLETS_DEFAULT = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 
 
-// ── CF Tab Components (restored) ─────────────────────────────────────────────
+// -- CF Tab Components (restored) ---------------------------------------------
 
 function CashflowPage({ transactions, outlets, onBack, notify }) {
   const [cfTab,       setCfTab]       = useState("kalkulator");
@@ -7387,7 +7387,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
   ];
 
-  // ── MOBILE LAYOUT ────────────────────────────────────────────────────────────
+  // -- MOBILE LAYOUT ------------------------------------------------------------
   if(isMobile) {
     const cfMobileTabs = [
       {k:"kalkulator", l:"Kalkulator", icon:"🧮"},
@@ -7445,7 +7445,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     );
   }
 
-  // ── DESKTOP LAYOUT ───────────────────────────────────────────────────────────
+  // -- DESKTOP LAYOUT -----------------------------------------------------------
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
@@ -7510,7 +7510,7 @@ const cfMkRows  = ls => ls.map(l=>({id:uid(),label:l,val:""}));
 const cfSumR    = rows => rows.reduce((s,r)=>s+toNumCF(r.val),0);
 
 
-// ── CSV download ──────────────────────────────────────────────────────────────
+// -- CSV download --------------------------------------------------------------
 function cfDlCSV(rows, fn) {
   const csv = rows.map(r=>r.map(c=>{const s=String(c==null?"":c);return s.includes(",")||s.includes('"')?'"'+s.replace(/"/g,'""')+'"':s;}).join(",")).join("\n");
   const a=document.createElement("a");
@@ -7518,7 +7518,7 @@ function cfDlCSV(rows, fn) {
   a.download=fn; a.click();
 }
 
-// ── Shared: Export bar ────────────────────────────────────────────────────────
+// -- Shared: Export bar --------------------------------------------------------
 function CfExportBar({buttons}) {
   const [loading,setLoading]=useState(null);
   return (
@@ -7543,7 +7543,7 @@ function CfExportBar({buttons}) {
   );
 }
 
-// ── Shared: KPI strip ─────────────────────────────────────────────────────────
+// -- Shared: KPI strip ---------------------------------------------------------
 function CfKPI({items}) {
   return (
     <div style={{display:"grid",gridTemplateColumns:`repeat(${items.length},1fr)`,gap:10,marginBottom:14}}>
@@ -7558,9 +7558,9 @@ function CfKPI({items}) {
   );
 }
 
-// ════════════════════════════════════════════════════════
+// ========================================================
 // TAB 1: KALKULATOR CASH
-// ════════════════════════════════════════════════════════
+// ========================================================
 function CfIRow({r,color,placeholder,onChange,onDel}) {
   const v=toNumCF(r.val);
   return (
@@ -7667,7 +7667,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const [kirimOk,  setKirimOk]  = useState(false);
   const { isMobile: cfKalMobile } = useDevice();
 
-  // ── Load dari localStorage satu kali saat mount ─────────────────────────
+  // -- Load dari localStorage satu kali saat mount -------------------------
   const sv = (()=>{
     try {
       const s = localStorage.getItem(SAVE_KEY);
@@ -7685,7 +7685,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const [mKel,  setMKel]  = useState(sv?.mKel   || cfMkRows(["Belanja stok","Operasional","Transfer owner"]));
   const [mFisik,setMFisik]= useState(sv?.mFisik || cfMkRows(defOutlets));
 
-  // ── Autosave ke localStorage setiap ada perubahan ─────────────────────────
+  // -- Autosave ke localStorage setiap ada perubahan -------------------------
   const doSave = (data) => {
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({...data, savedAt:new Date().toISOString()}));
@@ -7697,7 +7697,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
     if(saveTimer.current) clearTimeout(saveTimer.current);
     const data = {pCash,pBank,pApps,mOut,mBank,mApps,mKel,mFisik};
     saveTimer.current = setTimeout(()=>doSave(data), 500);
-    // Flush langsung saat unmount — jangan cancel timer, langsung save
+    // Flush langsung saat unmount -- jangan cancel timer, langsung save
     return ()=>{
       clearTimeout(saveTimer.current);
       doSave(data); // save sinkron saat komponen hilang
@@ -7753,8 +7753,8 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
         marginBottom:12,background:"#fff",borderRadius:11,padding:"8px 14px",border:"2px solid #e0f5f1"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:600,color:"#555"}}>
           <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",display:"inline-block",boxShadow:"0 0 0 3px #22c55e33"}}/>
-          Autosave aktif — data aman saat balik menu
-          {lastSave&&<span style={{color:"#aaa",marginLeft:2}}>· Tersimpan {lastSave}</span>}
+          Autosave aktif -- data aman saat balik menu
+          {lastSave&&<span style={{color:"#aaa",marginLeft:2}}>. Tersimpan {lastSave}</span>}
         </div>
         <button onClick={()=>{
           if(!window.confirm("Reset semua isian? Data belum tersimpan ke jurnal akan hilang.")) return;
@@ -7774,7 +7774,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
       <div style={{display:"grid",gridTemplateColumns:cfKalMobile?"1fr":"1fr 1fr",gap:16}}>
         {/* PAGI */}
         <div>
-          <ColHead emoji="🌅" label="PAGI — KONDISI AWAL" grad="linear-gradient(135deg,#1d4ed8,#3b82f6)" glow="#3b82f6"/>
+          <ColHead emoji="🌅" label="PAGI -- KONDISI AWAL" grad="linear-gradient(135deg,#1d4ed8,#3b82f6)" glow="#3b82f6"/>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <CfKalSec title="Cash Awal per Laci/Outlet" icon="💵" color="#3b82f6" bg="#eff6ff" total={tPC} rows={pCash} setRows={setPCash} placeholder="Nama laci/outlet..."/>
             <CfKalSec title="Saldo Rekening Bank" icon="🏛️" color="#7c3aed" bg="#f5f3ff" total={tPB} rows={pBank} setRows={setPBank} placeholder="Nama bank..."/>
@@ -7784,7 +7784,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
         </div>
         {/* MALAM */}
         <div>
-          <ColHead emoji="🌙" label="MALAM — KONDISI AKHIR" grad="linear-gradient(135deg,#065f46,#059669,#10b981)" glow="#0d9488"/>
+          <ColHead emoji="🌙" label="MALAM -- KONDISI AKHIR" grad="linear-gradient(135deg,#065f46,#059669,#10b981)" glow="#0d9488"/>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <CfKalSec title="Cash Diterima dari Outlet" icon="🏪" color="#16a34a" bg="#f0fdf4" total={tMO} rows={mOut} setRows={setMOut} placeholder="Nama outlet..."/>
             <CfKalSec title="Saldo Rekening Bank Akhir" icon="🏛️" color="#7c3aed" bg="#f5f3ff" total={tMB} rows={mBank} setRows={setMBank} placeholder="Nama bank..."/>
@@ -7801,7 +7801,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
             <div style={{height:2,flex:1,background:"linear-gradient(90deg,#d97706 40%,transparent)"}}/>
             <div style={{background:"linear-gradient(135deg,#78350f,#b45309,#d97706)",borderRadius:20,padding:"5px 18px",display:"flex",alignItems:"center",gap:7,boxShadow:"0 3px 12px #f59e0b22"}}>
               <span style={{fontSize:16}}>⚖️</span>
-              <span style={{fontWeight:900,fontSize:11,color:"#fff",letterSpacing:".5px"}}>VERSUS — INPUT KAMU vs SISTEM PENCATATAN</span>
+              <span style={{fontWeight:900,fontSize:11,color:"#fff",letterSpacing:".5px"}}>VERSUS -- INPUT KAMU vs SISTEM PENCATATAN</span>
             </div>
             <div style={{height:2,flex:1,background:"linear-gradient(270deg,#d97706 40%,transparent)"}}/>
           </div>
@@ -7834,6 +7834,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
                   </div>
                 </div>
             }
+          </div>
           <div style={{background:balanced?"linear-gradient(135deg,#064e3b,#059669,#10b981)":selTotal>0?"linear-gradient(135deg,#78350f,#b45309,#d97706)":"linear-gradient(135deg,#7f1d1d,#dc2626,#ef4444)",
             borderRadius:16,padding:"18px 22px",boxShadow:"0 6px 24px rgba(0,0,0,.15)",position:"relative",overflow:"hidden"}}>
             {[{r:-40,t:-40,s:160},{r:60,b:-60,s:200}].map((b,i)=>(
@@ -7843,10 +7844,10 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
               <div style={{fontSize:46}}>{balanced?"✅":selTotal>0?"📈":"📉"}</div>
               <div style={{flex:1}}>
                 <div style={{fontWeight:900,fontSize:18,color:"#fff",marginBottom:5}}>
-                  {balanced?"Keuangan Balance — Mantap! 🎉":selTotal>0?`Cash Lebih ${fmtRp(selTotal)} — Periksa Input`:`Cash Kurang ${fmtRp(Math.abs(selTotal))} — Perlu Diperiksa`}
+                  {balanced?"Keuangan Balance -- Mantap! 🎉":selTotal>0?`Cash Lebih ${fmtRp(selTotal)} -- Periksa Input`:`Cash Kurang ${fmtRp(Math.abs(selTotal))} -- Perlu Diperiksa`}
                 </div>
                 <div style={{fontSize:12,color:"rgba(255,255,255,.75)",lineHeight:1.8}}>
-                  🌅 Aset Pagi <b style={{color:"#fff"}}>{fmtRp(tPagi)}</b> · ⬇ Masuk <b style={{color:"#fff"}}>{fmtRp(tMO)}</b> · ⬆ Keluar <b style={{color:"#fff"}}>{fmtRp(tMK)}</b> · 🌙 Aset Malam <b style={{color:"#fff"}}>{fmtRp(tMalam)}</b>
+                  🌅 Aset Pagi <b style={{color:"#fff"}}>{fmtRp(tPagi)}</b> . ⬇ Masuk <b style={{color:"#fff"}}>{fmtRp(tMO)}</b> . ⬆ Keluar <b style={{color:"#fff"}}>{fmtRp(tMK)}</b> . 🌙 Aset Malam <b style={{color:"#fff"}}>{fmtRp(tMalam)}</b>
                 </div>
               </div>
               <button onClick={kirimKeLog}
@@ -7861,9 +7862,9 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   );
 }
 
-// ════════════════════════════════════════════════════════
+// ========================================================
 // TAB 2: JURNAL
-// ════════════════════════════════════════════════════════
+// ========================================================
 function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
   const [form,setForm]=useState({nama:"",nominal:"",jenis:"masuk",kat:"setoran",tgl:today()});
   const [srch,setSrch]=useState(""); const [fltr,setFltr]=useState("semua"); const [saved,setSaved]=useState(false);
@@ -7901,19 +7902,19 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
     <div>
       <CfExportBar buttons={[
         {l:"Export CSV Jurnal",icon:"📄",c:"#16a34a",badge:"lengkap",fn:()=>cfDlCSV([
-          [CO+" — JURNAL UMUM"],["No","Tanggal","Keterangan","Kategori","Jenis","Nominal"],
+          [CO+" -- JURNAL UMUM"],["No","Tanggal","Keterangan","Kategori","Jenis","Nominal"],
           ...log.map((e,i)=>[i+1,e.tgl,e.nama,CF_KAT[e.kat]?.l||e.kat,e.jenis==="masuk"?"Masuk":"Keluar",e.nominal]),
           [""],["","","","","Total Masuk",log.filter(x=>x.jenis==="masuk").reduce((s,x)=>s+x.nominal,0)],
           ["","","","","Total Keluar",log.filter(x=>x.jenis==="keluar").reduce((s,x)=>s+x.nominal,0)],
         ],`Jurnal_${today().replace(/\//g,"-")}.csv`)},
         {l:"CSV Per Tanggal",icon:"📅",c:"#0891b2",fn:()=>{
-          const rows=[[CO+" — PER TANGGAL"],["Tanggal","Keterangan","Jenis","Nominal"]];
+          const rows=[[CO+" -- PER TANGGAL"],["Tanggal","Keterangan","Jenis","Nominal"]];
           Object.entries(byDate).forEach(([d,es])=>{es.forEach(e=>rows.push([d,e.nama,e.jenis==="masuk"?"Masuk":"Keluar",e.nominal]));rows.push(["---","","",""]);});
           cfDlCSV(rows,`Jurnal_Tanggal_${today().replace(/\//g,"-")}.csv`);
         }},
       ]}/>
 
-      {/* ── Form Tambah ── */}
+      {/* -- Form Tambah -- */}
       <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"13px 15px",marginBottom:12}}>
         <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>➕ Tambah Entri Jurnal</div>
         <div style={{display:"grid",gridTemplateColumns:jMobile?"1fr":"1fr 1fr 1.5fr auto",gap:8,alignItems:"end"}}>
@@ -7948,7 +7949,7 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
         </div>
       </div>
 
-      {/* ── Filter & Search bar ── */}
+      {/* -- Filter & Search bar -- */}
       <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
         <div style={{position:"relative",flex:1,minWidth:130}}>
           <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:12}}>🔍</span>
@@ -7981,7 +7982,7 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
         {l:"Entri",        v:`${filtered.length}`, c:"#6b7280",bg:"#f9fafb",sub:"transaksi"},
       ]}/>
 
-      {/* ── List per tanggal ── */}
+      {/* -- List per tanggal -- */}
       {Object.entries(byDate).map(([d,entries])=>{
         const dM=entries.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
         const dK=entries.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
@@ -8060,9 +8061,9 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
   );
 }
 
-// ════════════════════════════════════════════════════════
+// ========================================================
 // TAB 3: BUKU BESAR
-// ════════════════════════════════════════════════════════
+// ========================================================
 function CfTabBukuBesar({log}) {
   const [open,setOpen]=useState({});
   const akunMap={};
@@ -8073,12 +8074,12 @@ function CfTabBukuBesar({log}) {
     <div>
       <CfExportBar buttons={[
         {l:"Export CSV Buku Besar",icon:"📊",c:"#1d4ed8",badge:"per akun",fn:()=>{
-          const rows=[[CO+" — BUKU BESAR"],["Akun","Tanggal","Keterangan","Debit","Kredit","Saldo Running"]];
+          const rows=[[CO+" -- BUKU BESAR"],["Akun","Tanggal","Keterangan","Debit","Kredit","Saldo Running"]];
           akuns.forEach(a=>{let run=0;a.entries.forEach((e,i)=>{if(e.jenis==="masuk")run+=e.nominal;else run-=e.nominal;rows.push([i===0?(CF_KAT[a.kat]?.l||a.kat):"",e.tgl,e.nama,e.jenis==="keluar"?e.nominal:0,e.jenis==="masuk"?e.nominal:0,run]);});});
           cfDlCSV(rows,`BukuBesar_${today().replace(/\//g,"-")}.csv`);
         }},
         {l:"Export CSV Rekap",icon:"📋",c:"#7c3aed",fn:()=>cfDlCSV([
-          [CO+" — REKAP BUKU BESAR"],["Akun","Debit","Kredit","Saldo"],
+          [CO+" -- REKAP BUKU BESAR"],["Akun","Debit","Kredit","Saldo"],
           ...akuns.map(a=>[CF_KAT[a.kat]?.l||a.kat,a.d,a.k,a.k-a.d]),
           ["TOTAL",totD,totK,totK-totD],
         ],`Rekap_${today().replace(/\//g,"-")}.csv`)},
@@ -8118,8 +8119,8 @@ function CfTabBukuBesar({log}) {
                     <tr key={e.id} style={{borderTop:"1px solid #f5f5f5",background:i%2===0?"#fff":"#fafffe"}}>
                       <td style={{padding:"6px 12px",color:"#888",fontSize:11}}>{e.tgl}</td>
                       <td style={{padding:"6px 12px",fontWeight:600}}>{e.nama}</td>
-                      <td style={{padding:"6px 12px",color:"#dc2626",fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"—"}</td>
-                      <td style={{padding:"6px 12px",color:"#16a34a",fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"—"}</td>
+                      <td style={{padding:"6px 12px",color:"#dc2626",fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"--"}</td>
+                      <td style={{padding:"6px 12px",color:"#16a34a",fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"--"}</td>
                       <td style={{padding:"6px 12px",fontWeight:800,color:run>=0?"#0d9488":"#dc2626"}}>{run>=0?"+":""}{fmtRp(run)}</td>
                     </tr>);
                   })}
@@ -8133,9 +8134,9 @@ function CfTabBukuBesar({log}) {
   );
 }
 
-// ════════════════════════════════════════════════════════
+// ========================================================
 // TAB 4: LAPORAN KEUANGAN
-// ════════════════════════════════════════════════════════
+// ========================================================
 function CfTabLapKeu({log}) {
   const [sub,setSub]=useState("lr");
   const masuk=log.filter(e=>e.jenis==="masuk"), keluar=log.filter(e=>e.jenis==="keluar");
@@ -8159,7 +8160,7 @@ function CfTabLapKeu({log}) {
   const TR=({l,v,c="#0d9488"})=>(<div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"2px solid #1a2e2a",marginTop:4}}><span style={{fontWeight:800,fontSize:13}}>{l}</span><span style={{fontWeight:900,fontSize:15,color:c}}>{v}</span></div>);
 
   const csvLapKeu=()=>cfDlCSV([
-    [CO+" — LAPORAN KEUANGAN"],[""],
+    [CO+" -- LAPORAN KEUANGAN"],[""],
     ["=== LABA RUGI ==="],["Pendapatan Penjualan",pend],["HPP","("+hpp+")"],["Laba Kotor",labaKotor],
     ["Beban Operasional","("+opEx+")"],["Laba Operasional",labaOp],["Pajak",pajak],["LABA BERSIH",labaBersih],["Net Margin",margin+"%"],[""],
     ["=== ARUS KAS ==="],["Kas Operasi",kasOp],["Kas Investasi",kasInv],["Kas Pendanaan",kasFin],["Kenaikan Bersih",kasNet],[""],
@@ -8282,9 +8283,9 @@ function CfTabLapKeu({log}) {
   );
 }
 
-// ════════════════════════════════════════════════════════
+// ========================================================
 // TAB 5: ANALISIS
-// ════════════════════════════════════════════════════════
+// ========================================================
 function CfTabAnalisis({log}) {
   const analRef=useRef(null);
   const masuk=log.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
@@ -8302,7 +8303,7 @@ function CfTabAnalisis({log}) {
     <div>
       <CfExportBar buttons={[
         {l:"Export CSV Analisis",icon:"📊",c:"#d97706",fn:()=>cfDlCSV([
-          [CO+" — ANALISIS KEUANGAN"],["Tanggal: "+today()],[""],
+          [CO+" -- ANALISIS KEUANGAN"],["Tanggal: "+today()],[""],
           ["Kondisi",kondisi.toUpperCase()],["Total Masuk",masuk],["Total Keluar",keluar],["Laba Bersih",laba],["Net Margin",margin.toFixed(2)+"%"],["Rata Harian",rata.toFixed(0)],["Hari Aktif",days],[""],
           ["TOP KATEGORI KELUAR","Nominal","Persen"],
           ...topKat.map(([k,v])=>[CF_KAT[k]?.l||k,v,(v/keluar*100).toFixed(1)+"%"]),[""],
@@ -8322,7 +8323,7 @@ function CfTabAnalisis({log}) {
           <div style={{fontSize:40}}>{kondisi==="sehat"?"🚀":kondisi==="cukup"?"⚠️":"🚨"}</div>
           <div style={{flex:1}}>
             <div style={{fontWeight:900,fontSize:17,color:"#fff"}}>{kondisi==="sehat"?"SEHAT & TUMBUH 💪":kondisi==="cukup"?"CUKUP STABIL":"PERLU PERHATIAN"}</div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.8)",marginTop:3}}>Margin {margin.toFixed(1)}% · Rata-rata {fmtRp(rata)}/hari · {days} hari aktif</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.8)",marginTop:3}}>Margin {margin.toFixed(1)}% . Rata-rata {fmtRp(rata)}/hari . {days} hari aktif</div>
           </div>
           <div style={{textAlign:"center",background:"rgba(255,255,255,.15)",borderRadius:11,padding:"9px 16px"}}>
             <div style={{fontWeight:900,fontSize:26,color:"#fff"}}>{margin.toFixed(1)}%</div>
@@ -8403,16 +8404,16 @@ function CfTabAnalisis({log}) {
   );
 }
 
-// ════════════════════════════════════════════════════════
+// ========================================================
 
 
 
-// ─── Chart component ──────────────────────────────────────────────────────────
+// --- Chart component ----------------------------------------------------------
 
-// ════════════════════════════════════════════════════════════════════════════
-// BANK DASHBOARD — sama persis dengan dashboard penjualan
-// ════════════════════════════════════════════════════════════════════════════
-// ─── Chart component ──────────────────────────────────────────────────────────
+// ============================================================================
+// BANK DASHBOARD -- sama persis dengan dashboard penjualan
+// ============================================================================
+// --- Chart component ----------------------------------------------------------
 function BankChart({ data, metric, color }) {
   const [hoverIdx, setHoverIdx] = useState(null);
   const vals = data.map(p=>p[metric]);
@@ -8513,7 +8514,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   const [loading,     setLoading]     = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
 
-  // ── Load langsung dari Supabase ─────────────────────────────────────────
+  // -- Load langsung dari Supabase -----------------------------------------
   const loadData = async () => {
     setLoading(true);
     try {
@@ -8569,7 +8570,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   // Filter by outlet
   const filtered = filterOutlet==="semua" ? bankTrx : bankTrx.filter(t=>t.outletId===filterOutlet);
 
-  // KPI hari ini — match format tgl dari Supabase
+  // KPI hari ini -- match format tgl dari Supabase
   const todayStr = today();
   const todayISO = new Date().toISOString().split('T')[0]; // 2026-06-04
   const todayTrx = filtered.filter(t => {
@@ -8590,7 +8591,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   const saldoHari  = masukHari - keluarHari;
   const feeHari    = todayTrx.reduce((s,t)=>s+t.fee,0);
 
-  // ── Normalize tgl dari berbagai format ──────────────────────────────────
+  // -- Normalize tgl dari berbagai format ----------------------------------
   const normTglBD = tgl => {
     if(!tgl) return '';
     if(/^\d{4}-\d{2}-\d{2}$/.test(tgl)) {
@@ -8776,7 +8777,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
           ))}
         </div>
 
-        {/* ── TAB GRAFIK ── */}
+        {/* -- TAB GRAFIK -- */}
         {tab==="grafik"&&(
           <div style={{animation:"fadeUp .3s ease"}}>
             <div style={{background:"#fff",borderRadius:16,padding:"20px 22px",
@@ -8862,7 +8863,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
           </div>
         )}
 
-        {/* ── TAB PER OUTLET ── */}
+        {/* -- TAB PER OUTLET -- */}
         {tab==="outlet"&&(
           <div style={{animation:"fadeUp .3s ease"}}>
             <div style={{background:"#fff",borderRadius:16,padding:"18px 20px",
@@ -8910,7 +8911,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
           </div>
         )}
 
-        {/* ── TAB TOP TRANSAKSI ── */}
+        {/* -- TAB TOP TRANSAKSI -- */}
         {tab==="transaksi"&&(
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,animation:"fadeUp .3s ease"}}>
             {/* Top Masuk */}
@@ -8980,14 +8981,14 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   );
 }
 
-// ── Connection Status Bar ─────────────────────────────────────────────────────
+// -- Connection Status Bar -----------------------------------------------------
 function ConnStatusBar({ status, lastPing, offlineQueue }) {
   if(status==="online") return null; // Tidak tampil saat normal
 
   const cfg = {
-    offline:      { bg:"#dc2626", icon:"📵", text:"Tidak Ada Koneksi — Transaksi tersimpan lokal, akan dikirim saat online",  pulse:true  },
+    offline:      { bg:"#dc2626", icon:"📵", text:"Tidak Ada Koneksi -- Transaksi tersimpan lokal, akan dikirim saat online",  pulse:true  },
     reconnecting: { bg:"#d97706", icon:"🔄", text:"Menghubungkan kembali...",                                                  pulse:true  },
-    slow:         { bg:"#b45309", icon:"⚠️",  text:`Koneksi Lambat (${lastPing||"..."}ms) — Data mungkin tertunda`,          pulse:false },
+    slow:         { bg:"#b45309", icon:"⚠️",  text:`Koneksi Lambat (${lastPing||"..."}ms) -- Data mungkin tertunda`,          pulse:false },
     warn:         { bg:"#ca8a04", icon:"⚡",  text:`Sinyal Lemah (${lastPing||"..."}ms)`,                                      pulse:false },
   }[status]||{ bg:"#dc2626", icon:"📵", text:"Koneksi Bermasalah", pulse:true };
 
@@ -9048,7 +9049,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
   useEffect(()=>{
     const load = async () => {
       try {
-        // Load active shifts — ambil semua, filter di frontend
+        // Load active shifts -- ambil semua, filter di frontend
         const {data:shifts,error} = await supabase.from('active_shifts').select('*');
         if(!error) setKasirShifts(shifts||[]);
         const allBankTrx = await dbBank.getTransactions();
@@ -9104,7 +9105,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
   };
   const calcTrxShift = (shiftId) => transactions.filter(t=>t.shiftId===shiftId).length;
 
-  // Hitung uang sistem bank per outlet — hanya dari shift yang AKTIF sekarang
+  // Hitung uang sistem bank per outlet -- hanya dari shift yang AKTIF sekarang
   const getBankStats = (outletId) => {
     // Ambil semua shift aktif di outlet ini
     const activeShiftIds = bankShifts
@@ -9138,7 +9139,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
   const filteredTrx  = filterOutlet==="semua" ? todayTrx  : todayTrx.filter(t=>String(t.outletId)===String(filterOutlet));
   const filteredBank = filterBank==="semua"   ? bankTrxList : bankTrxList.filter(t=>String(t.outletId)===String(filterBank));
 
-  // Grand totals — dari visibleOutlets saja
+  // Grand totals -- dari visibleOutlets saja
   const totalOmset      = todayTrx.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
   const totalBankSistem = visibleOutlets.reduce((s,o)=>s+getBankStats(o.id).uangSistem,0);
 
@@ -9201,10 +9202,10 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
 
       <div style={{padding:"14px 20px",maxWidth:1300,margin:"0 auto"}}>
 
-        {/* ── KASIR AKTIF ── */}
+        {/* -- KASIR AKTIF -- */}
         <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
           <PulseDotM color="#0d9488" size={7}/>
-          <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>Kasir & Bank Aktif — Semua Outlet</div>
+          <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>Kasir & Bank Aktif -- Semua Outlet</div>
         </div>
 
         {visibleOutlets.map((outlet,oi)=>{
@@ -9221,7 +9222,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                 <div style={{fontWeight:800,fontSize:13,color:oc}}>{outlet.nama}</div>
                 <div style={{fontSize:11,color:"#888",marginLeft:"auto",display:"flex",gap:10}}>
                   <span>{shifts.length} kasir aktif</span>
-                  {bank.activeShiftCount>0&&<span style={{color:"#2980b9",fontWeight:700}}>· {bank.activeShiftCount} shift bank aktif</span>}
+                  {bank.activeShiftCount>0&&<span style={{color:"#2980b9",fontWeight:700}}>. {bank.activeShiftCount} shift bank aktif</span>}
                 </div>
               </div>
 
@@ -9238,11 +9239,11 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                         <PulseDotM color="#27ae60" size={6}/>
                         <div>
                           <div style={{fontWeight:900,fontSize:14,color:"#1a2e2a"}}>{sh.user_id}</div>
-                          <div style={{fontSize:10,color:"#aaa"}}>Shift {sh.nama} · Buka {sh.start_time?.substring(11,16)||"—"}</div>
+                          <div style={{fontSize:10,color:"#aaa"}}>Shift {sh.nama} . Buka {sh.start_time?.substring(11,16)||"--"}</div>
                         </div>
                       </div>
 
-                      {/* Cash laci — fokus utama */}
+                      {/* Cash laci -- fokus utama */}
                       <div style={{background:`linear-gradient(135deg,#0d9488,#14b8a6)`,borderRadius:11,padding:"11px 14px",marginBottom:10}}>
                         <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.7)",marginBottom:3}}>💵 CASH DI LACI</div>
                         <div style={{fontWeight:900,fontSize:22,color:"#fff"}}>{fmtRp(omset)}</div>
@@ -9271,7 +9272,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                   );
                 })}
 
-                {/* Bank cards — per shift aktif */}
+                {/* Bank cards -- per shift aktif */}
                 {bank.activeShifts.map(bsh=>{
                   const sd    = bsh.saldo_data||{};
                   const shTrx = bankTrxList.filter(t=>t.shiftId===bsh.id);
@@ -9285,8 +9286,8 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                     <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
                       <PulseDotM color="#2980b9" size={6}/>
                       <div>
-                        <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>🏦 Bank — {sd.namaShift||bsh.nama||bsh.user_id||"Shift"}</div>
-                        <div style={{fontSize:10,color:"#aaa"}}>Buka {fmtT(bsh.start_time)} · {shTrx.length} trx</div>
+                        <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>🏦 Bank -- {sd.namaShift||bsh.nama||bsh.user_id||"Shift"}</div>
+                        <div style={{fontSize:10,color:"#aaa"}}>Buka {fmtT(bsh.start_time)} . {shTrx.length} trx</div>
                       </div>
                     </div>
                     <div style={{background:"linear-gradient(135deg,#1a2e2a,#2d4a44)",borderRadius:11,padding:"11px 14px",marginBottom:10}}>
@@ -9316,7 +9317,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
           );
         })}
 
-        {/* ── TRANSAKSI KASIR + RIWAYAT BANK berdampingan ── */}
+        {/* -- TRANSAKSI KASIR + RIWAYAT BANK berdampingan -- */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginTop:4}}>
 
           {/* Transaksi Kasir */}
@@ -9351,8 +9352,8 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                         <div>
-                          <div style={{fontWeight:700,fontSize:12,color:"#1a2e2a"}}>{items.map(it=>it.name).join(", ").substring(0,35)||"—"}</div>
-                          <div style={{fontSize:10,color:"#aaa",marginTop:1}}>{t.kasir||t.shiftNama} · {t.time||"—"}</div>
+                          <div style={{fontWeight:700,fontSize:12,color:"#1a2e2a"}}>{items.map(it=>it.name).join(", ").substring(0,35)||"--"}</div>
+                          <div style={{fontSize:10,color:"#aaa",marginTop:1}}>{t.kasir||t.shiftNama} . {t.time||"--"}</div>
                         </div>
                         <div style={{textAlign:"right",flexShrink:0}}>
                           <div style={{fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(t.total)}</div>
@@ -9435,7 +9436,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                       <div style={{width:30,height:30,borderRadius:8,background:"#e8f8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>✓</div>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:700,fontSize:12,color:"#1a2e2a"}}>{r.tgl}</div>
-                        <div style={{fontSize:10,color:"#aaa"}}>Jam {r.waktu} · {r.jumlah_shift||allShifts.length} shift ditutup</div>
+                        <div style={{fontSize:10,color:"#aaa"}}>Jam {r.waktu} . {r.jumlah_shift||allShifts.length} shift ditutup</div>
                       </div>
                       <div style={{fontSize:11,color:"#aaa"}}>{expandLog===r.id?"▲":"▼"}</div>
                     </div>
@@ -9445,7 +9446,7 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
                           <div style={{fontSize:11,color:"#aaa"}}>Detail tidak tersedia</div>
                         ):allShifts.map((s,si)=>(
                           <div key={si} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderBottom:si<allShifts.length-1?"1px dashed #e0f5f1":"none"}}>
-                            <span style={{color:"#555",fontWeight:600}}>{s.user_id||s.user} · {outlets.find(o=>o.id===s.outlet_id)?.nama?.replace("Ammar Cell ","")||s.outlet||s.outlet_id}</span>
+                            <span style={{color:"#555",fontWeight:600}}>{s.user_id||s.user} . {outlets.find(o=>o.id===s.outlet_id)?.nama?.replace("Ammar Cell ","")||s.outlet||s.outlet_id}</span>
                           </div>
                         ))}
                       </div>
@@ -9459,18 +9460,18 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
         </div>
 
         <div style={{textAlign:"center",marginTop:12,fontSize:10,color:"#aaa",fontWeight:600}}>
-          🔴 LIVE — Supabase Realtime · Auto reset jam 23:00 setiap hari
+          🔴 LIVE -- Supabase Realtime . Auto reset jam 23:00 setiap hari
         </div>
       </div>
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 // ROOT
-// ══════════════════════════════════════════════════════════════════════════════
+// ==============================================================================
 export default function App() {
-  // ── Session: ambil dari localStorage agar tidak login ulang ──────────────
+  // -- Session: ambil dari localStorage agar tidak login ulang --------------
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
 
   const [user,        setUserState]   = useState(savedUser);
@@ -9505,7 +9506,7 @@ export default function App() {
 
   const notify = (msg,type="ok")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
 
-  // ── Auto reset shift jam 23.00 setiap hari ──────────────────────────────────
+  // -- Auto reset shift jam 23.00 setiap hari ----------------------------------
   useEffect(()=>{
     let lastResetDate = null;
 
@@ -9568,7 +9569,7 @@ export default function App() {
               jumlah_shift: totalShifts,
               detail: { kasir: activeShifts||[], bank: activeBankShifts||[] },
             }).catch(()=>{});
-            console.log(`[AutoReset] ${dateStr} 23:00 — ${totalShifts} shift ditutup otomatis`);
+            console.log(`[AutoReset] ${dateStr} 23:00 -- ${totalShifts} shift ditutup otomatis`);
           }
         } catch(e) { console.warn('autoReset error:', e); }
       }
@@ -9584,8 +9585,8 @@ export default function App() {
     return ()=>clearInterval(iv);
   },[]);
 
-  // ── Auto reload saat app kembali ke foreground (tab aktif lagi) ──────────
-  // ── Connection monitor: ping Supabase tiap 10 detik ─────────────────────
+  // -- Auto reload saat app kembali ke foreground (tab aktif lagi) ----------
+  // -- Connection monitor: ping Supabase tiap 10 detik ---------------------
   useEffect(()=>{
     let wasOffline = false;
 
@@ -9662,7 +9663,7 @@ export default function App() {
     };
   },[]);
 
-  // ── Flush offline queue setelah kembali online ───────────────────────────
+  // -- Flush offline queue setelah kembali online ---------------------------
   const flushOfflineQueue = async (queue) => {
     if(!queue?.length) return;
     console.log('[OfflineQueue] Memproses', queue.length, 'item...');
@@ -9692,7 +9693,7 @@ export default function App() {
     return succeeded;
   };
 
-  // ── Reload data dari Supabase (dipanggil setelah update outlet/user) ──────
+  // -- Reload data dari Supabase (dipanggil setelah update outlet/user) ------
   const reloadData = async () => {
     try {
       const [prods, outs, stks, txs, usrs, prodOrd, aktifMap, bTrx] = await Promise.all([
@@ -9735,17 +9736,17 @@ export default function App() {
     } catch(e) { console.error("Reload gagal:",e); }
   };
 
-  // ── Load semua data dari Supabase saat pertama buka ──────────────────────
+  // -- Load semua data dari Supabase saat pertama buka ----------------------
   useEffect(()=>{
     const load = async () => {
-      // Timeout 15 detik — jika lebih dari itu tampilkan error
+      // Timeout 15 detik -- jika lebih dari itu tampilkan error
       const timeout = setTimeout(()=>{
         setDbError("Koneksi terlalu lambat. Cek internet dan coba lagi.");
         setLoading(false);
       }, 15000);
 
       try {
-        // Load satu per satu dengan fallback — satu gagal tidak crash semua
+        // Load satu per satu dengan fallback -- satu gagal tidak crash semua
         const prods        = await db.getProducts().catch(()=>[]);
         const outs         = await db.getOutlets().catch(()=>[]);
         const stks         = await db.getStocks().catch(()=>({}));
@@ -9784,7 +9785,7 @@ export default function App() {
     load();
   },[]);
 
-  // ── Realtime listener — stok & produk update otomatis di semua device ─────
+  // -- Realtime listener -- stok & produk update otomatis di semua device -----
   useEffect(()=>{
     // Channel stocks: update stok otomatis di semua kasir
     const stockChannel = supabase
@@ -9907,7 +9908,7 @@ export default function App() {
     };
   },[]);
 
-  // ── Realtime active_shifts — laporan admin update otomatis ────────────────
+  // -- Realtime active_shifts -- laporan admin update otomatis ----------------
   useEffect(()=>{
     const ch = supabase.channel('realtime-shifts')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
@@ -9927,7 +9928,7 @@ export default function App() {
     return ()=>supabase.removeChannel(ch);
   },[]);
 
-  // ── Wrapper setProducts: update state + Supabase ─────────────────────────
+  // -- Wrapper setProducts: update state + Supabase -------------------------
   const setProducts = useCallback((fn) => {
     setProductsState(prev => {
       const next = typeof fn === 'function' ? fn(prev) : fn;
@@ -10039,7 +10040,7 @@ export default function App() {
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
 
-  // ── Loading screen ────────────────────────────────────────────────────────
+  // -- Loading screen --------------------------------------------------------
   if (loading) return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');*{box-sizing:border-box;}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -10050,7 +10051,7 @@ export default function App() {
     </div>
   );
 
-  // ── DB Error screen ───────────────────────────────────────────────────────
+  // -- DB Error screen -------------------------------------------------------
   if (dbError) return (
     <div style={{minHeight:"100vh",background:"#f0faf8",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:24}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');*{box-sizing:border-box;}`}</style>
@@ -10067,7 +10068,7 @@ export default function App() {
     </div>
   );
 
-  // ── Login ────────────────────────────────────────────────────────────────
+  // -- Login ----------------------------------------------------------------
   if (!user) return (
     <>
       <style>{css+`@keyframes fadeUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}`}</style>
