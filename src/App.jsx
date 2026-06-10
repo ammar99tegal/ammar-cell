@@ -9043,6 +9043,9 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
   const [expandLog,   setExpandLog]  = useState(null);
   const [loading,     setLoading]    = useState(true);
 
+  // -- Tab monitor --
+  const [monitorTab,   setMonitorTab]  = useState("live"); // live|stok|compare
+
   // -- Live Stok state --
   const [liveStocks,   setLiveStocks]  = useState(stocksProp||{});
   const [liveProducts, setLiveProducts]= useState(productsProp||[]);
@@ -9198,6 +9201,37 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
     return colors[String(id)]||"#0d9488";
   };
 
+  // -- Stok helpers --
+  const getStokStats = (outletId) => {
+    const s = liveStocks[outletId]||{};
+    const items = liveProducts.map(p=>({ ...p, qty:s[p.id]??0, nilai:(s[p.id]??0)*(p.modal||0) }));
+    return {
+      total:   items.reduce((a,p)=>a+p.qty,0),
+      modal:   items.reduce((a,p)=>a+p.nilai,0),
+      habis:   items.filter(p=>p.qty===0).length,
+      menipis: items.filter(p=>p.qty>0&&p.qty<=5).length,
+      items,
+    };
+  };
+
+  const getStokFiltered = (outletId) => {
+    const stats = getStokStats(outletId);
+    let list = stats.items;
+    if(stokFilter==="habis")   list = list.filter(p=>p.qty===0);
+    if(stokFilter==="menipis") list = list.filter(p=>p.qty>0&&p.qty<=5);
+    if(stokSearch) list = list.filter(p=>p.name?.toLowerCase().includes(stokSearch.toLowerCase())||p.category?.toLowerCase().includes(stokSearch.toLowerCase()));
+    if(stokSort==="stok_asc")  list.sort((a,b)=>a.qty-b.qty);
+    else if(stokSort==="stok_desc") list.sort((a,b)=>b.qty-a.qty);
+    else if(stokSort==="modal") list.sort((a,b)=>b.nilai-a.nilai);
+    else list.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+    return list;
+  };
+
+  // Total stok semua outlet untuk KPI
+  const totalStokAll  = visibleOutlets.reduce((s,o)=>s+getStokStats(o.id).total,0);
+  const totalModalAll = visibleOutlets.reduce((s,o)=>s+getStokStats(o.id).modal,0);
+  const totalHabis    = visibleOutlets.reduce((s,o)=>s+getStokStats(o.id).habis,0);
+
   if(loading) return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{textAlign:"center"}}>
@@ -9247,9 +9281,34 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
             </div>
           ))}
         </div>
+
+        {/* ── Tab bar ── */}
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)"}}>
+          {[
+            {k:"live",   icon:"🔴", label:"Live Kasir & Bank"},
+            {k:"stok",   icon:"📦", label:"Stok per Outlet",  badge:totalHabis>0?`${totalHabis} habis`:null, badgeColor:"#fca5a5"},
+            {k:"compare",icon:"⚖️", label:"Compare Outlet"},
+          ].map(t=>(
+            <button key={t.k} onClick={()=>setMonitorTab(t.k)}
+              style={{flex:1,padding:"9px 8px",border:"none",background:"transparent",
+                color:monitorTab===t.k?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:11,
+                cursor:"pointer",fontFamily:"inherit",
+                borderBottom:`3px solid ${monitorTab===t.k?"#fff":"transparent"}`,
+                transition:"all .15s",display:"flex",alignItems:"center",justifyContent:"center",gap:5,whiteSpace:"nowrap"}}>
+              <span>{t.icon}</span>
+              <span>{t.label}</span>
+              {t.badge&&<span style={{fontSize:9,background:"rgba(255,100,100,.4)",borderRadius:20,padding:"1px 6px",fontWeight:800,color:"#fff"}}>{t.badge}</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{padding:"14px 20px",maxWidth:1300,margin:"0 auto"}}>
+
+        {/* ══════════════════════════════════════════════════
+            TAB: LIVE KASIR & BANK (tampilan tidak diubah)
+        ══════════════════════════════════════════════════ */}
+        {monitorTab==="live" && (<>
 
         {/* -- KASIR AKTIF -- */}
         <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
@@ -9512,154 +9571,264 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
           🔴 LIVE -- Supabase Realtime . Auto reset jam 23:00 setiap hari
         </div>
 
-        {/* ====== PANEL LIVE STOK PER OUTLET ====== */}
-        <div style={{marginTop:20,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>
-          <PulseDotM color="#27ae60" size={7}/>
-          <div style={{fontWeight:800,fontSize:14,color:"#27ae60"}}>Live Stok & Modal per Outlet</div>
-          <span style={{fontSize:10,background:"#e8f8f0",color:"#27ae60",fontWeight:700,padding:"2px 9px",borderRadius:20}}>REALTIME</span>
-        </div>
+        </>)} {/* END monitorTab==="live" */}
 
-        {/* Filter bar stok */}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
-          {/* Outlet filter */}
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {[{k:"semua",l:"Semua Outlet"},...visibleOutlets.map(o=>({k:String(o.id),l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
-              <button key={f.k} onClick={()=>setStokOutlet(f.k)}
-                style={{padding:"4px 12px",borderRadius:20,border:`2px solid ${stokOutlet===String(f.k)?"#27ae60":"#b2ede6"}`,
-                  background:stokOutlet===String(f.k)?"#27ae60":"#fff",color:stokOutlet===String(f.k)?"#fff":"#27ae60",
-                  fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
-                {f.l}
-              </button>
-            ))}
-          </div>
-          {/* Stok filter */}
-          <div style={{display:"flex",gap:5}}>
-            {[{k:"semua",l:"Semua"},{k:"menipis",l:"⚠️ Menipis ≤5"},{k:"habis",l:"🔴 Habis"}].map(f=>(
-              <button key={f.k} onClick={()=>setStokFilter(f.k)}
-                style={{padding:"4px 12px",borderRadius:20,border:`2px solid ${stokFilter===f.k?"#e74c3c":"#e0f5f1"}`,
-                  background:stokFilter===f.k?"#e74c3c":"#fff",color:stokFilter===f.k?"#fff":"#555",
-                  fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
-                {f.l}
-              </button>
-            ))}
-          </div>
-          {/* Sort */}
-          <select value={stokSort} onChange={e=>setStokSort(e.target.value)}
-            style={{padding:"5px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:11,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff",color:"#0d9488"}}>
-            <option value="nama">Urut: Nama A-Z</option>
-            <option value="stok_asc">Urut: Stok Terendah</option>
-            <option value="stok_desc">Urut: Stok Tertinggi</option>
-            <option value="modal">Urut: Modal Terbesar</option>
-          </select>
-          {/* Search */}
-          <div style={{position:"relative",flex:1,minWidth:150}}>
-            <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:11}}>🔍</span>
-            <input value={stokSearch} onChange={e=>setStokSearch(e.target.value)}
-              placeholder="Cari produk..."
-              style={{width:"100%",padding:"5px 8px 5px 24px",borderRadius:9,border:"2px solid #b2ede6",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
-          </div>
-        </div>
+        {/* ══════════════════════════════════════════════════
+            TAB: STOK PER OUTLET
+        ══════════════════════════════════════════════════ */}
+        {monitorTab==="stok" && (
+          <div>
+            {/* Filter bar */}
+            <div style={{background:"#fff",borderRadius:12,border:"2px solid #e0f5f1",padding:"10px 14px",marginBottom:14,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              {/* Outlet pills */}
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {[{k:"semua",l:"Semua",c:"#0d9488"},...visibleOutlets.map((o,i)=>({k:String(o.id),l:o.nama.replace("Ammar Cell ",""),c:["#0d9488","#2980b9","#8e44ad","#27ae60","#e67e22"][i]||"#0d9488"}))].map(f=>(
+                  <button key={f.k} onClick={()=>setStokOutlet(f.k)}
+                    style={{padding:"4px 13px",borderRadius:20,border:`2px solid ${stokOutlet===f.k?f.c:"#e0f5f1"}`,
+                      background:stokOutlet===f.k?f.c:"transparent",color:stokOutlet===f.k?"#fff":f.c,
+                      fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                    {f.l}
+                  </button>
+                ))}
+              </div>
+              <div style={{width:1,height:20,background:"#e0f5f1",flexShrink:0}}/>
+              {/* Status filter */}
+              {[{k:"semua",l:"Semua"},{k:"menipis",l:"⚠️ Menipis"},{k:"habis",l:"🔴 Habis"}].map(f=>(
+                <button key={f.k} onClick={()=>setStokFilter(f.k)}
+                  style={{padding:"4px 12px",borderRadius:20,border:`2px solid ${stokFilter===f.k?"#e74c3c":"#e0f5f1"}`,
+                    background:stokFilter===f.k?"#e74c3c":"transparent",color:stokFilter===f.k?"#fff":"#555",
+                    fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                  {f.l}
+                </button>
+              ))}
+              <div style={{width:1,height:20,background:"#e0f5f1",flexShrink:0}}/>
+              {/* Sort */}
+              <select value={stokSort} onChange={e=>setStokSort(e.target.value)}
+                style={{padding:"5px 10px",borderRadius:9,border:"2px solid #e0f5f1",fontSize:10,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff",color:"#0d9488"}}>
+                <option value="nama">A-Z</option>
+                <option value="stok_asc">Stok ↑</option>
+                <option value="stok_desc">Stok ↓</option>
+                <option value="modal">Modal ↓</option>
+              </select>
+              {/* Search */}
+              <div style={{position:"relative",flex:1,minWidth:140}}>
+                <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",fontSize:11}}>🔍</span>
+                <input value={stokSearch} onChange={e=>setStokSearch(e.target.value)} placeholder="Cari produk / kategori..."
+                  style={{width:"100%",padding:"5px 8px 5px 26px",borderRadius:9,border:"2px solid #e0f5f1",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
 
-        {/* Stok cards per outlet */}
-        {(stokOutlet==="semua" ? visibleOutlets : visibleOutlets.filter(o=>String(o.id)===stokOutlet)).map(outlet=>{
-          const outletStok = liveStocks[outlet.id]||{};
-          const oc = outletColor(outlet.id);
-
-          // Build product list with stok for this outlet
-          let prodList = liveProducts.map(p=>({
-            ...p,
-            qty: outletStok[p.id]??0,
-            nilaiModal: (outletStok[p.id]??0) * (p.modal||0),
-          }));
-
-          // Apply stok filter
-          if(stokFilter==="menipis") prodList = prodList.filter(p=>p.qty>0&&p.qty<=5);
-          else if(stokFilter==="habis") prodList = prodList.filter(p=>p.qty===0);
-
-          // Apply search
-          if(stokSearch) prodList = prodList.filter(p=>p.name?.toLowerCase().includes(stokSearch.toLowerCase())||p.category?.toLowerCase().includes(stokSearch.toLowerCase()));
-
-          // Sort
-          if(stokSort==="stok_asc") prodList.sort((a,b)=>a.qty-b.qty);
-          else if(stokSort==="stok_desc") prodList.sort((a,b)=>b.qty-a.qty);
-          else if(stokSort==="modal") prodList.sort((a,b)=>b.nilaiModal-a.nilaiModal);
-          else prodList.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-
-          const totalStok    = prodList.reduce((s,p)=>s+p.qty,0);
-          const totalModal   = prodList.reduce((s,p)=>s+p.nilaiModal,0);
-          const jmlHabis     = prodList.filter(p=>p.qty===0).length;
-          const jmlMenipis   = prodList.filter(p=>p.qty>0&&p.qty<=5).length;
-
-          return (
-            <div key={outlet.id} style={{background:"#fff",borderRadius:14,border:`2px solid ${oc}20`,marginBottom:14,overflow:"hidden"}}>
-              {/* Outlet header */}
-              <div style={{background:`linear-gradient(90deg,${oc}18,transparent)`,borderBottom:`1px solid ${oc}20`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{width:10,height:10,borderRadius:"50%",background:oc,flexShrink:0}}/>
-                <div style={{fontWeight:800,fontSize:13,color:oc,flex:1}}>{outlet.nama}</div>
-                {/* KPI summary */}
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {[
-                    {l:"Total Stok",   v:totalStok+" pcs",    c:"#0d9488", bg:"#e0faf5"},
-                    {l:"Nilai Modal",  v:fmtRp(totalModal),   c:"#7c3aed", bg:"#f5f3ff"},
-                    {l:"SKU",          v:prodList.length+" item", c:"#555",bg:"#f9fafb"},
-                    ...(jmlMenipis>0?[{l:"Menipis",v:jmlMenipis+" item",c:"#d97706",bg:"#fffbeb"}]:[]),
-                    ...(jmlHabis>0?[{l:"Habis",v:jmlHabis+" item",c:"#dc2626",bg:"#fff5f5"}]:[]),
-                  ].map(k=>(
-                    <div key={k.l} style={{background:k.bg,borderRadius:9,padding:"4px 10px",textAlign:"center"}}>
-                      <div style={{fontWeight:900,fontSize:11,color:k.c}}>{k.v}</div>
-                      <div style={{fontSize:8,color:k.c,opacity:.7,fontWeight:700}}>{k.l}</div>
+            {/* Stok per outlet card */}
+            {(stokOutlet==="semua"?visibleOutlets:visibleOutlets.filter(o=>String(o.id)===stokOutlet)).map((outlet,oi)=>{
+              const oc    = outletColor(outlet.id);
+              const stats = getStokStats(outlet.id);
+              const prods = getStokFiltered(outlet.id);
+              return (
+                <div key={outlet.id} style={{background:"#fff",borderRadius:14,border:`2px solid ${oc}22`,marginBottom:14,overflow:"hidden"}}>
+                  {/* Outlet header */}
+                  <div style={{background:`linear-gradient(90deg,${oc}15,transparent)`,borderBottom:`1px solid ${oc}20`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:oc,flexShrink:0}}/>
+                    <span style={{fontWeight:800,fontSize:13,color:oc,flex:1}}>{outlet.nama}</span>
+                    <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                      {[
+                        {l:"Stok",   v:`${stats.total} pcs`, c:oc,       bg:oc+"15"},
+                        {l:"Modal",  v:fmtRp(stats.modal),   c:"#7c3aed",bg:"#f5f3ff"},
+                        {l:"SKU",    v:`${prods.length}`,     c:"#555",   bg:"#f9fafb"},
+                        ...(stats.menipis>0?[{l:"Menipis",v:`${stats.menipis}`,c:"#d97706",bg:"#fffbeb"}]:[]),
+                        ...(stats.habis>0?[{l:"Habis",v:`${stats.habis}`,c:"#dc2626",bg:"#fff5f5"}]:[]),
+                      ].map(k=>(
+                        <div key={k.l} style={{background:k.bg,borderRadius:8,padding:"4px 10px",textAlign:"center"}}>
+                          <div style={{fontWeight:900,fontSize:12,color:k.c}}>{k.v}</div>
+                          <div style={{fontSize:8,color:k.c,opacity:.7,fontWeight:700}}>{k.l}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Grid produk */}
+                  {prods.length===0 ? (
+                    <div style={{textAlign:"center",padding:"24px",color:"#aaa",fontSize:12}}>
+                      {stokFilter==="habis"?"Semua produk tersedia ✓":stokFilter==="menipis"?"Tidak ada produk menipis":"Belum ada data stok"}
+                    </div>
+                  ) : (
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))"}}>
+                      {prods.map(p=>{
+                        const isHabis   = p.qty===0;
+                        const isMenipis = p.qty>0&&p.qty<=5;
+                        const qtyColor  = isHabis?"#dc2626":isMenipis?"#d97706":"#0d9488";
+                        const bgCard    = isHabis?"#fff5f5":isMenipis?"#fffbeb":"#fff";
+                        return (
+                          <div key={p.id} style={{
+                            padding:"10px 12px",background:bgCard,
+                            borderRight:`1px solid ${oc}12`,borderBottom:`1px solid ${oc}12`,
+                            borderLeft:`3px solid ${isHabis?"#fca5a5":isMenipis?"#fcd34d":"transparent"}`,
+                            transition:"background .15s"}}
+                            onMouseEnter={ev=>ev.currentTarget.style.background=isHabis?"#ffe4e6":isMenipis?"#fef9c3":"#f0fdfb"}
+                            onMouseLeave={ev=>ev.currentTarget.style.background=bgCard}>
+                            <div style={{fontWeight:700,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}} title={p.name}>{p.name}</div>
+                            <div style={{fontSize:9,color:"#aaa",marginBottom:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.category||"--"}</div>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+                              <div style={{display:"flex",alignItems:"center",gap:3}}>
+                                <span style={{fontWeight:900,fontSize:18,color:qtyColor,lineHeight:1}}>{p.qty}</span>
+                                <span style={{fontSize:9,color:qtyColor,fontWeight:700}}>pcs</span>
+                              </div>
+                              {p.modal>0&&(
+                                <div style={{textAlign:"right"}}>
+                                  <div style={{fontSize:9,color:"#7c3aed",fontWeight:700}}>{fmtRp(p.nilai)}</div>
+                                  <div style={{fontSize:8,color:"#bbb"}}>@ {fmtRp(p.modal)}</div>
+                                </div>
+                              )}
+                            </div>
+                            {(isHabis||isMenipis)&&(
+                              <div style={{marginTop:4}}>
+                                <span style={{fontSize:8,background:isHabis?"#dc2626":"#d97706",color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:800}}>
+                                  {isHabis?"HABIS":"TIPIS"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════
+            TAB: COMPARE OUTLET
+        ══════════════════════════════════════════════════ */}
+        {monitorTab==="compare" && (
+          <div>
+            {/* Filter bar */}
+            <div style={{background:"#fff",borderRadius:12,border:"2px solid #e0f5f1",padding:"10px 14px",marginBottom:14,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"#555",flexShrink:0}}>Filter:</span>
+              {[{k:"semua",l:"Semua"},{k:"menipis",l:"⚠️ Menipis"},{k:"habis",l:"🔴 Habis"}].map(f=>(
+                <button key={f.k} onClick={()=>setStokFilter(f.k)}
+                  style={{padding:"4px 12px",borderRadius:20,border:`2px solid ${stokFilter===f.k?"#7c3aed":"#e0f5f1"}`,
+                    background:stokFilter===f.k?"#7c3aed":"transparent",color:stokFilter===f.k?"#fff":"#555",
+                    fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                  {f.l}
+                </button>
+              ))}
+              <div style={{width:1,height:20,background:"#e0f5f1",flexShrink:0}}/>
+              <select value={stokSort} onChange={e=>setStokSort(e.target.value)}
+                style={{padding:"5px 10px",borderRadius:9,border:"2px solid #e0f5f1",fontSize:10,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff"}}>
+                <option value="nama">A-Z</option>
+                <option value="stok_asc">Stok ↑</option>
+                <option value="stok_desc">Stok ↓</option>
+              </select>
+              <div style={{position:"relative",flex:1,minWidth:140}}>
+                <span style={{position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",fontSize:11}}>🔍</span>
+                <input value={stokSearch} onChange={e=>setStokSearch(e.target.value)} placeholder="Cari produk..."
+                  style={{width:"100%",padding:"5px 8px 5px 26px",borderRadius:9,border:"2px solid #e0f5f1",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+
+            {/* Compare table */}
+            <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+              {/* Header */}
+              <div style={{display:"grid",gridTemplateColumns:`2fr repeat(${visibleOutlets.length},1fr)`,borderBottom:"2px solid #e0f5f1"}}>
+                <div style={{padding:"10px 14px",background:"#f0faf8",fontWeight:800,fontSize:11,color:"#555"}}>Produk</div>
+                {visibleOutlets.map(o=>{
+                  const oc=outletColor(o.id); const s=getStokStats(o.id);
+                  return (
+                    <div key={o.id} style={{padding:"10px 10px",background:oc+"12",borderLeft:`1px solid ${oc}20`,textAlign:"center"}}>
+                      <div style={{fontWeight:800,fontSize:11,color:oc}}>{o.nama.replace("Ammar Cell ","")}</div>
+                      <div style={{fontSize:9,color:oc,opacity:.8,marginTop:1}}>
+                        {s.total} pcs · {fmtRp(s.modal)}
+                      </div>
+                      {(s.habis>0||s.menipis>0)&&(
+                        <div style={{display:"flex",gap:3,justifyContent:"center",marginTop:3,flexWrap:"wrap"}}>
+                          {s.habis>0&&<span style={{fontSize:8,background:"#dc2626",color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:800}}>{s.habis} habis</span>}
+                          {s.menipis>0&&<span style={{fontSize:8,background:"#d97706",color:"#fff",borderRadius:4,padding:"1px 5px",fontWeight:800}}>{s.menipis} tipis</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Product grid */}
-              {prodList.length===0 ? (
-                <div style={{textAlign:"center",padding:"24px",color:"#aaa",fontSize:12}}>
-                  {stokFilter==="habis"?"Tidak ada produk habis":stokFilter==="menipis"?"Tidak ada produk menipis":"Belum ada data stok"}
-                </div>
-              ) : (
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:0}}>
-                  {prodList.map((p,i)=>{
-                    const isHabis   = p.qty===0;
-                    const isMenipis = p.qty>0&&p.qty<=5;
-                    const bgCard    = isHabis?"#fff5f5":isMenipis?"#fffbeb":"#fff";
-                    const bdColor   = isHabis?"#fca5a5":isMenipis?"#fcd34d":`${oc}15`;
-                    const qtyColor  = isHabis?"#dc2626":isMenipis?"#d97706":"#0d9488";
+              {/* Rows */}
+              <div style={{maxHeight:520,overflowY:"auto"}}>
+                {liveProducts
+                  .filter(p=>{
+                    if(stokFilter==="habis")   return visibleOutlets.some(o=>(liveStocks[o.id]?.[p.id]??0)===0);
+                    if(stokFilter==="menipis") return visibleOutlets.some(o=>{ const q=liveStocks[o.id]?.[p.id]??0; return q>0&&q<=5; });
+                    return true;
+                  })
+                  .filter(p=>!stokSearch||p.name?.toLowerCase().includes(stokSearch.toLowerCase())||p.category?.toLowerCase().includes(stokSearch.toLowerCase()))
+                  .sort((a,b)=>{
+                    if(stokSort==="stok_asc"){
+                      const qa=visibleOutlets.reduce((s,o)=>s+(liveStocks[o.id]?.[a.id]??0),0);
+                      const qb=visibleOutlets.reduce((s,o)=>s+(liveStocks[o.id]?.[b.id]??0),0);
+                      return qa-qb;
+                    }
+                    if(stokSort==="stok_desc"){
+                      const qa=visibleOutlets.reduce((s,o)=>s+(liveStocks[o.id]?.[a.id]??0),0);
+                      const qb=visibleOutlets.reduce((s,o)=>s+(liveStocks[o.id]?.[b.id]??0),0);
+                      return qb-qa;
+                    }
+                    return (a.name||"").localeCompare(b.name||"");
+                  })
+                  .map((p,i)=>{
+                    const qtys   = visibleOutlets.map(o=>liveStocks[o.id]?.[p.id]??0);
+                    const maxQ   = Math.max(...qtys);
+                    const minQ   = Math.min(...qtys);
+                    const hasAny = qtys.some(q=>q>0);
                     return (
-                      <div key={p.id} style={{
-                        padding:"10px 12px",background:bgCard,
-                        borderRight:`1px solid ${oc}12`,borderBottom:`1px solid ${oc}12`,
-                        borderLeft:isHabis||isMenipis?`3px solid ${bdColor}`:"3px solid transparent",
-                        transition:"background .15s"}}
-                        onMouseEnter={ev=>ev.currentTarget.style.background=isHabis?"#ffe4e6":isMenipis?"#fef9c3":"#f0fdfb"}
-                        onMouseLeave={ev=>ev.currentTarget.style.background=bgCard}>
-                        {/* Nama & kategori */}
-                        <div style={{fontWeight:700,fontSize:11,color:"#1a2e2a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}} title={p.name}>{p.name}</div>
-                        <div style={{fontSize:9,color:"#aaa",marginBottom:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.category||"--"}</div>
-                        {/* Stok badge */}
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <div style={{display:"flex",alignItems:"center",gap:4}}>
-                            <span style={{fontWeight:900,fontSize:16,color:qtyColor}}>{p.qty}</span>
-                            <span style={{fontSize:9,color:qtyColor,fontWeight:700}}>pcs</span>
-                            {isHabis&&<span style={{fontSize:8,background:"#dc2626",color:"#fff",borderRadius:4,padding:"1px 4px",fontWeight:800,marginLeft:2}}>HABIS</span>}
-                            {isMenipis&&<span style={{fontSize:8,background:"#d97706",color:"#fff",borderRadius:4,padding:"1px 4px",fontWeight:800,marginLeft:2}}>TIPIS</span>}
-                          </div>
-                          {p.modal>0&&(
-                            <div style={{textAlign:"right"}}>
-                              <div style={{fontSize:9,color:"#7c3aed",fontWeight:700}}>{fmtRp(p.nilaiModal)}</div>
-                              <div style={{fontSize:8,color:"#aaa"}}>@ {fmtRp(p.modal)}</div>
-                            </div>
-                          )}
+                      <div key={p.id} style={{display:"grid",gridTemplateColumns:`2fr repeat(${visibleOutlets.length},1fr)`,borderTop:i>0?"1px solid #f0faf8":"none"}}
+                        onMouseEnter={ev=>ev.currentTarget.style.background="#f8fffe"}
+                        onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                        <div style={{padding:"9px 14px"}}>
+                          <div style={{fontWeight:700,fontSize:12}}>{p.name}</div>
+                          <div style={{fontSize:9,color:"#aaa"}}>{p.category} · @{fmtRp(p.modal||0)}</div>
                         </div>
+                        {visibleOutlets.map(o=>{
+                          const q       = liveStocks[o.id]?.[p.id]??0;
+                          const oc      = outletColor(o.id);
+                          const isHabis = q===0;
+                          const isTipis = q>0&&q<=5;
+                          const isMax   = q===maxQ&&maxQ>0&&hasAny;
+                          const isMin   = q===minQ&&minQ<maxQ&&hasAny;
+                          return (
+                            <div key={o.id} style={{padding:"9px 10px",borderLeft:`1px solid ${oc}15`,textAlign:"center",
+                              background:isHabis?"#fff5f5":isTipis?"#fffbeb":"transparent"}}>
+                              <div style={{fontWeight:900,fontSize:16,color:isHabis?"#dc2626":isTipis?"#d97706":isMax?"#16a34a":"#1a2e2a",lineHeight:1}}>{q}</div>
+                              <div style={{fontSize:8,fontWeight:700,marginTop:3}}>
+                                {isHabis&&<span style={{color:"#dc2626"}}>HABIS</span>}
+                                {isTipis&&<span style={{color:"#d97706"}}>TIPIS</span>}
+                                {!isHabis&&!isTipis&&isMax&&<span style={{color:"#16a34a"}}>▲ MAX</span>}
+                                {!isHabis&&!isTipis&&isMin&&<span style={{color:"#0d9488"}}>▼ MIN</span>}
+                              </div>
+                              {p.modal>0&&<div style={{fontSize:8,color:"#bbb",marginTop:2}}>{fmtRp(q*(p.modal||0))}</div>}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
-                  })}
-                </div>
-              )}
+                  })
+                }
+              </div>
+
+              {/* Footer totals */}
+              <div style={{display:"grid",gridTemplateColumns:`2fr repeat(${visibleOutlets.length},1fr)`,borderTop:"2px solid #e0f5f1",background:"#f0faf8"}}>
+                <div style={{padding:"10px 14px",fontWeight:800,fontSize:11,color:"#555"}}>TOTAL SEMUA</div>
+                {visibleOutlets.map(o=>{
+                  const oc=outletColor(o.id); const s=getStokStats(o.id);
+                  return (
+                    <div key={o.id} style={{padding:"10px 10px",borderLeft:`1px solid ${oc}20`,textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:14,color:oc}}>{s.total} pcs</div>
+                      <div style={{fontSize:9,color:"#7c3aed",fontWeight:700}}>{fmtRp(s.modal)}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          );
-        })}
+          </div>
+        )}
 
       </div>
     </div>
