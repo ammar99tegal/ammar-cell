@@ -9026,9 +9026,8 @@ function PulseDotM({color="#27ae60",size=8}){
   );
 }
 
-function MonitorPage({ user, outlets, transactions, onBack, notify }) {
+function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products: productsProp, onBack, notify }) {
   const isMonitorRole = user?.role==="monitor";
-  // Outlet yang dipantau monitor (kosong = semua)
   const monitorOutletIds = user?.outletIds||[];
   const visibleOutlets = isMonitorRole && monitorOutletIds.length>0
     ? outlets.filter(o=>monitorOutletIds.includes(o.id))
@@ -9036,13 +9035,25 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
 
   const [clock,       setClock]      = useState(now());
   const [kasirShifts, setKasirShifts]= useState([]);
-  const [bankShifts,  setBankShifts] = useState([]);   // shift bank aktif
+  const [bankShifts,  setBankShifts] = useState([]);
   const [bankTrxList, setBankTrxList]= useState([]);
   const [resetLog,    setResetLog]   = useState([]);
   const [filterOutlet,setFilterOutlet]= useState("semua");
   const [filterBank,  setFilterBank] = useState("semua");
   const [expandLog,   setExpandLog]  = useState(null);
   const [loading,     setLoading]    = useState(true);
+
+  // -- Live Stok state --
+  const [liveStocks,   setLiveStocks]  = useState(stocksProp||{});
+  const [liveProducts, setLiveProducts]= useState(productsProp||[]);
+  const [stokOutlet,   setStokOutlet]  = useState("semua");
+  const [stokSearch,   setStokSearch]  = useState("");
+  const [stokSort,     setStokSort]    = useState("nama"); // nama|stok|modal
+  const [stokFilter,   setStokFilter]  = useState("semua"); // semua|menipis|habis
+
+  // Sync props kalau berubah dari parent
+  useEffect(()=>{ if(stocksProp) setLiveStocks(stocksProp); },[stocksProp]);
+  useEffect(()=>{ if(productsProp?.length) setLiveProducts(productsProp); },[productsProp]);
 
   useEffect(()=>{ const iv=setInterval(()=>setClock(now()),1000); return()=>clearInterval(iv); },[]);
 
@@ -9095,6 +9106,44 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
       }).subscribe();
 
     return()=>{ supabase.removeChannel(chShift); supabase.removeChannel(chTrx); supabase.removeChannel(chBank); };
+  },[]);
+
+  // -- Realtime stok listener --
+  useEffect(()=>{
+    // Load fresh stok dari DB
+    const loadStok = async () => {
+      try {
+        const { data:stokRows } = await supabase.from('stocks').select('*');
+        if(stokRows) {
+          const map = {};
+          stokRows.forEach(r=>{ if(!map[r.outlet_id]) map[r.outlet_id]={}; map[r.outlet_id][r.product_id]=r.qty??0; });
+          setLiveStocks(map);
+        }
+        const { data:prodRows } = await supabase.from('products').select('*');
+        if(prodRows) setLiveProducts(prodRows);
+      } catch(e){ console.warn('loadStok monitor:',e); }
+    };
+    loadStok();
+
+    const chStok = supabase.channel('monitor-stok-v2')
+      .on('postgres_changes',{event:'*',schema:'public',table:'stocks'},(p)=>{
+        const r = p.new||p.old;
+        if(!r) return;
+        if(p.eventType==='DELETE'){
+          setLiveStocks(prev=>{ const n={...prev}; if(n[r.outlet_id]) { n[r.outlet_id]={...n[r.outlet_id]}; delete n[r.outlet_id][r.product_id]; } return n; });
+        } else {
+          setLiveStocks(prev=>({ ...prev, [r.outlet_id]:{ ...(prev[r.outlet_id]||{}), [r.product_id]:r.qty??0 } }));
+        }
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'products'},(p)=>{
+        const r=p.new||p.old;
+        if(!r) return;
+        if(p.eventType==='DELETE') setLiveProducts(prev=>prev.filter(x=>x.id!==r.id));
+        else if(p.eventType==='INSERT') setLiveProducts(prev=>[...prev.filter(x=>x.id!==r.id),r]);
+        else setLiveProducts(prev=>prev.map(x=>x.id===r.id?{...x,...r}:x));
+      })
+      .subscribe();
+    return()=>supabase.removeChannel(chStok);
   },[]);
 
   // Hitung cash laci per kasir dari transaksi hari ini
@@ -9462,6 +9511,156 @@ function MonitorPage({ user, outlets, transactions, onBack, notify }) {
         <div style={{textAlign:"center",marginTop:12,fontSize:10,color:"#aaa",fontWeight:600}}>
           🔴 LIVE -- Supabase Realtime . Auto reset jam 23:00 setiap hari
         </div>
+
+        {/* ====== PANEL LIVE STOK PER OUTLET ====== */}
+        <div style={{marginTop:20,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>
+          <PulseDotM color="#27ae60" size={7}/>
+          <div style={{fontWeight:800,fontSize:14,color:"#27ae60"}}>Live Stok & Modal per Outlet</div>
+          <span style={{fontSize:10,background:"#e8f8f0",color:"#27ae60",fontWeight:700,padding:"2px 9px",borderRadius:20}}>REALTIME</span>
+        </div>
+
+        {/* Filter bar stok */}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          {/* Outlet filter */}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {[{k:"semua",l:"Semua Outlet"},...visibleOutlets.map(o=>({k:String(o.id),l:o.nama.replace("Ammar Cell ","")}))].map(f=>(
+              <button key={f.k} onClick={()=>setStokOutlet(f.k)}
+                style={{padding:"4px 12px",borderRadius:20,border:`2px solid ${stokOutlet===String(f.k)?"#27ae60":"#b2ede6"}`,
+                  background:stokOutlet===String(f.k)?"#27ae60":"#fff",color:stokOutlet===String(f.k)?"#fff":"#27ae60",
+                  fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                {f.l}
+              </button>
+            ))}
+          </div>
+          {/* Stok filter */}
+          <div style={{display:"flex",gap:5}}>
+            {[{k:"semua",l:"Semua"},{k:"menipis",l:"⚠️ Menipis ≤5"},{k:"habis",l:"🔴 Habis"}].map(f=>(
+              <button key={f.k} onClick={()=>setStokFilter(f.k)}
+                style={{padding:"4px 12px",borderRadius:20,border:`2px solid ${stokFilter===f.k?"#e74c3c":"#e0f5f1"}`,
+                  background:stokFilter===f.k?"#e74c3c":"#fff",color:stokFilter===f.k?"#fff":"#555",
+                  fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
+                {f.l}
+              </button>
+            ))}
+          </div>
+          {/* Sort */}
+          <select value={stokSort} onChange={e=>setStokSort(e.target.value)}
+            style={{padding:"5px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:11,fontWeight:700,outline:"none",fontFamily:"inherit",background:"#fff",color:"#0d9488"}}>
+            <option value="nama">Urut: Nama A-Z</option>
+            <option value="stok_asc">Urut: Stok Terendah</option>
+            <option value="stok_desc">Urut: Stok Tertinggi</option>
+            <option value="modal">Urut: Modal Terbesar</option>
+          </select>
+          {/* Search */}
+          <div style={{position:"relative",flex:1,minWidth:150}}>
+            <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:11}}>🔍</span>
+            <input value={stokSearch} onChange={e=>setStokSearch(e.target.value)}
+              placeholder="Cari produk..."
+              style={{width:"100%",padding:"5px 8px 5px 24px",borderRadius:9,border:"2px solid #b2ede6",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+          </div>
+        </div>
+
+        {/* Stok cards per outlet */}
+        {(stokOutlet==="semua" ? visibleOutlets : visibleOutlets.filter(o=>String(o.id)===stokOutlet)).map(outlet=>{
+          const outletStok = liveStocks[outlet.id]||{};
+          const oc = outletColor(outlet.id);
+
+          // Build product list with stok for this outlet
+          let prodList = liveProducts.map(p=>({
+            ...p,
+            qty: outletStok[p.id]??0,
+            nilaiModal: (outletStok[p.id]??0) * (p.modal||0),
+          }));
+
+          // Apply stok filter
+          if(stokFilter==="menipis") prodList = prodList.filter(p=>p.qty>0&&p.qty<=5);
+          else if(stokFilter==="habis") prodList = prodList.filter(p=>p.qty===0);
+
+          // Apply search
+          if(stokSearch) prodList = prodList.filter(p=>p.name?.toLowerCase().includes(stokSearch.toLowerCase())||p.category?.toLowerCase().includes(stokSearch.toLowerCase()));
+
+          // Sort
+          if(stokSort==="stok_asc") prodList.sort((a,b)=>a.qty-b.qty);
+          else if(stokSort==="stok_desc") prodList.sort((a,b)=>b.qty-a.qty);
+          else if(stokSort==="modal") prodList.sort((a,b)=>b.nilaiModal-a.nilaiModal);
+          else prodList.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+
+          const totalStok    = prodList.reduce((s,p)=>s+p.qty,0);
+          const totalModal   = prodList.reduce((s,p)=>s+p.nilaiModal,0);
+          const jmlHabis     = prodList.filter(p=>p.qty===0).length;
+          const jmlMenipis   = prodList.filter(p=>p.qty>0&&p.qty<=5).length;
+
+          return (
+            <div key={outlet.id} style={{background:"#fff",borderRadius:14,border:`2px solid ${oc}20`,marginBottom:14,overflow:"hidden"}}>
+              {/* Outlet header */}
+              <div style={{background:`linear-gradient(90deg,${oc}18,transparent)`,borderBottom:`1px solid ${oc}20`,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:oc,flexShrink:0}}/>
+                <div style={{fontWeight:800,fontSize:13,color:oc,flex:1}}>{outlet.nama}</div>
+                {/* KPI summary */}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {[
+                    {l:"Total Stok",   v:totalStok+" pcs",    c:"#0d9488", bg:"#e0faf5"},
+                    {l:"Nilai Modal",  v:fmtRp(totalModal),   c:"#7c3aed", bg:"#f5f3ff"},
+                    {l:"SKU",          v:prodList.length+" item", c:"#555",bg:"#f9fafb"},
+                    ...(jmlMenipis>0?[{l:"Menipis",v:jmlMenipis+" item",c:"#d97706",bg:"#fffbeb"}]:[]),
+                    ...(jmlHabis>0?[{l:"Habis",v:jmlHabis+" item",c:"#dc2626",bg:"#fff5f5"}]:[]),
+                  ].map(k=>(
+                    <div key={k.l} style={{background:k.bg,borderRadius:9,padding:"4px 10px",textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:11,color:k.c}}>{k.v}</div>
+                      <div style={{fontSize:8,color:k.c,opacity:.7,fontWeight:700}}>{k.l}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Product grid */}
+              {prodList.length===0 ? (
+                <div style={{textAlign:"center",padding:"24px",color:"#aaa",fontSize:12}}>
+                  {stokFilter==="habis"?"Tidak ada produk habis":stokFilter==="menipis"?"Tidak ada produk menipis":"Belum ada data stok"}
+                </div>
+              ) : (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:0}}>
+                  {prodList.map((p,i)=>{
+                    const isHabis   = p.qty===0;
+                    const isMenipis = p.qty>0&&p.qty<=5;
+                    const bgCard    = isHabis?"#fff5f5":isMenipis?"#fffbeb":"#fff";
+                    const bdColor   = isHabis?"#fca5a5":isMenipis?"#fcd34d":`${oc}15`;
+                    const qtyColor  = isHabis?"#dc2626":isMenipis?"#d97706":"#0d9488";
+                    return (
+                      <div key={p.id} style={{
+                        padding:"10px 12px",background:bgCard,
+                        borderRight:`1px solid ${oc}12`,borderBottom:`1px solid ${oc}12`,
+                        borderLeft:isHabis||isMenipis?`3px solid ${bdColor}`:"3px solid transparent",
+                        transition:"background .15s"}}
+                        onMouseEnter={ev=>ev.currentTarget.style.background=isHabis?"#ffe4e6":isMenipis?"#fef9c3":"#f0fdfb"}
+                        onMouseLeave={ev=>ev.currentTarget.style.background=bgCard}>
+                        {/* Nama & kategori */}
+                        <div style={{fontWeight:700,fontSize:11,color:"#1a2e2a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:2}} title={p.name}>{p.name}</div>
+                        <div style={{fontSize:9,color:"#aaa",marginBottom:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.category||"--"}</div>
+                        {/* Stok badge */}
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontWeight:900,fontSize:16,color:qtyColor}}>{p.qty}</span>
+                            <span style={{fontSize:9,color:qtyColor,fontWeight:700}}>pcs</span>
+                            {isHabis&&<span style={{fontSize:8,background:"#dc2626",color:"#fff",borderRadius:4,padding:"1px 4px",fontWeight:800,marginLeft:2}}>HABIS</span>}
+                            {isMenipis&&<span style={{fontSize:8,background:"#d97706",color:"#fff",borderRadius:4,padding:"1px 4px",fontWeight:800,marginLeft:2}}>TIPIS</span>}
+                          </div>
+                          {p.modal>0&&(
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:9,color:"#7c3aed",fontWeight:700}}>{fmtRp(p.nilaiModal)}</div>
+                              <div style={{fontSize:8,color:"#aaa"}}>@ {fmtRp(p.modal)}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
       </div>
     </div>
   );
@@ -10101,7 +10300,7 @@ export default function App() {
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
+      {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
       {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
