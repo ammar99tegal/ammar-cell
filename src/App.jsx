@@ -7342,6 +7342,29 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     try { await dbCashflow.deleteEntry(id); } catch(err){ console.warn("deleteEntry:",err); }
   };
 
+  const cfEditEntry = async (id, updated) => {
+    setCfLog(prev=>prev.map(x=>x.id===id?{...x,...updated}:x));
+    try {
+      await supabase.from("cashflow_entries").update({
+        tgl: updated.tgl,
+        jenis: updated.jenis,
+        nama: updated.nama,
+        nominal: updated.nominal,
+        kategori: updated.kat,
+      }).eq("id", id);
+    } catch(err){ console.warn("editEntry:",err); notify&&notify("Gagal ubah entri","error"); }
+  };
+
+  const cfResetAll = async () => {
+    if(!window.confirm(`⚠️ HAPUS SEMUA ${cfLog.length} entri jurnal?\n\nData yang sudah dihapus TIDAK BISA dikembalikan.\nPastikan sudah export CSV terlebih dahulu.`)) return;
+    const ids = cfLog.map(x=>x.id);
+    setCfLog([]);
+    try {
+      for(const id of ids) await dbCashflow.deleteEntry(id);
+      notify&&notify("Semua entri jurnal berhasil dihapus","ok");
+    } catch(err){ console.warn("resetAll:",err); notify&&notify("Sebagian gagal dihapus","error"); loadCfEntries(); }
+  };
+
   const cfRefresh = () => loadCfEntries();
 
   const outletNames     = (outlets||[]).map(o=>o.nama);
@@ -7399,7 +7422,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
         {/* Content */}
         <div style={{padding:"12px 12px 0"}}>
           {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
-          {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
+          {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
           {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
           {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
           {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
@@ -7454,7 +7477,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
       </div>
       <div className="cf-main-content cf-content" style={{padding:"14px 20px",maxWidth:1080,margin:"0 auto"}}>
         {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
-        {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
+        {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
         {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
         {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
         {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
@@ -7841,10 +7864,13 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
 // ════════════════════════════════════════════════════════
 // TAB 2: JURNAL
 // ════════════════════════════════════════════════════════
-function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
+function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
   const [form,setForm]=useState({nama:"",nominal:"",jenis:"masuk",kat:"setoran",tgl:today()});
   const [srch,setSrch]=useState(""); const [fltr,setFltr]=useState("semua"); const [saved,setSaved]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [editForm,setEditForm]=useState({});
   const { isMobile: jMobile } = useDevice();
+
   const save=()=>{
     if(!form.nama.trim()||!form.nominal) return;
     const newEntry={id:uid(),...form,nominal:toNumCF(form.nominal)};
@@ -7852,11 +7878,25 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
     setForm(p=>({...p,nama:"",nominal:""}));
     setSaved(true); setTimeout(()=>setSaved(false),1400);
   };
+
+  const startEdit=(e)=>{
+    setEditId(e.id);
+    setEditForm({nama:e.nama,nominal:String(e.nominal),jenis:e.jenis,kat:e.kat||"lainnya",tgl:e.tgl});
+  };
+  const cancelEdit=()=>{ setEditId(null); setEditForm({}); };
+  const saveEdit=()=>{
+    if(!editForm.nama.trim()||!editForm.nominal) return;
+    const updated={...editForm,nominal:toNumCF(editForm.nominal)};
+    onEdit&&onEdit(editId,updated);
+    setEditId(null); setEditForm({});
+  };
+
   const filtered=log.filter(e=>(fltr==="semua"||e.jenis===fltr)&&(!srch||e.nama.toLowerCase().includes(srch.toLowerCase()))).sort((a,b)=>b.tgl.localeCompare(a.tgl));
   const tM=filtered.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
   const tK=filtered.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
   const byDate={};
   filtered.forEach(e=>{if(!byDate[e.tgl])byDate[e.tgl]=[];byDate[e.tgl].push(e);});
+
   return (
     <div>
       <CfExportBar buttons={[
@@ -7872,6 +7912,8 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
           cfDlCSV(rows,`Jurnal_Tanggal_${today().replace(/\//g,"-")}.csv`);
         }},
       ]}/>
+
+      {/* ── Form Tambah ── */}
       <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"13px 15px",marginBottom:12}}>
         <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>➕ Tambah Entri Jurnal</div>
         <div style={{display:"grid",gridTemplateColumns:jMobile?"1fr":"1fr 1fr 1.5fr auto",gap:8,alignItems:"end"}}>
@@ -7905,6 +7947,8 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
           </button>
         </div>
       </div>
+
+      {/* ── Filter & Search bar ── */}
       <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
         <div style={{position:"relative",flex:1,minWidth:130}}>
           <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:12}}>🔍</span>
@@ -7916,17 +7960,28 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
           </button>
         ))}
         {onRefresh&&<button onClick={onRefresh} style={{padding:"5px 10px",borderRadius:9,border:"2px solid #b2ede6",background:"#f0faf8",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🔄 Refresh</button>}
+        {onResetAll&&log.length>0&&(
+          <button onClick={onResetAll}
+            style={{padding:"5px 12px",borderRadius:9,border:"2px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0,display:"flex",alignItems:"center",gap:4}}
+            onMouseEnter={e=>{e.currentTarget.style.background="#dc2626";e.currentTarget.style.color="#fff";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="#fff5f5";e.currentTarget.style.color="#dc2626";}}>
+            🗑 Reset Semua ({log.length})
+          </button>
+        )}
         <div style={{marginLeft:"auto",display:"flex",gap:10,fontSize:12,fontWeight:700}}>
           <span style={{color:"#16a34a"}}>+{fmtRp(tM)}</span>
           <span style={{color:"#dc2626"}}>-{fmtRp(tK)}</span>
         </div>
       </div>
+
       <CfKPI items={[
         {l:"Total Masuk",  v:fmtRp(tM), c:"#16a34a",bg:"#f0fdf4"},
         {l:"Total Keluar", v:fmtRp(tK), c:"#dc2626", bg:"#fff5f5"},
         {l:"Saldo Bersih", v:fmtRp(tM-tK), c:(tM-tK)>=0?"#0d9488":"#dc2626",bg:(tM-tK)>=0?"#e0faf5":"#fff5f5"},
         {l:"Entri",        v:`${filtered.length}`, c:"#6b7280",bg:"#f9fafb",sub:"transaksi"},
       ]}/>
+
+      {/* ── List per tanggal ── */}
       {Object.entries(byDate).map(([d,entries])=>{
         const dM=entries.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
         const dK=entries.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
@@ -7942,6 +7997,32 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
             </div>
             {entries.map((e,i)=>{
               const kat=CF_KAT[e.kat]||CF_KAT.lainnya;
+              const isEditing = editId===e.id;
+              if(isEditing) return (
+                <div key={e.id} style={{padding:"10px 13px",borderTop:i>0?"1px solid #f5fffe":"none",background:"#fffbeb",borderLeft:"3px solid #f59e0b"}}>
+                  <div style={{fontWeight:700,fontSize:11,color:"#92400e",marginBottom:8}}>✏️ Edit Entri</div>
+                  <div style={{display:"grid",gridTemplateColumns:jMobile?"1fr":"2fr 1fr 1fr 1fr",gap:6,marginBottom:8}}>
+                    <input value={editForm.nama} onChange={ev=>setEditForm(p=>({...p,nama:ev.target.value}))}
+                      placeholder="Keterangan..."
+                      style={{padding:"6px 9px",borderRadius:8,border:"2px solid #fcd34d",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                    <input value={editForm.nominal} onChange={ev=>setEditForm(p=>({...p,nominal:ev.target.value}))}
+                      type="number" placeholder="Nominal"
+                      style={{padding:"6px 9px",borderRadius:8,border:"2px solid #fcd34d",fontSize:12,fontWeight:700,textAlign:"right",outline:"none",fontFamily:"inherit"}}/>
+                    <select value={editForm.jenis} onChange={ev=>setEditForm(p=>({...p,jenis:ev.target.value,kat:ev.target.value==="masuk"?"setoran":"operasional"}))}
+                      style={{padding:"6px 5px",borderRadius:8,border:"2px solid #fcd34d",fontSize:11,fontWeight:700,outline:"none",fontFamily:"inherit",background:editForm.jenis==="masuk"?"#f0fdf4":"#fff5f5",color:editForm.jenis==="masuk"?"#16a34a":"#dc2626"}}>
+                      <option value="masuk">⬇ Masuk</option><option value="keluar">⬆ Keluar</option>
+                    </select>
+                    <select value={editForm.kat} onChange={ev=>setEditForm(p=>({...p,kat:ev.target.value}))}
+                      style={{padding:"6px 5px",borderRadius:8,border:"2px solid #fcd34d",fontSize:11,outline:"none",fontFamily:"inherit"}}>
+                      {(editForm.jenis==="masuk"?CF_KAT_IN:CF_KAT_OUT).map(k=><option key={k} value={k}>{CF_KAT[k]?.icon} {CF_KAT[k]?.l}</option>)}
+                    </select>
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={saveEdit} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✅ Simpan Perubahan</button>
+                    <button onClick={cancelEdit} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✕ Batal</button>
+                  </div>
+                </div>
+              );
               return (
                 <div key={e.id} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 13px",borderTop:i>0?"1px solid #f5fffe":"none",background:i%2===0?"#fff":"#fafffe"}}
                   onMouseEnter={ev=>ev.currentTarget.style.background="#f0fdfb"} onMouseLeave={ev=>ev.currentTarget.style.background=i%2===0?"#fff":"#fafffe"}>
@@ -7951,7 +8032,15 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
                     <span style={{fontSize:9,fontWeight:700,color:kat.c,background:kat.bg,padding:"1px 6px",borderRadius:20,display:"inline-block",marginTop:1}}>{kat.l}</span>
                   </div>
                   <div style={{fontWeight:900,fontSize:13,color:e.jenis==="masuk"?"#16a34a":"#dc2626",flexShrink:0}}>{e.jenis==="masuk"?"+":"-"}{fmtRp(e.nominal)}</div>
-                  <button onClick={()=>onDelete&&onDelete(e.id)||setLog(p=>p.filter(x=>x.id!==e.id))} style={{background:"none",border:"none",color:"#ddd",cursor:"pointer",fontSize:13}}
+                  {/* Tombol Edit */}
+                  <button onClick={()=>startEdit(e)}
+                    style={{background:"none",border:"none",color:"#b2ede6",cursor:"pointer",fontSize:13,padding:"2px 4px"}}
+                    title="Edit entri"
+                    onMouseEnter={ev=>ev.currentTarget.style.color="#0d9488"} onMouseLeave={ev=>ev.currentTarget.style.color="#b2ede6"}>✏️</button>
+                  {/* Tombol Hapus */}
+                  <button onClick={()=>{if(window.confirm(`Hapus entri "${e.nama}"?`)) onDelete&&onDelete(e.id);}}
+                    style={{background:"none",border:"none",color:"#ddd",cursor:"pointer",fontSize:13,padding:"2px 4px"}}
+                    title="Hapus entri"
                     onMouseEnter={ev=>ev.currentTarget.style.color="#ff4757"} onMouseLeave={ev=>ev.currentTarget.style.color="#ddd"}>✕</button>
                 </div>
               );
@@ -7959,6 +8048,14 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
           </div>
         );
       })}
+
+      {filtered.length===0&&(
+        <div style={{textAlign:"center",padding:"40px 20px",color:"#aaa",fontSize:13}}>
+          <div style={{fontSize:40,marginBottom:8}}>📋</div>
+          <div style={{fontWeight:700}}>Belum ada entri jurnal</div>
+          <div style={{fontSize:11,marginTop:4}}>Tambah entri di form di atas, atau kirim dari tab Kalkulator</div>
+        </div>
+      )}
     </div>
   );
 }
