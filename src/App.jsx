@@ -7284,7 +7284,7 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     window.addEventListener("resize",onResize);
     return()=>window.removeEventListener("resize",onResize);
   },[]);
-  const isMobile = false; // TODO: enable mobile view
+  const isMobile = winWidth < 768;
 
   const loadCfEntries = () => {
     dbCashflow.getEntries().then(entries=>{
@@ -7364,8 +7364,65 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
   ];
 
-  if(isMobile) return <div>Mobile</div>;
+  // ── MOBILE LAYOUT ────────────────────────────────────────────────────────────
+  if(isMobile) {
+    const cfMobileTabs = [
+      {k:"kalkulator", l:"Kalkulator", icon:"🧮"},
+      {k:"jurnal",     l:"Jurnal",     icon:"📋"},
+      {k:"besar",      l:"Buku Besar", icon:"📚"},
+      {k:"lapkeu",     l:"Lap. Keu",   icon:"📊"},
+      {k:"analisis",   l:"Analisis",   icon:"🎯"},
+    ];
+    return (
+      <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif",paddingBottom:64}}>
+        {/* Mobile Header */}
+        <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
+          <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>
+            <div style={{fontSize:16}}>💼</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:900,fontSize:13,color:"#fff"}}>Laporan Keuangan</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:600}}>Ammar Cell</div>
+            </div>
+          </div>
+          {/* KPI strip mobile */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4,padding:"0 10px 10px"}}>
+            {[{l:"Masuk",v:fmtS(cfMasuk),c:"#a7f3d0"},{l:"Keluar",v:fmtS(cfKeluar),c:"#fca5a5"},{l:"Laba",v:fmtS(cfLaba),c:cfLaba>=0?"#a7f3d0":"#fca5a5"},{l:"Margin",v:`${cfMargin.toFixed(1)}%`,c:"#fcd34d"}].map(k=>(
+              <div key={k.l} style={{textAlign:"center",background:"rgba(255,255,255,.1)",borderRadius:8,padding:"5px 4px",border:"1px solid rgba(255,255,255,.15)"}}>
+                <div style={{fontWeight:900,fontSize:11,color:k.c}}>{k.v}</div>
+                <div style={{fontSize:8,color:"rgba(255,255,255,.5)",fontWeight:700}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
 
+        {/* Content */}
+        <div style={{padding:"12px 12px 0"}}>
+          {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
+          {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onRefresh={cfRefresh}/>}
+          {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
+          {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
+          {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
+        </div>
+
+        {/* Bottom Tab Bar */}
+        <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:"1px solid #e0f5f1",display:"flex",zIndex:200,boxShadow:"0 -4px 16px rgba(13,148,136,.12)"}}>
+          {cfMobileTabs.map(t=>(
+            <button key={t.k} onClick={()=>handleCfTab(t.k)}
+              style={{flex:1,padding:"8px 2px 6px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit",
+                display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+                borderTop:`3px solid ${cfTab===t.k?"#0d9488":"transparent"}`,
+                transition:"all .15s"}}>
+              <span style={{fontSize:18,lineHeight:1}}>{t.icon}</span>
+              <span style={{fontSize:8,fontWeight:700,color:cfTab===t.k?"#0d9488":"#94a3b8",whiteSpace:"nowrap"}}>{t.l}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── DESKTOP LAYOUT ───────────────────────────────────────────────────────────
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
@@ -7540,6 +7597,23 @@ function CfKalSec({title,icon,color,bg,total,rows,setRows,placeholder,note}) {
 
 function CfVersusRow({label,sub,sistem,input}) {
   const sel=input-sistem, ok=Math.abs(sel)<1000;
+  const { isMobile: vrMobile } = useDevice();
+  if(vrMobile) return (
+    <div style={{padding:"8px 12px",borderTop:"1px solid #f0faf8"}}>
+      <div style={{fontWeight:700,fontSize:12}}>{label}</div>
+      {sub&&<div style={{fontSize:10,color:"#aaa",marginBottom:4}}>{sub}</div>}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+        <span style={{fontSize:10,background:"#eff6ff",color:"#3b82f6",borderRadius:6,padding:"2px 8px",fontWeight:700}}>Sistem: {fmtS(sistem)}</span>
+        <span style={{fontSize:10,background:"#f0fdf4",color:"#0d9488",borderRadius:6,padding:"2px 8px",fontWeight:700}}>Input: {fmtS(input)}</span>
+        <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20,display:"inline-block",
+          background:ok?"#dcfce7":sel>0?"#fefce8":"#fef2f2",
+          color:ok?"#16a34a":sel>0?"#ca8a04":"#dc2626",
+          border:`1px solid ${ok?"#86efac":sel>0?"#fde047":"#fca5a5"}`}}>
+          {ok?"✅ Sama":sel>0?`▲ +${fmtS(sel)}`:`▼ -${fmtS(Math.abs(sel))}`}
+        </span>
+      </div>
+    </div>
+  );
   return (
     <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 100px",
       alignItems:"center",padding:"8px 14px",borderTop:"1px solid #f0faf8"}}
@@ -7568,6 +7642,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
   const saveTimer = useRef(null);
   const [lastSave, setLastSave] = useState(null);
   const [kirimOk,  setKirimOk]  = useState(false);
+  const { isMobile: cfKalMobile } = useDevice();
 
   // ── Load dari localStorage satu kali saat mount ─────────────────────────
   const sv = (()=>{
@@ -7673,7 +7748,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
         </button>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:cfKalMobile?"1fr":"1fr 1fr",gap:16}}>
         {/* PAGI */}
         <div>
           <ColHead emoji="🌅" label="PAGI — KONDISI AWAL" grad="linear-gradient(135deg,#1d4ed8,#3b82f6)" glow="#3b82f6"/>
@@ -7708,25 +7783,34 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
             <div style={{height:2,flex:1,background:"linear-gradient(270deg,#d97706 40%,transparent)"}}/>
           </div>
           <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden",marginBottom:12}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 100px",padding:"9px 14px",background:"#e0faf5",borderBottom:"2px solid #b2f5ea"}}>
+            {!cfKalMobile&&<div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 100px",padding:"9px 14px",background:"#e0faf5",borderBottom:"2px solid #b2f5ea"}}>
               {["Komponen","📊 Sistem","✏️ Input Kamu","Selisih"].map((h,i)=>(
                 <div key={h} style={{fontWeight:800,fontSize:10,color:i===1?"#3b82f6":i===2?"#0d9488":"#555",textAlign:i>0?"right":"left",textTransform:"uppercase",letterSpacing:".4px"}}>{h}</div>
               ))}
-            </div>
+            </div>}
             <CfVersusRow label="Omset / Cash Masuk" sub="Sistem: transaksi kasir + log" sistem={sistemMasukHari} input={tMO}/>
             <CfVersusRow label="Perubahan Saldo Bank" sub="Δ Bank Malam − Bank Pagi" sistem={0} input={tMB-tPB}/>
             <CfVersusRow label="Perubahan Saldo Aplikasi" sub="Δ Apps Malam − Apps Pagi" sistem={0} input={tMA-tPA}/>
             <CfVersusRow label="Cash Fisik vs Estimasi Sistem" sub={`Estimasi: ${fmtRp(estFisik)}`} sistem={estFisik} input={tMF}/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 100px",padding:"10px 14px",
-              background:balanced?"#f0fdf4":"#fef2f2",borderTop:"2px solid #e0f5f1"}}>
-              <div style={{fontWeight:900,fontSize:13}}>Total Keseluruhan</div>
-              <div style={{textAlign:"right",fontWeight:900,fontSize:13,color:"#3b82f6"}}>{fmtRp(tPagi+tMO-tMK)}</div>
-              <div style={{textAlign:"right",fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(tMalam)}</div>
-              <div style={{textAlign:"right",fontWeight:900,fontSize:14,color:balanced?"#16a34a":selTotal>0?"#ca8a04":"#dc2626"}}>
-                {balanced?"✅ Balance":selTotal>0?`+${fmtRp(selTotal)}`:`-${fmtRp(Math.abs(selTotal))}`}
-              </div>
-            </div>
-          </div>
+            {cfKalMobile
+              ? <div style={{padding:"10px 12px",background:balanced?"#f0fdf4":"#fef2f2",borderTop:"2px solid #e0f5f1",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{fontWeight:900,fontSize:12}}>Total</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <span style={{fontSize:10,background:"#eff6ff",color:"#3b82f6",borderRadius:6,padding:"2px 8px",fontWeight:700}}>{fmtS(tPagi+tMO-tMK)}</span>
+                    <span style={{fontSize:10,background:"#f0fdf4",color:"#0d9488",borderRadius:6,padding:"2px 8px",fontWeight:700}}>{fmtS(tMalam)}</span>
+                    <span style={{fontSize:11,fontWeight:900,color:balanced?"#16a34a":selTotal>0?"#ca8a04":"#dc2626"}}>{balanced?"✅ Balance":selTotal>0?`+${fmtS(selTotal)}`:`-${fmtS(Math.abs(selTotal))}`}</span>
+                  </div>
+                </div>
+              : <div style={{display:"grid",gridTemplateColumns:"1fr 120px 120px 100px",padding:"10px 14px",
+                  background:balanced?"#f0fdf4":"#fef2f2",borderTop:"2px solid #e0f5f1"}}>
+                  <div style={{fontWeight:900,fontSize:13}}>Total Keseluruhan</div>
+                  <div style={{textAlign:"right",fontWeight:900,fontSize:13,color:"#3b82f6"}}>{fmtRp(tPagi+tMO-tMK)}</div>
+                  <div style={{textAlign:"right",fontWeight:900,fontSize:13,color:"#0d9488"}}>{fmtRp(tMalam)}</div>
+                  <div style={{textAlign:"right",fontWeight:900,fontSize:14,color:balanced?"#16a34a":selTotal>0?"#ca8a04":"#dc2626"}}>
+                    {balanced?"✅ Balance":selTotal>0?`+${fmtRp(selTotal)}`:`-${fmtRp(Math.abs(selTotal))}`}
+                  </div>
+                </div>
+            }
           <div style={{background:balanced?"linear-gradient(135deg,#064e3b,#059669,#10b981)":selTotal>0?"linear-gradient(135deg,#78350f,#b45309,#d97706)":"linear-gradient(135deg,#7f1d1d,#dc2626,#ef4444)",
             borderRadius:16,padding:"18px 22px",boxShadow:"0 6px 24px rgba(0,0,0,.15)",position:"relative",overflow:"hidden"}}>
             {[{r:-40,t:-40,s:160},{r:60,b:-60,s:200}].map((b,i)=>(
@@ -7760,6 +7844,7 @@ function CfTabKalkulator({log,setLog,outletNames,sistemMasuk}) {
 function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
   const [form,setForm]=useState({nama:"",nominal:"",jenis:"masuk",kat:"setoran",tgl:today()});
   const [srch,setSrch]=useState(""); const [fltr,setFltr]=useState("semua"); const [saved,setSaved]=useState(false);
+  const { isMobile: jMobile } = useDevice();
   const save=()=>{
     if(!form.nama.trim()||!form.nominal) return;
     const newEntry={id:uid(),...form,nominal:toNumCF(form.nominal)};
@@ -7789,7 +7874,7 @@ function CfTabJurnal({log,setLog,onDelete,onRefresh}) {
       ]}/>
       <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"13px 15px",marginBottom:12}}>
         <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>➕ Tambah Entri Jurnal</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1.5fr auto",gap:8,alignItems:"end"}}>
+        <div style={{display:"grid",gridTemplateColumns:jMobile?"1fr":"1fr 1fr 1.5fr auto",gap:8,alignItems:"end"}}>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:"#555",marginBottom:4}}>Keterangan *</div>
             <input value={form.nama} onChange={e=>setForm(p=>({...p,nama:e.target.value}))}
