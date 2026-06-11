@@ -300,6 +300,7 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"dashboardbank", icon:Ic.Chart(),    label:"Dashboard Bank",     desc:"Pantau transaksi keuangan bank",color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
     {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"laporan",  icon:Ic.Laporan(),  label:"Laporan",            desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
+    {id:"portal-admin", icon:"👷",      label:"Portal Karyawan",    desc:"Kelola misi, absensi & izin",  color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
   ];
   const accessible = menus.filter(m=>m.roles.includes(user.role));
 
@@ -10086,12 +10087,702 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
 // ==============================================================================
 // ROOT
 // ==============================================================================
+// ==============================================================================
+// PORTAL KARYAWAN
+// ==============================================================================
+function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, notify }) {
+  const [tab,setTab]           = useState("beranda");
+  const [clock,setClock]       = useState(new Date().toLocaleTimeString("id-ID"));
+  const [absenMasuk,setAbsenM] = useState(()=>{ const t=today(); return (absensiMap[user.id]||[]).find(a=>a.tgl===t&&a.masuk)?absensiMap[user.id].find(a=>a.tgl===t):null; });
+  const [absenPulang,setAbsenP]= useState(()=>{ const t=today(); return (absensiMap[user.id]||[]).find(a=>a.tgl===t&&a.pulang)?absensiMap[user.id].find(a=>a.tgl===t):null; });
+  const [kameraMode,setKamMode]= useState(null);
+  const [lokasiStr,setLokasiStr]=useState("Mengambil lokasi...");
+  const [loadGPS,setLoadGPS]   = useState(false);
+  const [stream,setStream]     = useState(null);
+  const videoRef=useRef(null), canvasRef=useRef(null);
+  const [showSheet,setShowSheet]=useState(false);
+  const [sheetMode,setSheetMode]=useState("pilih");
+  const [selJenis,setSelJenis] = useState(null);
+  const [formAjuan,setFormAjuan]=useState({tgl:"",jam:"",ket:""});
+  const [submitOk,setSubmitOk] = useState(false);
+
+  const myIzin = izinMap[user.id]||[];
+  const myAbsensi = absensiMap[user.id]||[];
+
+  useEffect(()=>{ const iv=setInterval(()=>setClock(new Date().toLocaleTimeString("id-ID")),1000); return()=>clearInterval(iv); },[]);
+
+  const startKamera = async (mode) => {
+    setKamMode(mode); setLoadGPS(true);
+    try { const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:false}); setStream(s); } catch{}
+    navigator.geolocation?.getCurrentPosition(p=>{setLokasiStr(`${p.coords.latitude.toFixed(4)},${p.coords.longitude.toFixed(4)}`);setLoadGPS(false);},()=>{setLokasiStr(outlets.find(o=>o.id===user.outletId)?.nama||"Outlet");setLoadGPS(false);});
+  };
+
+  useEffect(()=>{ if(stream&&videoRef.current){videoRef.current.srcObject=stream;videoRef.current.play().catch(()=>{});} },[stream,kameraMode]);
+
+  const ambilFoto = () => {
+    const v=videoRef.current, c=canvasRef.current;
+    if(v&&c){c.width=v.videoWidth||320;c.height=v.videoHeight||240;c.getContext("2d").drawImage(v,0,0);}
+    const foto=c?.toDataURL("image/jpeg",.7)||null;
+    const jam=new Date().toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"}).replace(".",":"),tglStr=today();
+    const entry={tgl:tglStr,foto,lokasi:lokasiStr};
+    if(kameraMode==="masuk"){
+      const rec={...entry,masuk:jam,pulang:null};
+      setAbsenM(rec);
+      setAbsensiMap(prev=>({...prev,[user.id]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
+      supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,masuk:jam,foto_masuk:foto,lokasi:lokasiStr},{onConflict:'user_id,tgl'}).catch(()=>{});
+    } else {
+      const existing=(absensiMap[user.id]||[]).find(a=>a.tgl===tglStr)||{};
+      const rec={...existing,tgl:tglStr,pulang:jam,foto_pulang:foto};
+      setAbsenP(rec);
+      setAbsensiMap(prev=>({...prev,[user.id]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
+      supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,pulang:jam,foto_pulang:foto},{onConflict:'user_id,tgl'}).catch(()=>{});
+    }
+    stream?.getTracks().forEach(t=>t.stop()); setStream(null); setKamMode(null);
+  };
+  const stopKam=()=>{stream?.getTracks().forEach(t=>t.stop());setStream(null);setKamMode(null);};
+
+  // Kalkulasi misi
+  const misiSelesai = misi.filter(m=>m.selesai);
+  const totalPoin   = misiSelesai.reduce((s,m)=>s+m.poin,0);
+  const maxPoin     = misi.reduce((s,m)=>s+m.poin,0);
+  const bonus       = misiSelesai.length>=4?500000:misiSelesai.length>=2?300000:misiSelesai.length>=1?150000:0;
+  const gajiEst     = (user.gajiPokok||2800000)+bonus;
+  const hadirRows   = myAbsensi.filter(a=>a.masuk&&a.masuk!=="--");
+
+  // Hitung jam
+  const hitungDur=(m,p)=>{if(!m||!p||m==="--"||p==="--")return null;const[mh,mm]=m.split(":").map(Number);const[ph,pm]=p.split(":").map(Number);return(ph*60+pm-mh*60-mm)/60;};
+  const fmtJam=j=>{if(!j||j<0)return"0j 0m";const h=Math.floor(j),mn=Math.round((j-h)*60);return`${h}j ${mn}m`;};
+  const pctN=(v,t)=>t>0?Math.min(100,Math.round(v/t*100)):0;
+
+  const absensiDenganDur = myAbsensi.map(a=>({...a,dur:hitungDur(a.masuk,a.pulang),kurang:Math.max(0,shift.totalJam-(hitungDur(a.masuk,a.pulang)||0))}));
+  const totalKurang = absensiDenganDur.filter(a=>a.masuk&&a.masuk!=="--"&&a.kurang>0).reduce((s,a)=>s+a.kurang,0);
+  const misiPct = pctN(misiSelesai.length,misi.length);
+  const poinPct = pctN(totalPoin,maxPoin||1);
+
+  const BarP=({v,m,c="#0d9488",h=8})=>(
+    <div style={{width:"100%",height:h,borderRadius:99,background:"#e8f5f0",overflow:"hidden"}}>
+      <div style={{width:`${pctN(v,m)}%`,height:"100%",background:c,borderRadius:99,transition:"width .7s ease"}}/>
+    </div>
+  );
+
+  const submitIzin=()=>{
+    if(!formAjuan.tgl||!formAjuan.ket.trim()) return;
+    const tglFmt=new Date(formAjuan.tgl).toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit",year:"numeric"});
+    const entry={id:Date.now(),tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu",userId:user.id,userName:user.nama};
+    setIzinMap(prev=>({...prev,[user.id]:[entry,...(prev[user.id]||[])]}));
+    supabase.from('portal_izin').insert({user_id:user.id,user_nama:user.nama,tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu"}).catch(()=>{});
+    setSubmitOk(true);
+    setTimeout(()=>{setSubmitOk(false);setShowSheet(false);setSheetMode("pilih");setSelJenis(null);setFormAjuan({tgl:"",jam:"",ket:""});},1800);
+  };
+
+  const openSheet=()=>{setShowSheet(true);setSheetMode("pilih");setSelJenis(null);setFormAjuan({tgl:"",jam:"",ket:""});setSubmitOk(false);};
+  const JENIS=[{k:"Izin",icon:"📝",color:"#d97706",bg:"#fffbeb",desc:"Keperluan pribadi"},{k:"Sakit",icon:"🤒",color:"#dc2626",bg:"#fff5f5",desc:"Tidak masuk sakit"},{k:"Lembur",icon:"🌙",color:"#7c3aed",bg:"#f5f3ff",desc:"Kerja di luar jam"}];
+  const TABS_P=[{k:"beranda",icon:"🏠",label:"Beranda"},{k:"kinerja",icon:"📊",label:"Kinerja"},{k:"absensi",icon:"📅",label:"Absensi"},{k:"misi",icon:"🎯",label:"Misi"},{k:"profil",icon:"👤",label:"Profil"}];
+  const todayStr=new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  const outletNama=outlets.find(o=>o.id===user.outletId)?.nama||"Outlet";
+
+  return (
+    <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif",paddingBottom:76}}>
+      <style>{`*{box-sizing:border-box}@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.pk-card{animation:fadeUp .25s ease}::-webkit-scrollbar{display:none}@keyframes blk{0%,100%{opacity:1}50%{opacity:.4}}.blk{animation:blk 1.4s infinite}`}</style>
+      {/* HEADER */}
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"14px 18px 16px",position:"sticky",top:0,zIndex:50,boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:44,height:44,borderRadius:14,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:17,color:"#fff",border:"2px solid rgba(255,255,255,.3)",flexShrink:0}}>{user.nama?.slice(0,2).toUpperCase()}</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>{user.nama}</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.7)",display:"flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:"#2ecc71",display:"inline-block"}}/>{outletNama}</div>
+          </div>
+          <div style={{textAlign:"right"}}><div style={{fontFamily:"monospace",fontWeight:900,fontSize:14,color:"#fff"}}>{clock}</div><div style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>{new Date().toLocaleDateString("id-ID",{day:"2-digit",month:"short"})}</div></div>
+        </div>
+      </div>
+
+      <div style={{padding:"14px 16px"}}>
+      {/* ═══ BERANDA ═══ */}
+      {tab==="beranda"&&(
+      <div className="pk-card">
+        {/* Note admin */}
+        {note&&<div style={{background:"linear-gradient(135deg,#fffbeb,#fef9c3)",border:"2px solid #fcd34d",borderRadius:14,padding:"11px 13px",marginBottom:12,display:"flex",gap:10}}><span style={{fontSize:20,flexShrink:0}}>📌</span><div><div style={{fontWeight:800,fontSize:10,color:"#92400e",marginBottom:2}}>PESAN DARI PIMPINAN</div><div style={{fontSize:11,color:"#78350f",lineHeight:1.5}}>{note}</div></div></div>}
+        {/* Absen */}
+        {kameraMode?(
+          <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:10}}>{kameraMode==="masuk"?"📸 Absen Masuk":"📸 Absen Pulang"}</div>
+            <div style={{borderRadius:14,overflow:"hidden",position:"relative",background:"#111",minHeight:220}}>
+              <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",display:"block"}}/>
+              <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,.85))",padding:"8px 12px"}}>
+                <div style={{color:"#fff",fontWeight:900,fontSize:14}}>{clock}</div>
+                <div style={{color:"rgba(255,255,255,.8)",fontSize:9}}>📍 {loadGPS?<span className="blk">Mengambil GPS...</span>:lokasiStr}</div>
+              </div>
+              <canvas ref={canvasRef} style={{display:"none"}}/>
+              <button onClick={stopKam} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,.5)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"4px 10px",color:"#fff",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+              <div style={{display:"flex",justifyContent:"center",padding:"10px 0 4px",background:"rgba(0,0,0,.3)"}}>
+                <button onClick={ambilFoto} style={{width:60,height:60,borderRadius:"50%",border:"4px solid #fff",background:kameraMode==="masuk"?"#0d9488":"#e74c3c",cursor:"pointer",fontSize:22,display:"flex",alignItems:"center",justifyContent:"center"}}>📷</button>
+              </div>
+            </div>
+          </div>
+        ):(
+          <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1",boxShadow:"0 2px 12px rgba(13,148,136,.06)"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:1}}>Absensi Hari Ini</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:12}}>{todayStr}</div>
+            {!absenMasuk?(
+              <button onClick={()=>startKamera("masuk")} style={{width:"100%",padding:"13px",borderRadius:13,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:"0 4px 14px rgba(13,148,136,.3)"}}>📸 Absen Masuk</button>
+            ):(
+              <div style={{background:"#f0fdf4",borderRadius:12,padding:"10px 12px",marginBottom:8,border:"2px solid #86efac",display:"flex",gap:10,alignItems:"center"}}>
+                {absenMasuk.foto?<img src={absenMasuk.foto} alt="" style={{width:52,height:52,borderRadius:9,objectFit:"cover",border:"2px solid #16a34a",flexShrink:0}}/>:<div style={{width:52,height:52,borderRadius:9,background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>📷</div>}
+                <div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#16a34a"}}>✅ Absen Masuk</div><div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}><span style={{background:"#dcfce7",color:"#16a34a",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20}}>🕐 {absenMasuk.masuk}</span><span style={{fontSize:9,color:"#aaa"}}>📍 {absenMasuk.lokasi}</span></div></div>
+              </div>
+            )}
+            {!absenPulang?(
+              <button onClick={()=>startKamera("pulang")} disabled={!absenMasuk} style={{width:"100%",padding:"13px",borderRadius:13,border:absenMasuk?"none":"2px dashed #b2ede6",background:absenMasuk?"linear-gradient(135deg,#e74c3c,#ff6b6b)":"#f9fafb",color:absenMasuk?"#fff":"#b2ede6",fontWeight:900,fontSize:14,cursor:absenMasuk?"pointer":"not-allowed",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:absenMasuk?"0 4px 14px rgba(231,76,60,.25)":"none"}}>
+                {absenMasuk?"📸 Absen Pulang":"🔒 Absen Masuk dulu"}
+              </button>
+            ):(
+              <div style={{background:"#fff5f5",borderRadius:12,padding:"10px 12px",border:"2px solid #fca5a5",display:"flex",gap:10,alignItems:"center"}}>
+                {absenPulang.foto_pulang?<img src={absenPulang.foto_pulang} alt="" style={{width:52,height:52,borderRadius:9,objectFit:"cover",border:"2px solid #dc2626",flexShrink:0}}/>:<div style={{width:52,height:52,borderRadius:9,background:"#ffe4e6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>📷</div>}
+                <div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#dc2626"}}>✅ Absen Pulang</div><div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}><span style={{background:"#ffe4e6",color:"#dc2626",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20}}>🕔 {absenPulang.pulang}</span><span style={{fontSize:9,color:"#aaa"}}>📍 {absenPulang.lokasi}</span></div></div>
+              </div>
+            )}
+          </div>
+        )}
+        {/* Target dari misi */}
+        <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a"}}>🎯 Target Bulan Ini</div>
+            <span style={{fontSize:10,background:"#e0faf5",color:"#0d9488",fontWeight:700,padding:"2px 10px",borderRadius:20}}>{misiSelesai.length}/{misi.length} misi</span>
+          </div>
+          {[{l:"🎯 Misi Selesai",v:misiSelesai.length,m:misi.length||1,p:misiPct,c:misiPct>=80?"#16a34a":misiPct>=50?"#d97706":"#e74c3c",sub:`${misiSelesai.length} selesai dari ${misi.length}`},{l:"🏅 Total Poin",v:totalPoin,m:maxPoin||1,p:poinPct,c:"#f59e0b",sub:`${totalPoin} dari ${maxPoin} poin`}].map(x=>(
+            <div key={x.l} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:10,fontWeight:700,color:"#555"}}>{x.l}</span><span style={{fontSize:10,fontWeight:900,color:x.c}}>{x.p}%</span></div>
+              <BarP v={x.v} m={x.m} c={x.c} h={8}/>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}><span style={{fontSize:9,color:"#aaa"}}>{x.sub}</span></div>
+            </div>
+          ))}
+          {misi.length===0&&<div style={{textAlign:"center",padding:"12px",color:"#aaa",fontSize:11}}>Belum ada misi dari admin</div>}
+          {misi.slice(0,3).map(m=>(
+            <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:9,background:m.selesai?"#f0fdf4":"#f9fafb",border:`1px solid ${m.selesai?"#86efac":"#e0e0e0"}`,marginTop:5}}>
+              <span style={{fontSize:14,flexShrink:0}}>{m.selesai?"✅":m.icon||"🎯"}</span>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:10,fontWeight:700,color:m.selesai?"#16a34a":"#555",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.judul}</div></div>
+              <span style={{fontSize:9,fontWeight:800,color:m.selesai?"#16a34a":"#f59e0b",background:m.selesai?"#dcfce7":"#fef9c3",padding:"1px 7px",borderRadius:20,flexShrink:0}}>{m.selesai?"✓":m.poin+"p"}</span>
+            </div>
+          ))}
+          {misi.length>0&&<div onClick={()=>setTab("misi")} style={{textAlign:"center",marginTop:8,fontSize:11,color:"#0d9488",fontWeight:700,cursor:"pointer"}}>Lihat semua →</div>}
+        </div>
+        {/* Grid rekap */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:9,marginBottom:12}}>
+          <div onClick={()=>setTab("absensi")} style={{background:"#e0faf5",borderRadius:14,padding:"11px 10px",textAlign:"center",cursor:"pointer",border:"1px solid #b2f5ea"}}><div style={{fontSize:20,marginBottom:2}}>📅</div><div style={{fontWeight:900,fontSize:20,color:"#0d9488"}}>{hadirRows.length}</div><div style={{fontSize:9,fontWeight:700,color:"#0d9488",opacity:.7}}>Hari Hadir</div></div>
+          <div onClick={openSheet} style={{background:"#fffbeb",borderRadius:14,padding:"11px 10px",textAlign:"center",cursor:"pointer",border:"1px solid #fcd34d"}}><div style={{fontSize:20,marginBottom:2}}>📝</div><div style={{fontWeight:900,fontSize:20,color:"#d97706"}}>{myIzin.filter(i=>i.status==="menunggu").length}</div><div style={{fontSize:9,fontWeight:700,color:"#92400e",opacity:.8}}>Proses Izin</div></div>
+          <div style={{background:"#f5f3ff",borderRadius:14,padding:"11px 10px",textAlign:"center",border:"1px solid #c4b5fd"}}><div style={{fontSize:20,marginBottom:2}}>💰</div><div style={{fontWeight:900,fontSize:12,color:"#7c3aed"}}>{fmtRp(gajiEst).replace("Rp ","")}</div><div style={{fontSize:9,fontWeight:700,color:"#7c3aed",opacity:.7}}>Est. Gaji</div></div>
+        </div>
+        {/* Gaji card */}
+        <div style={{background:"linear-gradient(135deg,#7c3aed,#6d28d9,#a855f7)",borderRadius:16,padding:"18px",marginBottom:4,color:"#fff",boxShadow:"0 6px 24px rgba(124,58,237,.3)",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,.07)",top:-30,right:-30}}/>
+          <div style={{position:"absolute",width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,.05)",bottom:-20,left:-20}}/>
+          <div style={{position:"relative"}}><div style={{fontSize:10,color:"rgba(255,255,255,.65)",fontWeight:600,marginBottom:4}}>💰 Estimasi Gaji Bulan Ini</div><div style={{fontWeight:900,fontSize:28,letterSpacing:"-.5px",marginBottom:12}}>{fmtRp(gajiEst)}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",background:"rgba(255,255,255,.1)",borderRadius:12,overflow:"hidden",border:"1px solid rgba(255,255,255,.15)"}}>
+            {[{l:"Gaji Pokok",v:fmtRp(user.gajiPokok||2800000).replace("Rp ",""),icon:"💼"},{l:"Bonus Misi",v:fmtRp(bonus).replace("Rp ",""),icon:"🎯"},{l:"Potongan",v:"0",icon:"✂️"}].map((x,i)=>(
+              <div key={x.l} style={{padding:"10px 8px",textAlign:"center",borderLeft:i>0?"1px solid rgba(255,255,255,.12)":"none"}}><div style={{fontSize:14,marginBottom:3}}>{x.icon}</div><div style={{fontWeight:900,fontSize:12,color:"#e9d5ff"}}>{x.v}</div><div style={{fontSize:8,color:"rgba(255,255,255,.6)",marginTop:2}}>{x.l}</div></div>
+            ))}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14}}>🏅</span><div><div style={{fontSize:11,fontWeight:900,color:"#fcd34d"}}>{totalPoin} poin</div><div style={{fontSize:8,color:"rgba(255,255,255,.5)"}}>dari {maxPoin} poin</div></div></div><div style={{background:"rgba(255,255,255,.15)",borderRadius:20,padding:"4px 12px",border:"1px solid rgba(255,255,255,.2)"}}><span style={{fontSize:10,fontWeight:800,color:"#a7f3d0"}}>Belum dibayar</span></div></div>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* ═══ KINERJA ═══ */}
+      {tab==="kinerja"&&(
+      <div className="pk-card">
+        <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a",marginBottom:14}}>📊 Kinerja Saya</div>
+        {/* Jam kerja */}
+        <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
+          <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:4}}>⏱ Rekap Jam Kerja</div>
+          <div style={{fontSize:10,color:"#aaa",marginBottom:10}}>Shift: {shift.masuk} – {shift.pulang} ({shift.totalJam}j/hari)</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            {[{l:"Total Jam",v:fmtJam(hadirRows.reduce((s,a)=>s+(hitungDur(a.masuk,a.pulang)||0),0)),c:"#0d9488",bg:"#e0faf5"},{l:"Target",v:fmtJam(hadirRows.length*shift.totalJam),c:"#2980b9",bg:"#e8f4fd"},{l:"Kekurangan",v:totalKurang>0?fmtJam(totalKurang):"✓ Aman",c:totalKurang>0?"#dc2626":"#16a34a",bg:totalKurang>0?"#fff5f5":"#f0fdf4"}].map(s=>(
+              <div key={s.l} style={{background:s.bg,borderRadius:10,padding:"9px 8px",textAlign:"center"}}><div style={{fontWeight:900,fontSize:12,color:s.c}}>{s.v}</div><div style={{fontSize:8,fontWeight:700,color:s.c,opacity:.7,marginTop:2}}>{s.l}</div></div>
+            ))}
+          </div>
+          {absensiDenganDur.filter(a=>a.masuk&&a.masuk!=="--").slice(0,5).map((a,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderTop:i>0?"1px solid #f0faf8":"none",background:i%2===0?"#fff":"#fafffe"}}>
+              <div style={{width:36,textAlign:"center",flexShrink:0}}><div style={{fontWeight:800,fontSize:10}}>{a.tgl}</div></div>
+              <div style={{flex:1,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕐{a.masuk}</span>
+                <span style={{fontSize:9,color:"#ccc"}}>→</span>
+                <span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕔{a.pulang||"--"}</span>
+                {a.dur!=null&&<span style={{fontSize:9,fontWeight:700,color:a.kurang>0?"#dc2626":"#0d9488"}}>{fmtJam(a.dur)}</span>}
+              </div>
+              {a.kurang>0?<span style={{fontSize:9,fontWeight:800,background:"#fff5f5",color:"#dc2626",padding:"2px 6px",borderRadius:20}}>-{fmtJam(a.kurang)}</span>:<span style={{fontSize:9,fontWeight:800,background:"#f0fdf4",color:"#16a34a",padding:"2px 6px",borderRadius:20}}>✓</span>}
+            </div>
+          ))}
+          {totalKurang>0&&<div style={{marginTop:10,padding:"8px 12px",background:"#fff5f5",borderRadius:10,border:"1px solid #fca5a5",display:"flex",gap:8}}><span style={{fontSize:16}}>⚠️</span><div style={{fontSize:11,color:"#dc2626",fontWeight:700}}>Total kekurangan: <b>{fmtJam(totalKurang)}</b></div></div>}
+        </div>
+        {/* Badge */}
+        <div style={{background:"#fff",borderRadius:16,padding:"14px",border:"2px solid #e0f5f1"}}>
+          <div style={{fontWeight:800,fontSize:12,marginBottom:10}}>🎖️ Badge Pencapaian</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {[{icon:"⭐",l:"Hadir Konsisten",ok:hadirRows.length>=5},{icon:"🏅",l:"Misi 2+ Selesai",ok:misiSelesai.length>=2},{icon:"⏱",l:"Nol Kekurangan Jam",ok:totalKurang===0},{icon:"🔥",l:"Poin 500+",ok:totalPoin>=500}].map(b=>(
+              <div key={b.l} style={{display:"flex",alignItems:"center",gap:5,background:b.ok?"#e0faf5":"#f5f5f5",borderRadius:20,padding:"5px 12px",border:`1px solid ${b.ok?"#b2f5ea":"#e0e0e0"}`}}>
+                <span style={{fontSize:14,filter:b.ok?"none":"grayscale(1)",opacity:b.ok?1:.4}}>{b.icon}</span>
+                <span style={{fontSize:10,fontWeight:700,color:b.ok?"#0d9488":"#bbb"}}>{b.l}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* ═══ ABSENSI ═══ */}
+      {tab==="absensi"&&(
+      <div className="pk-card">
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div><div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>📅 Absensi</div><div style={{fontSize:11,color:"#aaa"}}>Rekap kehadiran bulan ini</div></div>
+          <button onClick={openSheet} style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:11,padding:"9px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Ajukan</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:7,marginBottom:12}}>
+          {[{l:"Hadir",v:hadirRows.length,c:"#16a34a",bg:"#f0fdf4"},{l:"Izin",v:myIzin.filter(i=>["Izin","Sakit"].includes(i.jenis)&&i.status==="disetujui").length,c:"#d97706",bg:"#fffbeb"},{l:"Lembur",v:myIzin.filter(i=>i.jenis==="Lembur").length,c:"#7c3aed",bg:"#f5f3ff"}].map(s=>(
+            <div key={s.l} style={{background:s.bg,borderRadius:11,padding:"9px",textAlign:"center",border:`1px solid ${s.c}20`}}><div style={{fontWeight:900,fontSize:20,color:s.c}}>{s.v}</div><div style={{fontSize:8,fontWeight:700,color:s.c,opacity:.8}}>{s.l}</div></div>
+          ))}
+        </div>
+        {myAbsensi.length===0?<div style={{textAlign:"center",padding:30,color:"#aaa",fontSize:12}}>Belum ada data absensi</div>:(
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden",marginBottom:12}}>
+            {myAbsensi.slice(0,10).map((a,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderTop:i>0?"1px solid #f0faf8":"none"}}>
+                <div style={{width:38,textAlign:"center",flexShrink:0}}><div style={{fontWeight:800,fontSize:10}}>{a.tgl}</div></div>
+                <div style={{flex:1}}>
+                  {a.masuk&&a.masuk!=="--"?<div style={{display:"flex",gap:5,flexWrap:"wrap"}}><span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕐{a.masuk}</span><span style={{fontSize:9,color:"#ccc"}}>→</span><span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕔{a.pulang||"--"}</span></div>:<span style={{fontSize:10,color:"#aaa"}}>Izin / Tidak hadir</span>}
+                </div>
+                <span style={{fontSize:9,fontWeight:800,background:a.masuk&&a.masuk!=="--"?"#f0fdf4":"#fffbeb",color:a.masuk&&a.masuk!=="--"?"#16a34a":"#d97706",padding:"2px 8px",borderRadius:20}}>{a.masuk&&a.masuk!=="--"?"✓ Hadir":"Izin"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:8}}>📋 Riwayat Pengajuan</div>
+        {myIzin.length===0?<div style={{textAlign:"center",padding:20,color:"#aaa",fontSize:11}}>Belum ada pengajuan</div>:(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {myIzin.map(p=>{
+              const sc={disetujui:{c:"#16a34a",bg:"#f0fdf4",l:"✓ Disetujui"},menunggu:{c:"#d97706",bg:"#fffbeb",l:"⏳ Menunggu"},ditolak:{c:"#dc2626",bg:"#fff5f5",l:"✗ Ditolak"}};
+              const s=sc[p.status]||sc.menunggu;
+              const jn=JENIS.find(j=>j.k===p.jenis)||JENIS[0];
+              return <div key={p.id} style={{background:"#fff",borderRadius:12,padding:"12px 14px",border:`1px solid ${jn.color}25`,display:"flex",gap:12}}><div style={{width:38,height:38,borderRadius:10,background:jn.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{jn.icon}</div><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12}}>{p.jenis}</div><div style={{fontSize:9,color:"#aaa"}}>{p.tgl}{p.jam?" · "+p.jam:""}</div><div style={{fontSize:10,color:"#555",marginTop:2}}>{p.ket}</div></div><span style={{fontSize:9,fontWeight:800,background:s.bg,color:s.c,padding:"3px 9px",borderRadius:20,alignSelf:"flex-start",flexShrink:0}}>{s.l}</span></div>;
+            })}
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* ═══ MISI ═══ */}
+      {tab==="misi"&&(
+      <div className="pk-card">
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+          <div><div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Misi Bulan Ini</div><div style={{fontSize:11,color:"#aaa"}}>Selesaikan untuk bonus & poin</div></div>
+          <div style={{textAlign:"right",background:"linear-gradient(135deg,#f59e0b,#fbbf24)",borderRadius:12,padding:"8px 12px"}}><div style={{fontWeight:900,fontSize:18,color:"#fff"}}>{totalPoin}</div><div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>Total Poin</div></div>
+        </div>
+        {misi.length===0?<div style={{textAlign:"center",padding:40,color:"#aaa"}}><div style={{fontSize:40,marginBottom:8}}>🎯</div><div style={{fontWeight:700}}>Belum ada misi dari admin</div></div>:(
+          <>
+          <div style={{background:"#fff",borderRadius:14,padding:"12px 14px",marginBottom:12,border:"2px solid #e0f5f1"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:11,fontWeight:700,color:"#555"}}>Progres</span><span style={{fontSize:11,fontWeight:900,color:"#0d9488"}}>{misiSelesai.length}/{misi.length}</span></div><BarP v={misiSelesai.length} m={misi.length} c="#0d9488" h={10}/></div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {misi.map(m=>(
+              <div key={m.id} style={{background:"#fff",borderRadius:14,padding:"13px 15px",border:`2px solid ${m.selesai?"#16a34a":"#e0f5f1"}`,position:"relative",overflow:"hidden"}}>
+                {m.selesai&&<><div style={{position:"absolute",top:0,right:0,width:0,height:0,borderStyle:"solid",borderWidth:"0 44px 44px 0",borderColor:"transparent #16a34a transparent transparent"}}/><div style={{position:"absolute",top:4,right:5,fontSize:13,color:"#fff"}}>✓</div></>}
+                <div style={{display:"flex",gap:12}}>
+                  <div style={{width:42,height:42,borderRadius:12,background:m.selesai?"#f0fdf4":"#f0faf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,border:`2px solid ${m.selesai?"#86efac":"#e0f5f1"}`}}>{m.selesai?"✅":m.icon||"🎯"}</div>
+                  <div style={{flex:1}}><div style={{fontWeight:800,fontSize:13,color:m.selesai?"#16a34a":"#1a2e2a"}}>{m.judul}</div><div style={{fontSize:10,color:"#aaa",marginTop:2,marginBottom:8}}>{m.desc}</div><BarP v={m.progress||0} m={m.target||1} c={m.selesai?"#16a34a":"#0d9488"} h={6}/><div style={{display:"flex",justifyContent:"space-between",marginTop:3}}><span style={{fontSize:9,color:"#aaa"}}>{m.progress||0}/{m.target} {m.satuan}</span><span style={{fontSize:9,color:"#aaa"}}>{pctN(m.progress||0,m.target)}%</span></div><div style={{marginTop:7,display:"flex",gap:6}}><span style={{background:"#fef9c3",color:"#92400e",fontSize:10,fontWeight:800,padding:"2px 10px",borderRadius:20}}>🏅 {m.poin} poin</span>{m.selesai&&<span style={{background:"#f0fdf4",color:"#16a34a",fontSize:10,fontWeight:700,padding:"2px 10px",borderRadius:20}}>Selesai!</span>}</div></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:"linear-gradient(135deg,#7c3aed,#a855f7)",borderRadius:14,padding:"14px",marginTop:14,color:"#fff"}}><div style={{fontWeight:800,fontSize:12,marginBottom:4}}>💰 Estimasi Bonus dari Misi</div><div style={{fontWeight:900,fontSize:22}}>{fmtRp(bonus)}</div><div style={{fontSize:9,color:"rgba(255,255,255,.7)",marginTop:3}}>{misiSelesai.length} misi selesai</div></div>
+          </>
+        )}
+      </div>
+      )}
+
+      {/* ═══ PROFIL ═══ */}
+      {tab==="profil"&&(
+      <div className="pk-card">
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:28,color:"#fff",margin:"0 auto 10px"}}>{user.nama?.slice(0,2).toUpperCase()}</div>
+          <div style={{fontWeight:900,fontSize:18,color:"#1a2e2a"}}>{user.nama}</div>
+          <div style={{fontSize:11,color:"#aaa",marginTop:2}}>📍 {outletNama}</div>
+        </div>
+        <div style={{background:"#fff",borderRadius:16,border:"2px solid #e0f5f1",overflow:"hidden",marginBottom:12}}>
+          {[{icon:"🎯",l:"Poin Misi",v:`${totalPoin} poin`},{icon:"📅",l:"Kehadiran",v:`${hadirRows.length} hari`},{icon:"⏱",l:"Kekurangan Jam",v:totalKurang>0?fmtJam(totalKurang):"✓ Tidak ada"},{icon:"💰",l:"Est. Gaji",v:fmtRp(gajiEst)}].map((r,i)=>(
+            <div key={r.l} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderTop:i>0?"1px solid #f0faf8":"none"}}>
+              <span style={{fontSize:20,flexShrink:0}}>{r.icon}</span><div style={{flex:1,fontSize:12,color:"#555",fontWeight:600}}>{r.l}</div><div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{r.v}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={onLogout} style={{width:"100%",padding:"13px",borderRadius:13,border:"2px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>🚪 Keluar / Logout</button>
+      </div>
+      )}
+      </div>
+
+      {/* Bottom Sheet Pengajuan */}
+      {showSheet&&(
+        <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.45)"}} onClick={()=>setShowSheet(false)}/>
+          <div style={{position:"relative",background:"#fff",borderRadius:"24px 24px 0 0",maxHeight:"85vh",display:"flex",flexDirection:"column",animation:"slideUp .3s ease"}}>
+            <style>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+            <div style={{display:"flex",justifyContent:"center",padding:"12px 0 8px",flexShrink:0}}><div style={{width:40,height:4,borderRadius:99,background:"#e0e0e0"}}/></div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 20px 12px",borderBottom:"1px solid #f0faf8",flexShrink:0}}>
+              <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>{sheetMode==="form"&&selJenis?`Ajukan ${selJenis.k}`:"Pilih Jenis Pengajuan"}</div>
+              <button onClick={()=>setShowSheet(false)} style={{background:"#f0faf8",border:"none",borderRadius:"50%",width:30,height:30,cursor:"pointer",fontSize:16,color:"#888",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            </div>
+            <div style={{overflowY:"auto",padding:"16px 20px 24px",flex:1}}>
+              {submitOk?(
+                <div style={{textAlign:"center",padding:"24px 0"}}><div style={{fontSize:52,marginBottom:10}}>✅</div><div style={{fontWeight:900,fontSize:16,color:"#16a34a"}}>Pengajuan Terkirim!</div><div style={{fontSize:12,color:"#aaa",marginTop:4}}>Menunggu persetujuan admin</div></div>
+              ):sheetMode==="pilih"?(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                  {JENIS.map(j=>(
+                    <button key={j.k} onClick={()=>{setSelJenis(j);setSheetMode("form");}} style={{background:j.bg,border:`2px solid ${j.color}30`,borderRadius:14,padding:"18px 10px",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+                      <div style={{fontSize:28,marginBottom:6}}>{j.icon}</div><div style={{fontWeight:800,fontSize:12,color:j.color}}>{j.k}</div><div style={{fontSize:9,color:"#aaa",marginTop:3}}>{j.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              ):(
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,background:selJenis?.bg,marginBottom:16,border:`1px solid ${selJenis?.color}30`}}>
+                    <span style={{fontSize:22}}>{selJenis?.icon}</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:13,color:selJenis?.color}}>{selJenis?.k}</div></div>
+                    <button onClick={()=>setSheetMode("pilih")} style={{background:"none",border:"none",color:"#aaa",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Ganti</button>
+                  </div>
+                  <div style={{marginBottom:12}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>Tanggal *</label><input type="date" value={formAjuan.tgl} onChange={e=>setFormAjuan(p=>({...p,tgl:e.target.value}))} style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
+                  {selJenis?.k==="Lembur"&&<div style={{marginBottom:12}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>Jam Lembur</label><input type="text" placeholder="18:00 - 21:00" value={formAjuan.jam} onChange={e=>setFormAjuan(p=>({...p,jam:e.target.value}))} style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>}
+                  <div style={{marginBottom:16}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>Keterangan *</label><textarea value={formAjuan.ket} onChange={e=>setFormAjuan(p=>({...p,ket:e.target.value}))} rows={3} placeholder="Jelaskan alasan..." style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",resize:"none"}}/></div>
+                  <button onClick={submitIzin} disabled={!formAjuan.tgl||!formAjuan.ket.trim()} style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:!formAjuan.tgl||!formAjuan.ket.trim()?"#ccc":`linear-gradient(135deg,${selJenis?.color},${selJenis?.color}cc)`,color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>📤 Kirim Pengajuan {selJenis?.k}</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom tab bar */}
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"#fff",borderTop:"1px solid #e0f5f1",display:"flex",zIndex:100,boxShadow:"0 -4px 20px rgba(0,0,0,.08)"}}>
+        {TABS_P.map(t=>(
+          <button key={t.k} onClick={()=>setTab(t.k)} style={{flex:1,padding:"8px 4px 6px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:2,borderTop:`3px solid ${tab===t.k?"#0d9488":"transparent"}`,transition:"all .15s"}}>
+            <span style={{fontSize:20,lineHeight:1}}>{t.icon}</span>
+            <span style={{fontSize:9,fontWeight:700,color:tab===t.k?"#0d9488":"#94a3b8"}}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================================
+// ADMIN PORTAL PAGE — kelola misi, note, shift, review izin & absensi
+// ==============================================================================
+function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, izinMap, setIzinMap, onBack, notify }) {
+  const [tab,setTab]         = useState("overview"); // overview|misi|izin|absensi|settings
+  const [editNote,setEditNote]=useState(false);
+  const [draftNote,setDraftNote]=useState(note);
+  const [draftShift,setDraftShift]=useState({...shift});
+  const [showMisiForm,setShowMisiForm]=useState(false);
+  const [misiForm,setMisiForm]=useState({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});
+  const [editMisiId,setEditMisiId]=useState(null);
+
+  const karyawanList = Object.values(users||{}).filter(u=>u.role==="karyawan");
+  const allIzin = Object.entries(izinMap||{}).flatMap(([uid,list])=>list.map(i=>({...i,userId:uid,userName:i.userName||users?.[uid]?.nama||uid})));
+  const pendingIzin = allIzin.filter(i=>i.status==="menunggu");
+
+  const saveNote = async () => {
+    setNote(draftNote); setEditNote(false);
+    await supabase.from('portal_settings').upsert({key:"note",value:draftNote},{onConflict:"key"}).catch(()=>{});
+    notify("Note berhasil disimpan","ok");
+  };
+
+  const saveShift = async () => {
+    setShift(draftShift);
+    await supabase.from('portal_settings').upsert({key:"shift",value:JSON.stringify(draftShift)},{onConflict:"key"}).catch(()=>{});
+    notify("Jadwal shift disimpan","ok");
+  };
+
+  const saveMisi = async () => {
+    if(!misiForm.judul.trim()) return notify("Isi judul misi!","err");
+    if(editMisiId) {
+      const updated = misi.map(m=>m.id===editMisiId?{...m,...misiForm,poin:+misiForm.poin,target:+misiForm.target}:m);
+      setMisi(updated);
+      await supabase.from('portal_misi').update({...misiForm,poin:+misiForm.poin,target:+misiForm.target}).eq('id',editMisiId).catch(()=>{});
+    } else {
+      const newM={...misiForm,id:Date.now(),poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false};
+      setMisi(p=>[...p,newM]);
+      await supabase.from('portal_misi').insert({...misiForm,poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false}).catch(()=>{});
+    }
+    notify("Misi disimpan ✓","ok"); setShowMisiForm(false); setEditMisiId(null); setMisiForm({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});
+  };
+
+  const hapusMisi = async (id) => {
+    if(!window.confirm("Hapus misi ini?")) return;
+    setMisi(p=>p.filter(m=>m.id!==id));
+    await supabase.from('portal_misi').delete().eq('id',id).catch(()=>{});
+    notify("Misi dihapus","ok");
+  };
+
+  const responIzin = async (userId, izinId, status) => {
+    setIzinMap(prev=>{
+      const list=(prev[userId]||[]).map(i=>i.id===izinId?{...i,status}:i);
+      return {...prev,[userId]:list};
+    });
+    await supabase.from('portal_izin').update({status}).eq('id',izinId).catch(()=>{});
+    notify(status==="disetujui"?"✓ Izin disetujui":"Izin ditolak",status==="disetujui"?"ok":"err");
+  };
+
+  const TABS_A=[{k:"overview",icon:"📊",l:"Overview"},{k:"misi",icon:"🎯",l:"Misi"},{k:"izin",icon:"📝",l:"Izin"},{k:"absensi",icon:"📅",l:"Absensi"},{k:"settings",icon:"⚙️",l:"Setting"}];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.3)"}}>
+        <div style={{padding:"0 20px",minHeight:52,display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
+          <div style={{flex:1}}><div style={{fontWeight:900,fontSize:15,color:"#fff"}}>👷 Portal Karyawan</div><div style={{fontSize:10,color:"rgba(255,255,255,.6)"}}>Kelola misi, absensi & izin</div></div>
+          <div style={{background:"rgba(255,255,255,.15)",borderRadius:20,padding:"4px 12px",border:"1px solid rgba(255,255,255,.2)"}}><span style={{fontSize:11,fontWeight:800,color:"#fcd34d"}}>{pendingIzin.length} izin pending</span></div>
+        </div>
+        <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)",overflowX:"auto"}}>
+          {TABS_A.map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 14px",border:"none",borderBottom:`3px solid ${tab===t.k?"#fff":"transparent"}`,background:"transparent",color:tab===t.k?"#fff":"rgba(255,255,255,.5)",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+              {t.icon} {t.l}
+              {t.k==="izin"&&pendingIzin.length>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900}}>{pendingIzin.length}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"16px 20px",maxWidth:1000,margin:"0 auto"}}>
+
+      {/* ═══ OVERVIEW ═══ */}
+      {tab==="overview"&&(
+      <div>
+        {/* KPI cards */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:18}}>
+          {[
+            {icon:"👷",l:"Total Karyawan",  v:karyawanList.length,  c:"#0d9488", bg:"#e0faf5"},
+            {icon:"📅",l:"Absensi Hari Ini",v:Object.values(absensiMap||{}).filter(list=>list.some(a=>a.tgl===today()&&a.masuk)).length, c:"#16a34a",bg:"#f0fdf4"},
+            {icon:"⏳",l:"Izin Pending",    v:pendingIzin.length,   c:"#d97706", bg:"#fffbeb"},
+            {icon:"🎯",l:"Total Misi",      v:misi.length,          c:"#7c3aed", bg:"#f5f3ff"},
+          ].map(k=>(
+            <div key={k.l} style={{background:k.bg,borderRadius:14,padding:"16px",border:`1px solid ${k.c}20`}}>
+              <div style={{fontSize:24,marginBottom:6}}>{k.icon}</div>
+              <div style={{fontWeight:900,fontSize:28,color:k.c}}>{k.v}</div>
+              <div style={{fontSize:11,fontWeight:700,color:k.c,opacity:.7,marginTop:2}}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Absensi hari ini per karyawan */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:12}}>📅 Status Absensi Hari Ini</div>
+          {karyawanList.length===0?<div style={{color:"#aaa",fontSize:12}}>Belum ada karyawan</div>:(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {karyawanList.map(k=>{
+                const todayAbsen=(absensiMap[k.id]||[]).find(a=>a.tgl===today());
+                const outletName=outlets.find(o=>o.id===k.outletId)?.nama||"--";
+                return (
+                  <div key={k.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:11,background:"#f8fffe",border:"1px solid #e0f5f1"}}>
+                    <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#fff",flexShrink:0}}>{k.nama?.slice(0,2).toUpperCase()}</div>
+                    <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13}}>{k.nama}</div><div style={{fontSize:10,color:"#aaa"}}>{outletName}</div></div>
+                    {todayAbsen?(
+                      <div style={{textAlign:"right"}}>
+                        {todayAbsen.masuk&&<div style={{fontSize:11,fontWeight:700,color:"#0d9488"}}>🕐 {todayAbsen.masuk}{todayAbsen.pulang?" → 🕔 "+todayAbsen.pulang:""}</div>}
+                        <span style={{fontSize:9,background:todayAbsen.pulang?"#e0faf5":"#fffbeb",color:todayAbsen.pulang?"#0d9488":"#d97706",padding:"2px 8px",borderRadius:20,fontWeight:700}}>{todayAbsen.pulang?"✓ Lengkap":"Belum Pulang"}</span>
+                      </div>
+                    ):<span style={{fontSize:9,background:"#fff5f5",color:"#dc2626",padding:"3px 10px",borderRadius:20,fontWeight:800}}>✗ Belum Absen</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Izin pending */}
+        {pendingIzin.length>0&&(
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #fcd34d",padding:"14px 16px"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:12}}>⏳ Izin Menunggu Persetujuan ({pendingIzin.length})</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {pendingIzin.slice(0,3).map(i=>(
+                <div key={i.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:11,background:"#fffbeb",border:"1px solid #fcd34d"}}>
+                  <div style={{flex:1}}><div style={{fontWeight:700,fontSize:12}}>{i.userName} — {i.jenis}</div><div style={{fontSize:10,color:"#aaa"}}>{i.tgl} · {i.ket}</div></div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>responIzin(i.userId,i.id,"disetujui")} style={{padding:"5px 12px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✓ Setuju</button>
+                    <button onClick={()=>responIzin(i.userId,i.id,"ditolak")} style={{padding:"5px 12px",borderRadius:8,border:"none",background:"#dc2626",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✗ Tolak</button>
+                  </div>
+                </div>
+              ))}
+              {pendingIzin.length>3&&<button onClick={()=>setTab("izin")} style={{alignSelf:"center",background:"none",border:"none",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Lihat semua {pendingIzin.length} →</button>}
+            </div>
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* ═══ MISI ═══ */}
+      {tab==="misi"&&(
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Kelola Misi</div>
+          <button onClick={()=>{setShowMisiForm(true);setEditMisiId(null);setMisiForm({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});}}
+            style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"8px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Tambah Misi</button>
+        </div>
+
+        {/* Form tambah/edit misi */}
+        {showMisiForm&&(
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #0d9488",padding:"16px",marginBottom:14}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:12}}>{editMisiId?"✏️ Edit Misi":"➕ Misi Baru"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+              <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Judul Misi *</label><input value={misiForm.judul} onChange={e=>setMisiForm(p=>({...p,judul:e.target.value}))} placeholder="Contoh: Transaksi 15/hari" style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
+              <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Icon</label><input value={misiForm.icon} onChange={e=>setMisiForm(p=>({...p,icon:e.target.value}))} placeholder="🎯" style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:20,outline:"none",fontFamily:"inherit",textAlign:"center"}}/></div>
+              <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Poin</label><input type="number" value={misiForm.poin} onChange={e=>setMisiForm(p=>({...p,poin:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
+              <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Target</label><input type="number" value={misiForm.target} onChange={e=>setMisiForm(p=>({...p,target:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
+              <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Satuan</label><input value={misiForm.satuan} onChange={e=>setMisiForm(p=>({...p,satuan:e.target.value}))} placeholder="hari/trx/ulasan" style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Deskripsi</label><input value={misiForm.desc} onChange={e=>setMisiForm(p=>({...p,desc:e.target.value}))} placeholder="Jelaskan detail misi..." style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setShowMisiForm(false);setEditMisiId(null);}} style={{flex:1,padding:"9px",borderRadius:9,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+              <button onClick={saveMisi} style={{flex:2,padding:"9px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Misi</button>
+            </div>
+          </div>
+        )}
+
+        {misi.length===0?<div style={{textAlign:"center",padding:40,color:"#aaa"}}><div style={{fontSize:40,marginBottom:8}}>🎯</div><div style={{fontWeight:700}}>Belum ada misi</div><div style={{fontSize:11,marginTop:4}}>Tambah misi baru untuk karyawan</div></div>:(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {misi.map(m=>(
+              <div key={m.id} style={{background:"#fff",borderRadius:14,padding:"14px 16px",border:`2px solid ${m.selesai?"#16a34a":"#e0f5f1"}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+                <div style={{width:44,height:44,borderRadius:12,background:m.selesai?"#f0fdf4":"#f0faf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0,border:`2px solid ${m.selesai?"#86efac":"#e0f5f1"}`}}>{m.icon||"🎯"}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{m.judul}</div>
+                  <div style={{fontSize:10,color:"#aaa",marginTop:2}}>{m.desc}</div>
+                  <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
+                    <span style={{background:"#fef9c3",color:"#92400e",fontSize:10,fontWeight:800,padding:"2px 10px",borderRadius:20}}>🏅 {m.poin} poin</span>
+                    <span style={{background:"#e0faf5",color:"#0d9488",fontSize:10,fontWeight:700,padding:"2px 10px",borderRadius:20}}>Target: {m.target} {m.satuan}</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={()=>{setEditMisiId(m.id);setMisiForm({icon:m.icon||"🎯",judul:m.judul,desc:m.desc||"",poin:m.poin,target:m.target,satuan:m.satuan});setShowMisiForm(true);}} style={{padding:"5px 10px",borderRadius:8,border:"2px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Edit</button>
+                  <button onClick={()=>hapusMisi(m.id)} style={{padding:"5px 10px",borderRadius:8,border:"2px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* ═══ IZIN ═══ */}
+      {tab==="izin"&&(
+      <div>
+        <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a",marginBottom:14}}>📝 Manajemen Izin & Lembur</div>
+        {allIzin.length===0?<div style={{textAlign:"center",padding:40,color:"#aaa"}}><div style={{fontSize:40,marginBottom:8}}>📝</div><div>Belum ada pengajuan izin</div></div>:(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {["menunggu","disetujui","ditolak"].map(status=>{
+              const list=allIzin.filter(i=>i.status===status);
+              if(list.length===0) return null;
+              const sc={menunggu:{c:"#d97706",bg:"#fffbeb",l:"⏳ Menunggu"},disetujui:{c:"#16a34a",bg:"#f0fdf4",l:"✓ Disetujui"},ditolak:{c:"#dc2626",bg:"#fff5f5",l:"✗ Ditolak"}};
+              const s=sc[status];
+              return (
+                <div key={status}>
+                  <div style={{fontWeight:800,fontSize:12,color:s.c,marginBottom:8,display:"flex",alignItems:"center",gap:6}}><span style={{background:s.bg,padding:"3px 10px",borderRadius:20,border:`1px solid ${s.c}30`}}>{s.l} ({list.length})</span></div>
+                  {list.map(i=>(
+                    <div key={i.id} style={{background:"#fff",borderRadius:13,padding:"12px 14px",marginBottom:8,border:`1px solid ${s.c}20`,display:"flex",gap:12,alignItems:"center"}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:13,color:"#fff",flexShrink:0}}>{i.userName?.slice(0,2).toUpperCase()}</div>
+                      <div style={{flex:1}}><div style={{fontWeight:700,fontSize:12}}>{i.userName} — <span style={{color:s.c}}>{i.jenis}</span></div><div style={{fontSize:10,color:"#aaa"}}>{i.tgl}{i.jam?" · "+i.jam:""}</div><div style={{fontSize:10,color:"#555",marginTop:2}}>{i.ket}</div></div>
+                      {status==="menunggu"&&(
+                        <div style={{display:"flex",gap:6,flexShrink:0}}>
+                          <button onClick={()=>responIzin(i.userId,i.id,"disetujui")} style={{padding:"6px 12px",borderRadius:9,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✓</button>
+                          <button onClick={()=>responIzin(i.userId,i.id,"ditolak")} style={{padding:"6px 12px",borderRadius:9,border:"none",background:"#dc2626",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✗</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* ═══ ABSENSI ═══ */}
+      {tab==="absensi"&&(
+      <div>
+        <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a",marginBottom:14}}>📅 Rekap Absensi Semua Karyawan</div>
+        {karyawanList.length===0?<div style={{textAlign:"center",padding:40,color:"#aaa"}}>Belum ada karyawan</div>:(
+          karyawanList.map(k=>{
+            const absList=absensiMap[k.id]||[];
+            const hadirN=absList.filter(a=>a.masuk&&a.masuk!=="--").length;
+            const outletN=outlets.find(o=>o.id===k.outletId)?.nama||"--";
+            return (
+              <div key={k.id} style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",marginBottom:12,overflow:"hidden"}}>
+                <div style={{padding:"12px 16px",background:"linear-gradient(90deg,#e0faf5,#f0fdfb)",borderBottom:"1px solid #b2f5ea",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#fff",flexShrink:0}}>{k.nama?.slice(0,2).toUpperCase()}</div>
+                  <div style={{flex:1}}><div style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>{k.nama}</div><div style={{fontSize:10,color:"#aaa"}}>{outletN}</div></div>
+                  <div style={{display:"flex",gap:7}}>
+                    <span style={{background:"#e0faf5",color:"#0d9488",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:20}}>{hadirN} hadir</span>
+                    <span style={{background:"#fffbeb",color:"#d97706",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>{(izinMap[k.id]||[]).filter(i=>i.status==="disetujui").length} izin</span>
+                  </div>
+                </div>
+                {absList.length===0?<div style={{textAlign:"center",padding:16,color:"#aaa",fontSize:11}}>Belum ada data absensi</div>:(
+                  absList.slice(0,5).map((a,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 16px",borderTop:"1px solid #f0faf8"}}>
+                      <div style={{width:36,textAlign:"center",flexShrink:0}}><div style={{fontWeight:700,fontSize:10}}>{a.tgl}</div></div>
+                      <div style={{flex:1,display:"flex",gap:6,alignItems:"center"}}>
+                        {a.masuk?<><span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕐{a.masuk}</span><span style={{fontSize:9,color:"#ccc"}}>→</span><span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕔{a.pulang||"--"}</span></>:<span style={{fontSize:10,color:"#aaa"}}>Izin</span>}
+                      </div>
+                      {a.foto_masuk&&<img src={a.foto_masuk} alt="" style={{width:32,height:32,borderRadius:8,objectFit:"cover"}}/>}
+                      <span style={{fontSize:9,fontWeight:800,background:a.masuk?"#f0fdf4":"#fffbeb",color:a.masuk?"#16a34a":"#d97706",padding:"2px 8px",borderRadius:20}}>{a.masuk?"✓":"Izin"}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+      )}
+
+      {/* ═══ SETTINGS ═══ */}
+      {tab==="settings"&&(
+      <div>
+        <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a",marginBottom:14}}>⚙️ Pengaturan Portal</div>
+
+        {/* Note/Motivasi */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>📌 Note / Motivasi untuk Karyawan</div>
+            <button onClick={()=>setEditNote(!editNote)} style={{padding:"5px 12px",borderRadius:8,border:"2px solid #e0f5f1",background:editNote?"#e0faf5":"#fff",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{editNote?"Batal":"✏️ Edit"}</button>
+          </div>
+          {editNote?(
+            <div>
+              <textarea value={draftNote} onChange={e=>setDraftNote(e.target.value)} rows={4} style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",resize:"none",marginBottom:10}}/>
+              <button onClick={saveNote} style={{width:"100%",padding:"9px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Note</button>
+            </div>
+          ):(
+            <div style={{background:"#fffbeb",borderRadius:10,padding:"12px",fontSize:12,color:"#78350f",lineHeight:1.6,border:"1px solid #fcd34d"}}>{note||"Belum ada note"}</div>
+          )}
+        </div>
+
+        {/* Jadwal shift */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:12}}>⏰ Jadwal Shift Karyawan</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+            <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Masuk</label><input type="time" value={draftShift.masuk} onChange={e=>setDraftShift(p=>({...p,masuk:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
+            <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Pulang</label><input type="time" value={draftShift.pulang} onChange={e=>setDraftShift(p=>({...p,pulang:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
+            <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Total Jam/Hari</label><input type="number" value={draftShift.totalJam} onChange={e=>setDraftShift(p=>({...p,totalJam:+e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
+          </div>
+          <button onClick={saveShift} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Jadwal Shift</button>
+        </div>
+      </div>
+      )}
+
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // -- Session: ambil dari localStorage agar tidak login ulang --------------
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
 
   const [user,        setUserState]   = useState(savedUser);
-  const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":"menu");
+  const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":savedUser?.role==="karyawan"?"portal":"menu");
 
   // PWA dihandle di index.html
   const [products,    setProductsState] = useState([]);
@@ -10110,6 +10801,13 @@ export default function App() {
   const [connStatus,     setConnStatus]      = useState("online");  // online|offline|reconnecting
   const [offlineQueue,   setOfflineQueue]    = useState([]);  // transaksi antrian saat offline
   const [lastPing,       setLastPing]        = useState(null);
+
+  // -- Portal Karyawan (dikelola admin, dibaca karyawan) --
+  const [portalMisi,    setPortalMisi]    = useState([]);
+  const [portalNote,    setPortalNote]    = useState("💪 Semangat pagi! Berikan pelayanan terbaik untuk pelanggan kita. — Pimpinan");
+  const [portalShift,   setPortalShift]   = useState({masuk:"08:00",pulang:"17:00",totalJam:9});
+  const [portalAbsensi, setPortalAbsensi] = useState({});
+  const [portalIzin,    setPortalIzin]    = useState({});
 
   // Simpan user ke localStorage setiap kali berubah
   const setUser = (u) => {
@@ -10372,6 +11070,28 @@ export default function App() {
         const saldoBankList= await dbSaldoBank.getSaldoBankApps().catch(()=>[]);
         const prodOrd      = await dbProductOrder.getOrder().catch(()=>[]);
         const aktifMap     = await dbAktifProduk.getAllAktif().catch(()=>({}));
+
+        // Load portal karyawan data
+        const [portalMisiRows, portalNoteRow, portalShiftRow, portalAbsensiRows, portalIzinRows] = await Promise.all([
+          supabase.from('portal_misi').select('*').order('created_at').catch(()=>({data:[]})),
+          supabase.from('portal_settings').select('*').eq('key','note').single().catch(()=>({data:null})),
+          supabase.from('portal_settings').select('*').eq('key','shift').single().catch(()=>({data:null})),
+          supabase.from('portal_absensi').select('*').order('tgl',{ascending:false}).catch(()=>({data:[]})),
+          supabase.from('portal_izin').select('*').order('created_at',{ascending:false}).catch(()=>({data:[]})),
+        ]);
+        if(portalMisiRows.data?.length) setPortalMisi(portalMisiRows.data);
+        if(portalNoteRow.data?.value)   setPortalNote(portalNoteRow.data.value);
+        if(portalShiftRow.data?.value)  try{ setPortalShift(JSON.parse(portalShiftRow.data.value)); }catch{}
+        if(portalAbsensiRows.data?.length){
+          const m={};
+          portalAbsensiRows.data.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
+          setPortalAbsensi(m);
+        }
+        if(portalIzinRows.data?.length){
+          const m={};
+          portalIzinRows.data.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
+          setPortalIzin(m);
+        }
 
         clearTimeout(timeout);
 
@@ -10704,8 +11424,8 @@ export default function App() {
       <style>{css+`@keyframes fadeUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}`}</style>
       <LoginPage users={users} onLogin={u=>{
         setUser(u);
-        // Monitor role langsung ke halaman monitor
-        setPage(u.role==="monitor"?"monitor":"menu");
+        // Monitor role langsung ke halaman monitor, karyawan ke portal
+        setPage(u.role==="monitor"?"monitor":u.role==="karyawan"?"portal":"menu");
       }}/>
     </>
   );
@@ -10729,6 +11449,8 @@ export default function App() {
       </div>
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
+      {page==="portal"    && user?.role==="karyawan" && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} notify={notify}/>}
+      {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
