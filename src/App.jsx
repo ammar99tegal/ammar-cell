@@ -491,16 +491,18 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
         // Hapus mapping outlet lama
-        await supabase.from('user_outlets').delete().eq('username', editUser).catch(()=>{});
+        try{ await supabase.from('user_outlets').delete().eq('username', editUser); }catch{}
       }
       await db.upsertUser(uForm.username.toLowerCase(), userData);
 
-      // Simpan outletIds ke tabel user_outlets (tabel baru yang kita kontrol)
+      // Simpan outletIds ke tabel user_outlets
       if(outletIds.length>0) {
-        await supabase.from('user_outlets').delete().eq('username', uForm.username.toLowerCase()).catch(()=>{});
-        await supabase.from('user_outlets').insert(
-          outletIds.map(oid=>({username:uForm.username.toLowerCase(), outlet_id:oid, role:uForm.role}))
-        ).catch(e=>console.warn('user_outlets insert:',e));
+        try{
+          await supabase.from('user_outlets').delete().eq('username', uForm.username.toLowerCase());
+          await supabase.from('user_outlets').insert(
+            outletIds.map(oid=>({username:uForm.username.toLowerCase(), outlet_id:oid, role:uForm.role}))
+          );
+        }catch(e){ console.warn('user_outlets save:',e); }
       }
 
       try{
