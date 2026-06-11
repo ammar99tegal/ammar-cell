@@ -491,41 +491,18 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
       }
-
-      // 2. Simpan via db.upsertUser
       await db.upsertUser(uForm.username.toLowerCase(), userData);
-
-      // 3. Coba update langsung via supabase (untuk kolom outlet_ids jika ada)
-      try {
-        await supabase.from('users').upsert({
-          username: uForm.username.toLowerCase(),
-          pass,
-          nama:     uForm.nama.trim(),
-          role:     uForm.role,
-          outlet_id:  outletId,
-          outlet_ids: JSON.stringify(outletIds),
-          data: JSON.stringify(userData), // beberapa implementasi simpan semua di kolom data
-        },{onConflict:'username'});
-      } catch(e2){ console.warn('[saveUser] direct upsert:',e2?.message||e2); }
-
-      // 4. Update localStorage jika user yang sedang login
       try{
         const saved=JSON.parse(localStorage.getItem('ammar_user')||'null');
         if(saved&&saved.username===uForm.username.toLowerCase()){
           localStorage.setItem('ammar_user',JSON.stringify({...saved,...userData,username:uForm.username.toLowerCase()}));
         }
       }catch{}
-
       notify(editUser?"User diperbarui ✓":"User ditambahkan ✓","ok");
       setShowUserForm(false);
     } catch(e) {
       notify("Gagal simpan user: "+e.message,"err");
-      // Rollback state lokal jika gagal
-      setUsers(prev=>{
-        const n={...prev};
-        if(editUser) n[editUser]=users[editUser]; else delete n[uForm.username.toLowerCase()];
-        return n;
-      });
+      setUsers(prev=>{ const n={...prev}; if(editUser) n[editUser]=users[editUser]; else delete n[uForm.username.toLowerCase()]; return n; });
     }
   };
   const deleteUser = async k=>{
