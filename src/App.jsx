@@ -490,8 +490,19 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
     try {
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
+        // Hapus mapping outlet lama
+        await supabase.from('user_outlets').delete().eq('username', editUser).catch(()=>{});
       }
       await db.upsertUser(uForm.username.toLowerCase(), userData);
+
+      // Simpan outletIds ke tabel user_outlets (tabel baru yang kita kontrol)
+      if(outletIds.length>0) {
+        await supabase.from('user_outlets').delete().eq('username', uForm.username.toLowerCase()).catch(()=>{});
+        await supabase.from('user_outlets').insert(
+          outletIds.map(oid=>({username:uForm.username.toLowerCase(), outlet_id:oid, role:uForm.role}))
+        ).catch(e=>console.warn('user_outlets insert:',e));
+      }
+
       try{
         const saved=JSON.parse(localStorage.getItem('ammar_user')||'null');
         if(saved&&saved.username===uForm.username.toLowerCase()){
@@ -10984,8 +10995,25 @@ function useGpsMonitor({ user, outlets, enabled, onViolation }) {
 // HALAMAN PILIH AKSES — full mobile portrait, support multi-outlet
 // ==============================================================================
 function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
-  const userOutletIds = [...new Set([...(user.outletIds||[]),...(user.outletId?[user.outletId]:[])])].filter(Boolean);
-  const userOutlets   = userOutletIds.length>0 ? outlets.filter(o=>userOutletIds.includes(o.id)) : [];
+  // Parse outletIds dari semua kemungkinan format
+  const parseIds = (u) => {
+    const ids = new Set();
+    // Dari outletIds array
+    if(Array.isArray(u.outletIds)) u.outletIds.forEach(id=>ids.add(id));
+    // Dari outletIds string JSON
+    else if(typeof u.outletIds==="string"&&u.outletIds.startsWith("[")) {
+      try{ JSON.parse(u.outletIds).forEach(id=>ids.add(id)); }catch{}
+    }
+    // Dari outletId tunggal
+    if(u.outletId) ids.add(u.outletId);
+    if(u.outlet_id) ids.add(u.outlet_id);
+    return [...ids].filter(Boolean);
+  };
+
+  const userOutletIds = parseIds(user);
+  const userOutlets   = userOutletIds.length>0
+    ? outlets.filter(o=>userOutletIds.includes(o.id))
+    : (user.outletId?outlets.filter(o=>o.id===user.outletId):[]);
   const multiOutlet   = userOutlets.length>1;
 
   const [step,         setStep]       = useState(multiOutlet?"outlet":"akses");
@@ -11537,7 +11565,19 @@ export default function App() {
         total:t.total, cash:t.cash, kembalian:t.kembalian,
         items:t.items||[],
       })));
-      setUsersState(parseUserOutletIds(usrs));
+      const parsed=parseUserOutletIds(usrs);
+      setUsersState(parsed);
+      // Merge user_outlets async (fire-and-forget)
+      supabase.from('user_outlets').select('*').then(({data:uoRows})=>{
+        if(!uoRows?.length) return;
+        const mp={};
+        uoRows.forEach(r=>{if(!mp[r.username])mp[r.username]=[];mp[r.username].push(r.outlet_id);});
+        setUsersState(prev=>{
+          const n={...prev};
+          Object.entries(mp).forEach(([u,ids])=>{if(n[u])n[u]={...n[u],outletIds:ids,outletId:ids[0]};});
+          return n;
+        });
+      }).catch(()=>{});
     } catch(e) { console.error("Reload gagal:",e); }
   };
 
@@ -11562,7 +11602,25 @@ export default function App() {
         const prodOrd      = await dbProductOrder.getOrder().catch(()=>[]);
         const aktifMap     = await dbAktifProduk.getAllAktif().catch(()=>({}));
 
-        // Load portal karyawan data
+        // Load user_outlets mapping (untuk multi-outlet assignment)
+        try {
+          const {data:userOutletsRows} = await supabase.from('user_outlets').select('*');
+          if(userOutletsRows?.length>0){
+            // Merge outletIds ke users
+            const mapping = {};
+            userOutletsRows.forEach(r=>{
+              if(!mapping[r.username]) mapping[r.username]=[];
+              mapping[r.username].push(r.outlet_id);
+            });
+            setUsersState(prev=>{
+              const n={...prev};
+              Object.entries(mapping).forEach(([uname,ids])=>{
+                if(n[uname]) n[uname]={...n[uname],outletIds:ids,outletId:ids[0]};
+              });
+              return n;
+            });
+          }
+        } catch(e){ console.warn('user_outlets load:',e); }
         try {
           const { data: portalMisiRows } = await supabase.from('portal_misi').select('*').order('created_at');
           if(portalMisiRows?.length) setPortalMisi(portalMisiRows);
@@ -11608,10 +11666,21 @@ export default function App() {
           total:t.total, cash:t.cash, kembalian:t.kembalian,
           items:t.items||[],
         })));
-      setUsersState(parseUserOutletIds(usrs));
-      setLoading(false);
+        const parsed=parseUserOutletIds(usrs);
+        setUsersState(parsed);
+        // Merge user_outlets async (fire-and-forget)
+        supabase.from('user_outlets').select('*').then(({data:uoRows})=>{
+          if(!uoRows?.length) return;
+          const mp={};
+          uoRows.forEach(r=>{if(!mp[r.username])mp[r.username]=[];mp[r.username].push(r.outlet_id);});
+          setUsersState(prev=>{
+            const n={...prev};
+            Object.entries(mp).forEach(([u,ids])=>{if(n[u])n[u]={...n[u],outletIds:ids,outletId:ids[0]};});
+            return n;
+          });
+        }).catch(()=>{});
+        setLoading(false);
       } catch(e) {
-        clearTimeout(timeout);
         console.error('Load error:', e);
         setDbError("Tidak bisa terhubung ke database. Cek koneksi internet.");
         setLoading(false);
@@ -11703,7 +11772,16 @@ export default function App() {
         { event: '*', schema: 'public', table: 'users' },
         async () => {
           const usrs = await db.getUsers().catch(()=>null);
-          if (usrs) setUsersState(parseUserOutletIds(usrs));
+          if(usrs){
+            const parsed=parseUserOutletIds(usrs);
+            setUsersState(parsed);
+            supabase.from('user_outlets').select('*').then(({data:uoRows})=>{
+              if(!uoRows?.length) return;
+              const mp={};
+              uoRows.forEach(r=>{if(!mp[r.username])mp[r.username]=[];mp[r.username].push(r.outlet_id);});
+              setUsersState(prev=>{const n={...prev};Object.entries(mp).forEach(([u,ids])=>{if(n[u])n[u]={...n[u],outletIds:ids,outletId:ids[0]};});return n;});
+            }).catch(()=>{});
+          }
         }
       )
       .subscribe();
