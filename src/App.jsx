@@ -10129,13 +10129,13 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
       const rec={...entry,masuk:jam,pulang:null};
       setAbsenM(rec);
       setAbsensiMap(prev=>({...prev,[user.id]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
-      supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,masuk:jam,foto_masuk:foto,lokasi:lokasiStr},{onConflict:'user_id,tgl'}).catch(()=>{});
+      (async()=>{ try{ await supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,masuk:jam,foto_masuk:foto,lokasi:lokasiStr},{onConflict:'user_id,tgl'}); }catch{} })();
     } else {
       const existing=(absensiMap[user.id]||[]).find(a=>a.tgl===tglStr)||{};
       const rec={...existing,tgl:tglStr,pulang:jam,foto_pulang:foto};
       setAbsenP(rec);
       setAbsensiMap(prev=>({...prev,[user.id]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
-      supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,pulang:jam,foto_pulang:foto},{onConflict:'user_id,tgl'}).catch(()=>{});
+      (async()=>{ try{ await supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,pulang:jam,foto_pulang:foto},{onConflict:'user_id,tgl'}); }catch{} })();
     }
     stream?.getTracks().forEach(t=>t.stop()); setStream(null); setKamMode(null);
   };
@@ -10170,7 +10170,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
     const tglFmt=new Date(formAjuan.tgl).toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit",year:"numeric"});
     const entry={id:Date.now(),tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu",userId:user.id,userName:user.nama};
     setIzinMap(prev=>({...prev,[user.id]:[entry,...(prev[user.id]||[])]}));
-    supabase.from('portal_izin').insert({user_id:user.id,user_nama:user.nama,tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu"}).catch(()=>{});
+    (async()=>{ try{ await supabase.from('portal_izin').insert({user_id:user.id,user_nama:user.nama,tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu"}); }catch{} })();
     setSubmitOk(true);
     setTimeout(()=>{setSubmitOk(false);setShowSheet(false);setSheetMode("pilih");setSelJenis(null);setFormAjuan({tgl:"",jam:"",ket:""});},1800);
   };
@@ -10486,13 +10486,13 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
 
   const saveNote = async () => {
     setNote(draftNote); setEditNote(false);
-    await supabase.from('portal_settings').upsert({key:"note",value:draftNote},{onConflict:"key"}).catch(()=>{});
+    try{ await supabase.from('portal_settings').upsert({key:"note",value:draftNote},{onConflict:"key"}); }catch(e){ console.warn('save note:',e); }
     notify("Note berhasil disimpan","ok");
   };
 
   const saveShift = async () => {
     setShift(draftShift);
-    await supabase.from('portal_settings').upsert({key:"shift",value:JSON.stringify(draftShift)},{onConflict:"key"}).catch(()=>{});
+    try{ await supabase.from('portal_settings').upsert({key:"shift",value:JSON.stringify(draftShift)},{onConflict:"key"}); }catch(e){ console.warn('save shift:',e); }
     notify("Jadwal shift disimpan","ok");
   };
 
@@ -10501,11 +10501,11 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
     if(editMisiId) {
       const updated = misi.map(m=>m.id===editMisiId?{...m,...misiForm,poin:+misiForm.poin,target:+misiForm.target}:m);
       setMisi(updated);
-      await supabase.from('portal_misi').update({...misiForm,poin:+misiForm.poin,target:+misiForm.target}).eq('id',editMisiId).catch(()=>{});
+      try{ await supabase.from('portal_misi').update({...misiForm,poin:+misiForm.poin,target:+misiForm.target}).eq('id',editMisiId); }catch(e){ console.warn('misi update:',e); }
     } else {
       const newM={...misiForm,id:Date.now(),poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false};
       setMisi(p=>[...p,newM]);
-      await supabase.from('portal_misi').insert({...misiForm,poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false}).catch(()=>{});
+      try{ await supabase.from('portal_misi').insert({...misiForm,poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false}); }catch(e){ console.warn('misi insert:',e); }
     }
     notify("Misi disimpan ✓","ok"); setShowMisiForm(false); setEditMisiId(null); setMisiForm({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});
   };
@@ -10513,7 +10513,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   const hapusMisi = async (id) => {
     if(!window.confirm("Hapus misi ini?")) return;
     setMisi(p=>p.filter(m=>m.id!==id));
-    await supabase.from('portal_misi').delete().eq('id',id).catch(()=>{});
+    try{ await supabase.from('portal_misi').delete().eq('id',id); }catch(e){ console.warn('misi delete:',e); }
     notify("Misi dihapus","ok");
   };
 
@@ -10522,7 +10522,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
       const list=(prev[userId]||[]).map(i=>i.id===izinId?{...i,status}:i);
       return {...prev,[userId]:list};
     });
-    await supabase.from('portal_izin').update({status}).eq('id',izinId).catch(()=>{});
+    try{ await supabase.from('portal_izin').update({status}).eq('id',izinId); }catch(e){ console.warn('izin update:',e); }
     notify(status==="disetujui"?"✓ Izin disetujui":"Izin ditolak",status==="disetujui"?"ok":"err");
   };
 
@@ -11072,26 +11072,34 @@ export default function App() {
         const aktifMap     = await dbAktifProduk.getAllAktif().catch(()=>({}));
 
         // Load portal karyawan data
-        const [portalMisiRows, portalNoteRow, portalShiftRow, portalAbsensiRows, portalIzinRows] = await Promise.all([
-          supabase.from('portal_misi').select('*').order('created_at').catch(()=>({data:[]})),
-          supabase.from('portal_settings').select('*').eq('key','note').single().catch(()=>({data:null})),
-          supabase.from('portal_settings').select('*').eq('key','shift').single().catch(()=>({data:null})),
-          supabase.from('portal_absensi').select('*').order('tgl',{ascending:false}).catch(()=>({data:[]})),
-          supabase.from('portal_izin').select('*').order('created_at',{ascending:false}).catch(()=>({data:[]})),
-        ]);
-        if(portalMisiRows.data?.length) setPortalMisi(portalMisiRows.data);
-        if(portalNoteRow.data?.value)   setPortalNote(portalNoteRow.data.value);
-        if(portalShiftRow.data?.value)  try{ setPortalShift(JSON.parse(portalShiftRow.data.value)); }catch{}
-        if(portalAbsensiRows.data?.length){
-          const m={};
-          portalAbsensiRows.data.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
-          setPortalAbsensi(m);
-        }
-        if(portalIzinRows.data?.length){
-          const m={};
-          portalIzinRows.data.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
-          setPortalIzin(m);
-        }
+        try {
+          const { data: portalMisiRows } = await supabase.from('portal_misi').select('*').order('created_at');
+          if(portalMisiRows?.length) setPortalMisi(portalMisiRows);
+        } catch(e){ console.warn('portal_misi load:',e); }
+        try {
+          const { data: portalNoteRow } = await supabase.from('portal_settings').select('*').eq('key','note').single();
+          if(portalNoteRow?.value) setPortalNote(portalNoteRow.value);
+        } catch(e){ console.warn('portal_note load:',e); }
+        try {
+          const { data: portalShiftRow } = await supabase.from('portal_settings').select('*').eq('key','shift').single();
+          if(portalShiftRow?.value) setPortalShift(JSON.parse(portalShiftRow.value));
+        } catch(e){ console.warn('portal_shift load:',e); }
+        try {
+          const { data: portalAbsensiRows } = await supabase.from('portal_absensi').select('*').order('tgl',{ascending:false});
+          if(portalAbsensiRows?.length){
+            const m={};
+            portalAbsensiRows.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
+            setPortalAbsensi(m);
+          }
+        } catch(e){ console.warn('portal_absensi load:',e); }
+        try {
+          const { data: portalIzinRows } = await supabase.from('portal_izin').select('*').order('created_at',{ascending:false});
+          if(portalIzinRows?.length){
+            const m={};
+            portalIzinRows.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
+            setPortalIzin(m);
+          }
+        } catch(e){ console.warn('portal_izin load:',e); }
 
         clearTimeout(timeout);
 
