@@ -244,15 +244,28 @@ function Field({label,value,onChange,type="text",placeholder="",note,style:sx={}
 // ==============================================================================
 // LOGIN
 // ==============================================================================
-function LoginPage({ users, onLogin }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
+function LoginPage({ users, onLogin, onChangePass }) {
+  const [mode,      setMode]     = useState("login");   // "login" | "ganti"
+  const [username,  setUsername] = useState("");
+  const [password,  setPassword] = useState("");
+  const [showPass,  setShowPass] = useState(false);
+  const [error,     setError]    = useState("");
+  const [loading,   setLoading]  = useState(false);
+  // Ganti password
+  const [gpUser,    setGpUser]   = useState("");
+  const [gpPassLama,setGpLama]   = useState("");
+  const [gpPassBaru,setGpBaru]   = useState("");
+  const [gpPassKonfirm,setGpKonfirm] = useState("");
+  const [gpSuccess, setGpSuccess]= useState(false);
+  const [showGpLama,setShowGpLama]=useState(false);
+  const [showGpBaru,setShowGpBaru]=useState(false);
+
+  // Only angka
+  const onlyAngka = v => v.replace(/[^0-9]/g,"");
 
   const handleLogin = () => {
     if (!username||!password) return setError("Isi username dan password!");
+    if(!/^\d+$/.test(password)) return setError("Password harus angka saja!");
     setLoading(true);
     setTimeout(()=>{
       const user = users[username.toLowerCase()];
@@ -261,35 +274,148 @@ function LoginPage({ users, onLogin }) {
     },600);
   };
 
+  const handleGantiPass = async () => {
+    setError("");
+    if(!gpUser||!gpPassLama||!gpPassBaru||!gpPassKonfirm) return setError("Semua kolom harus diisi!");
+    if(!/^\d+$/.test(gpPassBaru)) return setError("Password baru harus angka saja!");
+    if(gpPassBaru.length < 4) return setError("Password baru minimal 4 digit!");
+    if(gpPassBaru !== gpPassKonfirm) return setError("Konfirmasi password tidak cocok!");
+    const user = users[gpUser.toLowerCase()];
+    if(!user) return setError("Username tidak ditemukan!");
+    if(user.pass !== gpPassLama) return setError("Password lama salah!");
+    setLoading(true);
+    try {
+      if(onChangePass) await onChangePass(gpUser.toLowerCase(), gpPassBaru);
+      setGpSuccess(true);
+      setTimeout(()=>{ setMode("login"); setGpSuccess(false); setGpUser(""); setGpLama(""); setGpBaru(""); setGpKonfirm(""); }, 2000);
+    } catch(e) { setError("Gagal ganti password: "+e.message); }
+    setLoading(false);
+  };
+
+  const PasswordInput = ({value, onChange, show, onToggle, placeholder, hasError}) => (
+    <div style={{position:"relative"}}>
+      <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#0d9488",fontSize:16}}>🔒</span>
+      <input
+        type={show?"text":"password"}
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={value}
+        onChange={e=>{ onChange(onlyAngka(e.target.value)); setError(""); }}
+        onKeyDown={e=>{ if(!/[0-9]|Backspace|Delete|Tab|Enter|ArrowLeft|ArrowRight/.test(e.key)) e.preventDefault(); if(e.key==="Enter"&&mode==="login") handleLogin(); }}
+        placeholder={placeholder}
+        maxLength={12}
+        style={{...inp, paddingLeft:40, paddingRight:42, border:`2px solid ${hasError?"#ff4757":"#b2ede6"}`, letterSpacing:show?"normal":"4px", fontWeight:700}}
+      />
+      <button onClick={onToggle} style={{position:"absolute",right:11,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#aaa",cursor:"pointer",fontSize:16,padding:4}}>
+        {show?"🙈":"👁"}
+      </button>
+    </div>
+  );
+
   return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif"}}>
-      <div style={{background:"#fff",borderRadius:24,padding:"36px 32px",width:360,boxShadow:"0 24px 80px rgba(0,0,0,.25)",animation:"fadeUp .4s ease"}}>
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#064e3b 0%,#0d9488 60%,#14b8a6 100%)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:16,position:"relative",overflow:"hidden"}}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Dekorasi bulat */}
+      <div style={{position:"absolute",width:300,height:300,borderRadius:"50%",background:"rgba(255,255,255,.05)",top:-80,right:-80}}/>
+      <div style={{position:"absolute",width:200,height:200,borderRadius:"50%",background:"rgba(255,255,255,.04)",bottom:-60,left:-60}}/>
+
+      <div style={{background:"#fff",borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:380,boxShadow:"0 24px 80px rgba(0,0,0,.25)",animation:"fadeUp .4s ease",position:"relative"}}>
+
+        {/* Logo */}
         <div style={{textAlign:"center",marginBottom:28}}>
-          <div style={{fontSize:44,marginBottom:8}}>🏪</div>
+          <div style={{width:70,height:70,borderRadius:20,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",boxShadow:"0 8px 24px rgba(13,148,136,.3)"}}>
+            <span style={{fontSize:32}}>🏪</span>
+          </div>
           <div style={{fontWeight:900,fontSize:22,color:"#0d9488"}}>Ammar Cell</div>
           <div style={{fontSize:12,color:"#aaa",fontWeight:600,marginTop:2}}>Sistem Kasir Terpadu</div>
         </div>
-        <div style={{marginBottom:12}}>
-          <label style={{...lbl}}>Username</label>
-          <div style={{position:"relative"}}>
-            <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.User(18)}</span>
-            <input type="text" value={username} onChange={e=>{setUsername(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="Username..."
-              style={{...inp,paddingLeft:38,border:`2px solid ${error?"#ff4757":"#b2ede6"}`}}/>
-          </div>
+
+        {/* Tab login / ganti password */}
+        <div style={{display:"flex",background:"#f0faf8",borderRadius:12,padding:4,marginBottom:24,gap:4}}>
+          {[["login","🔓 Masuk"],["ganti","🔑 Ganti Password"]].map(([m,l])=>(
+            <button key={m} onClick={()=>{setMode(m);setError("");}}
+              style={{flex:1,padding:"8px",borderRadius:9,border:"none",background:mode===m?"#0d9488":"transparent",color:mode===m?"#fff":"#888",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all .2s"}}>
+              {l}
+            </button>
+          ))}
         </div>
-        <div style={{marginBottom:6}}>
-          <label style={{...lbl}}>Password</label>
-          <div style={{position:"relative"}}>
-            <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Lock(18)}</span>
-            <input type={showPass?"text":"password"} value={password} onChange={e=>{setPassword(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="Password..."
-              style={{...inp,paddingLeft:38,paddingRight:38,border:`2px solid ${error?"#ff4757":"#b2ede6"}`}}/>
-            <button onClick={()=>setShowPass(p=>!p)} style={{position:"absolute",right:11,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#aaa",cursor:"pointer"}}>{showPass?Ic.EyeOff():Ic.Eye()}</button>
-          </div>
-        </div>
-        {error&&<div style={{fontSize:12,color:"#ff4757",fontWeight:700,marginBottom:8,padding:"6px 10px",background:"#fff0f0",borderRadius:8}}>⚠ {error}</div>}
-        <button onClick={handleLogin} style={{width:"100%",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:800,fontSize:15,cursor:loading?"not-allowed":"pointer",marginTop:8,boxShadow:loading?"none":"0 4px 16px rgba(13,148,136,.4)"}}>
-          {loading?"⏳ Masuk...":"Masuk →"}
-        </button>
+
+        {/* ── MODE LOGIN ── */}
+        {mode==="login"&&(
+          <>
+            <div style={{marginBottom:12}}>
+              <label style={{...lbl}}>Username</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#0d9488",fontSize:16}}>👤</span>
+                <input type="text" value={username}
+                  onChange={e=>{setUsername(e.target.value);setError("");}}
+                  onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                  placeholder="Username..."
+                  style={{...inp,paddingLeft:40,border:`2px solid ${error?"#ff4757":"#b2ede6"}`}}/>
+              </div>
+            </div>
+            <div style={{marginBottom:4}}>
+              <label style={{...lbl}}>Password <span style={{fontSize:10,color:"#aaa",fontWeight:600}}>(angka saja)</span></label>
+              <PasswordInput value={password} onChange={setPassword} show={showPass} onToggle={()=>setShowPass(p=>!p)} placeholder="Masukkan password angka..." hasError={!!error}/>
+            </div>
+            <div style={{fontSize:10,color:"#aaa",marginBottom:12,display:"flex",alignItems:"center",gap:4}}>
+              <span>🔢</span> Password hanya boleh berisi angka (0-9)
+            </div>
+            {error&&<div style={{fontSize:12,color:"#ff4757",fontWeight:700,marginBottom:10,padding:"8px 12px",background:"#fff0f0",borderRadius:9,display:"flex",alignItems:"center",gap:6}}>⚠️ {error}</div>}
+            <button onClick={handleLogin} disabled={loading}
+              style={{width:"100%",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:14,color:"#fff",fontWeight:900,fontSize:15,cursor:loading?"not-allowed":"pointer",boxShadow:loading?"none":"0 6px 20px rgba(13,148,136,.4)",transition:"all .2s"}}>
+              {loading?<span>⏳ Masuk...</span>:<span>Masuk →</span>}
+            </button>
+          </>
+        )}
+
+        {/* ── MODE GANTI PASSWORD ── */}
+        {mode==="ganti"&&(
+          <>
+            {gpSuccess?(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:48,marginBottom:10}}>✅</div>
+                <div style={{fontWeight:900,fontSize:16,color:"#16a34a"}}>Password Berhasil Diubah!</div>
+                <div style={{fontSize:12,color:"#aaa",marginTop:4}}>Mengalihkan ke halaman login...</div>
+              </div>
+            ):(
+              <>
+                <div style={{marginBottom:12}}>
+                  <label style={{...lbl}}>Username</label>
+                  <div style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#0d9488",fontSize:16}}>👤</span>
+                    <input type="text" value={gpUser} onChange={e=>{setGpUser(e.target.value);setError("");}} placeholder="Username kamu..."
+                      style={{...inp,paddingLeft:40,border:`2px solid ${error?"#ff4757":"#b2ede6"}`}}/>
+                  </div>
+                </div>
+                <div style={{marginBottom:12}}>
+                  <label style={{...lbl}}>Password Lama</label>
+                  <PasswordInput value={gpPassLama} onChange={setGpLama} show={showGpLama} onToggle={()=>setShowGpLama(p=>!p)} placeholder="Password lama (angka)..." hasError={!!error}/>
+                </div>
+                <div style={{marginBottom:12}}>
+                  <label style={{...lbl}}>Password Baru <span style={{fontSize:10,color:"#aaa"}}>(min. 4 angka)</span></label>
+                  <PasswordInput value={gpPassBaru} onChange={setGpBaru} show={showGpBaru} onToggle={()=>setShowGpBaru(p=>!p)} placeholder="Password baru (angka saja)..." hasError={!!error}/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{...lbl}}>Konfirmasi Password Baru</label>
+                  <PasswordInput value={gpPassKonfirm} onChange={setGpKonfirm} show={showGpBaru} onToggle={()=>setShowGpBaru(p=>!p)} placeholder="Ulangi password baru..." hasError={!!error&&gpPassBaru!==gpPassKonfirm}/>
+                  {gpPassBaru&&gpPassKonfirm&&gpPassBaru!==gpPassKonfirm&&<div style={{fontSize:10,color:"#ff4757",marginTop:4,fontWeight:700}}>❌ Password tidak cocok</div>}
+                  {gpPassBaru&&gpPassKonfirm&&gpPassBaru===gpPassKonfirm&&<div style={{fontSize:10,color:"#16a34a",marginTop:4,fontWeight:700}}>✅ Password cocok</div>}
+                </div>
+                <div style={{fontSize:10,color:"#aaa",marginBottom:12,display:"flex",alignItems:"center",gap:4}}>
+                  <span>🔢</span> Password hanya boleh angka (0-9), minimal 4 digit
+                </div>
+                {error&&<div style={{fontSize:12,color:"#ff4757",fontWeight:700,marginBottom:10,padding:"8px 12px",background:"#fff0f0",borderRadius:9}}>⚠️ {error}</div>}
+                <button onClick={handleGantiPass} disabled={loading}
+                  style={{width:"100%",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:14,color:"#fff",fontWeight:900,fontSize:15,cursor:loading?"not-allowed":"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
+                  {loading?"⏳ Menyimpan...":"🔑 Ganti Password"}
+                </button>
+              </>
+            )}
+          </>
+        )}
+
       </div>
     </div>
   );
@@ -12014,16 +12140,19 @@ export default function App() {
         setUser(u);
         if(u.role==="monitor") { setPage("monitor"); return; }
         if(u.role==="admin")   { setPage("menu");    return; }
-        // kasir/bank → halaman pilih akses dulu (dengan cek GPS)
         if(u.role==="kasir"||u.role==="bank"||u.role==="staff") { setPage("pilih"); return; }
-        // karyawan lama (sebelum ada role kasir/bank) yang punya outletId → pilih dulu
-        // karyawan tanpa outletId → langsung portal
         if(u.role==="karyawan") {
           if(u.outletId||(u.outletIds&&u.outletIds.length>0)) setPage("pilih");
           else setPage("portal");
           return;
         }
         setPage("menu");
+      }} onChangePass={async (username, newPass)=>{
+        const u = users[username];
+        if(!u) throw new Error("User tidak ditemukan");
+        const updated = {...u, pass:newPass};
+        try{ await db.upsertUser(username, updated); }catch(e){ console.warn('upsertUser changePass:',e); }
+        setUsers(prev=>({...prev,[username]:updated}));
       }}/>
     </>
   );
