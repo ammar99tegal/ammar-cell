@@ -436,17 +436,27 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   };
 
   const openAddUser  = ()=>{ setEditUser(null); setUForm({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"}); setShowUserForm(true); };
-  const openEditUser = (u,k)=>{ setEditUser(k); setUForm({username:k,pass:u.pass,nama:u.nama,outletId:u.outletId||"",outletIds:u.outletIds||[],role:u.role}); setShowUserForm(true); };
+  const openEditUser = (u,k)=>{
+    // Fallback: kalau outletIds kosong tapi outletId ada, pre-fill dari outletId
+    const outletIds = (u.outletIds&&u.outletIds.length>0)
+      ? u.outletIds
+      : (u.outletId ? [u.outletId] : []);
+    setEditUser(k);
+    setUForm({username:k, pass:u.pass, nama:u.nama, outletId:u.outletId||"", outletIds, role:u.role||"karyawan"});
+    setShowUserForm(true);
+  };
   const saveUser = async ()=>{
     if (!uForm.username.trim()||!uForm.nama.trim()) return notify("Isi username & nama!","err");
     if (!editUser && !uForm.pass) return notify("Isi password!","err");
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
+    if((uForm.role==="kasir"||uForm.role==="bank")&&(uForm.outletIds||[]).length===0) return notify("Kasir/Bank harus ditugaskan ke outlet!","err");
     const outletIds = uForm.outletIds||[];
+    const outletId  = outletIds[0]||uForm.outletId||null; // primary outlet
     const userData = {
       pass:     uForm.pass || (editUser?users[editUser]?.pass:""),
       nama:     uForm.nama.trim(),
       role:     uForm.role,
-      outletId: outletIds[0]||null,  // primary outlet = first selected
+      outletId, // single primary outlet (untuk GPS check)
       outletIds,
     };
     try {
@@ -542,7 +552,12 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                     <tr key={key} style={{borderTop:"1px solid #f0faf8",background:i%2===0?"#fff":"#fafffe"}}>
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
                       <td style={{padding:"10px 13px",fontWeight:700}}>{u.nama}</td>
-                      <td style={{padding:"10px 13px"}}><span style={{background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":"#e0faf5",color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":"#0d9488",fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>{u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":"👷 Karyawan"}</span></td>
+                      <td style={{padding:"10px 13px"}}><span style={{
+                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":"#fffbeb",
+                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":"#d97706",
+                        fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>
+                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":"👤 Portal"}
+                      </span></td>
                       <td style={{padding:"10px 13px"}}>
                         {u.role==="admin"?(
                           <span style={{color:"#aaa",fontSize:11}}>Semua outlet</span>
@@ -554,8 +569,16 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                               </span>
                             ))}
                           </div>
+                        ):u.outletId?(
+                          <span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"1px 7px",borderRadius:20}}>
+                            {outlets.find(o=>o.id===u.outletId)?.nama?.replace("Ammar Cell ","")||u.outletId}
+                          </span>
                         ):(
-                          <span style={{color:"#ccc",fontSize:11}}>Belum ditugaskan</span>
+                          <span style={{color:"#ccc",fontSize:11}}>
+                            {u.role==="kasir"||u.role==="bank"
+                              ? <span style={{color:"#ef4444",fontWeight:700}}>⚠️ Belum ditugaskan</span>
+                              : "—"}
+                          </span>
                         )}
                       </td>
                       <td style={{padding:"10px 13px"}}>
@@ -616,9 +639,11 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
           {/* Role -- tombol visual */}
           <div style={{marginBottom:14}}>
             <label style={{...lbl}}>Role *</label>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
               {[
-                {k:"karyawan",icon:"👷",l:"Karyawan",bg:"#e0faf5",c:"#0d9488"},
+                {k:"kasir",   icon:"🛒",l:"Kasir",   bg:"#e0faf5",c:"#0d9488"},
+                {k:"bank",    icon:"🏦",l:"Bank",    bg:"#e8f4fd",c:"#2980b9"},
+                {k:"karyawan",icon:"👤",l:"Portal",  bg:"#fffbeb",c:"#d97706"},
                 {k:"admin",   icon:"👑",l:"Admin",   bg:"#f5eeff",c:"#8e44ad"},
                 {k:"monitor", icon:"👁",l:"Monitor", bg:"#fef3c7",c:"#d97706"},
               ].map(r=>(
@@ -626,8 +651,19 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                   style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${uForm.role===r.k?r.c:"#b2ede6"}`,background:uForm.role===r.k?r.bg:"#fff",color:uForm.role===r.k?r.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all .15s"}}>
                   <div style={{fontSize:18,marginBottom:4}}>{r.icon}</div>
                   <div style={{fontWeight:800}}>{r.l}</div>
+                  {r.k==="kasir"&&<div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:2}}>+ Portal</div>}
+                  {r.k==="bank"&&<div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:2}}>+ Portal</div>}
+                  {r.k==="karyawan"&&<div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:2}}>Only</div>}
                 </button>
               ))}
+            </div>
+            {/* Keterangan role */}
+            <div style={{background:"#f0faf8",borderRadius:8,padding:"8px 10px",fontSize:10,color:"#555",lineHeight:1.7}}>
+              {uForm.role==="kasir"&&<>🛒 <b>Kasir</b> — Akses kasir <b>(harus di lokasi toko)</b> + Portal karyawan bebas diakses</>}
+              {uForm.role==="bank"&&<>🏦 <b>Bank</b> — Akses bank <b>(harus di lokasi toko)</b> + Portal karyawan bebas diakses</>}
+              {uForm.role==="karyawan"&&<>👤 <b>Portal Only</b> — Hanya portal karyawan (absensi, izin, misi). Tidak ada akses kasir/bank</>}
+              {uForm.role==="admin"&&<>👑 <b>Admin</b> — Akses semua fitur dari mana saja</>}
+              {uForm.role==="monitor"&&<>👁 <b>Monitor</b> — Hanya bisa lihat halaman monitor live</>}
             </div>
           </div>
 
@@ -11083,7 +11119,13 @@ export default function App() {
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
 
   const [user,        setUserState]   = useState(savedUser);
-  const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":savedUser?.role==="karyawan"?"portal":(savedUser?.role==="kasir"||savedUser?.role==="bank")?"pilih":"menu");
+  const [page,        setPage]        = useState(()=>{
+    const r = savedUser?.role;
+    if(r==="monitor")  return "monitor";
+    if(r==="karyawan") return "portal";
+    if(r==="kasir"||r==="bank") return "pilih";
+    return "menu";
+  });
 
   // -- GPS & pilih akses state --
   const [pilihScene,  setPilihScene]  = useState(null); // "kasir"|"bank"|"portal"
