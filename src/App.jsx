@@ -693,6 +693,7 @@ function CategoryEditRow({ cat, onSave }) {
 function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutlet, notify, prodOrder }) {
   return (
     <StokPage
+      key={tab}
       products={products} outlets={outlets}
       stocks={stocks} setStocks={setStocks}
       onBack={null} notify={notify}
@@ -1668,7 +1669,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
         {onBack&&(
         <div style={{display:"flex",gap:0,marginBottom:14,background:"#fff",borderRadius:12,padding:4,border:"2px solid #e0f5f1",width:"fit-content",flexWrap:"wrap"}}>
           {[{k:"opname",l:"📋 Opname"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"},{k:"transfer",l:"⇄ Transfer"},{k:"log",l:"📜 Log"}].map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"7px 14px",borderRadius:9,border:"none",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:tab===t.k?"#0d9488":"transparent",color:tab===t.k?"#fff":"#888",transition:"all .15s"}}>{t.l}</button>
+            <button key={t.k} onClick={()=>{ setTab(t.k); setBulkMode(false); }} style={{padding:"7px 14px",borderRadius:9,border:"none",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",background:tab===t.k?"#0d9488":"transparent",color:tab===t.k?"#fff":"#888",transition:"all .15s"}}>{t.l}</button>
           ))}
         </div>
         )}
