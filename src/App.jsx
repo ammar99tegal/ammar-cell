@@ -449,7 +449,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
     if (!uForm.username.trim()||!uForm.nama.trim()) return notify("Isi username & nama!","err");
     if (!editUser && !uForm.pass) return notify("Isi password!","err");
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
-    if((uForm.role==="kasir"||uForm.role==="bank")&&(uForm.outletIds||[]).length===0) return notify("Kasir/Bank harus ditugaskan ke outlet!","err");
+    if((uForm.role==="kasir"||uForm.role==="bank"||uForm.role==="staff")&&(uForm.outletIds||[]).length===0) return notify("Kasir/Bank harus ditugaskan ke outlet!","err");
     const outletIds = uForm.outletIds||[];
     const outletId  = outletIds[0]||uForm.outletId||null; // primary outlet
     const userData = {
@@ -553,10 +553,10 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
                       <td style={{padding:"10px 13px",fontWeight:700}}>{u.nama}</td>
                       <td style={{padding:"10px 13px"}}><span style={{
-                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":"#fffbeb",
-                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":"#d97706",
+                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":u.role==="staff"?"#f0fff4":"#fffbeb",
+                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":u.role==="staff"?"#16a34a":"#d97706",
                         fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>
-                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":"👤 Portal"}
+                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":u.role==="staff"?"💼 Kasir+Bank":"👤 Portal"}
                       </span></td>
                       <td style={{padding:"10px 13px"}}>
                         {u.role==="admin"?(
@@ -641,29 +641,28 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
             <label style={{...lbl}}>Role *</label>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
               {[
-                {k:"kasir",   icon:"🛒",l:"Kasir",   bg:"#e0faf5",c:"#0d9488"},
-                {k:"bank",    icon:"🏦",l:"Bank",    bg:"#e8f4fd",c:"#2980b9"},
-                {k:"karyawan",icon:"👤",l:"Portal",  bg:"#fffbeb",c:"#d97706"},
-                {k:"admin",   icon:"👑",l:"Admin",   bg:"#f5eeff",c:"#8e44ad"},
-                {k:"monitor", icon:"👁",l:"Monitor", bg:"#fef3c7",c:"#d97706"},
+                {k:"kasir",   icon:"🛒",l:"Kasir",      sub:"+ Portal",  bg:"#e0faf5",c:"#0d9488"},
+                {k:"bank",    icon:"🏦",l:"Bank",        sub:"+ Portal",  bg:"#e8f4fd",c:"#2980b9"},
+                {k:"staff",   icon:"💼",l:"Kasir+Bank",  sub:"+ Portal",  bg:"#f0fff4",c:"#16a34a"},
+                {k:"karyawan",icon:"👤",l:"Portal",      sub:"Only",      bg:"#fffbeb",c:"#d97706"},
+                {k:"admin",   icon:"👑",l:"Admin",       sub:"Semua",     bg:"#f5eeff",c:"#8e44ad"},
+                {k:"monitor", icon:"👁",l:"Monitor",     sub:"Live only", bg:"#fef3c7",c:"#b45309"},
               ].map(r=>(
                 <button key={r.k} onClick={()=>setUForm(p=>({...p,role:r.k}))}
                   style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${uForm.role===r.k?r.c:"#b2ede6"}`,background:uForm.role===r.k?r.bg:"#fff",color:uForm.role===r.k?r.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all .15s"}}>
-                  <div style={{fontSize:18,marginBottom:4}}>{r.icon}</div>
-                  <div style={{fontWeight:800}}>{r.l}</div>
-                  {r.k==="kasir"&&<div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:2}}>+ Portal</div>}
-                  {r.k==="bank"&&<div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:2}}>+ Portal</div>}
-                  {r.k==="karyawan"&&<div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:2}}>Only</div>}
+                  <div style={{fontSize:18,marginBottom:3}}>{r.icon}</div>
+                  <div style={{fontWeight:800,fontSize:10}}>{r.l}</div>
+                  <div style={{fontSize:8,color:uForm.role===r.k?r.c:"#ccc",marginTop:1}}>{r.sub}</div>
                 </button>
               ))}
             </div>
-            {/* Keterangan role */}
             <div style={{background:"#f0faf8",borderRadius:8,padding:"8px 10px",fontSize:10,color:"#555",lineHeight:1.7}}>
-              {uForm.role==="kasir"&&<>🛒 <b>Kasir</b> — Akses kasir <b>(harus di lokasi toko)</b> + Portal karyawan bebas diakses</>}
-              {uForm.role==="bank"&&<>🏦 <b>Bank</b> — Akses bank <b>(harus di lokasi toko)</b> + Portal karyawan bebas diakses</>}
-              {uForm.role==="karyawan"&&<>👤 <b>Portal Only</b> — Hanya portal karyawan (absensi, izin, misi). Tidak ada akses kasir/bank</>}
-              {uForm.role==="admin"&&<>👑 <b>Admin</b> — Akses semua fitur dari mana saja</>}
-              {uForm.role==="monitor"&&<>👁 <b>Monitor</b> — Hanya bisa lihat halaman monitor live</>}
+              {uForm.role==="kasir"  &&<>🛒 <b>Kasir</b> — Akses kasir (GPS wajib di toko) + Portal bebas</>}
+              {uForm.role==="bank"   &&<>🏦 <b>Bank</b> — Akses bank (GPS wajib di toko) + Portal bebas</>}
+              {uForm.role==="staff"  &&<>💼 <b>Kasir+Bank</b> — Akses kasir <b>dan</b> bank (GPS wajib di toko) + Portal bebas</>}
+              {uForm.role==="karyawan"&&<>👤 <b>Portal Only</b> — Hanya portal (absensi, izin, misi). Tidak ada akses kasir/bank</>}
+              {uForm.role==="admin"  &&<>👑 <b>Admin</b> — Akses semua fitur dari mana saja</>}
+              {uForm.role==="monitor"&&<>👁 <b>Monitor</b> — Hanya halaman monitor live</>}
             </div>
           </div>
 
@@ -10964,8 +10963,9 @@ function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
   },[]);
 
   const bolehKasirBank = lokasiCek?.inArea === true;
-  const isKasir = user.role==="kasir";
-  const isBank  = user.role==="bank";
+  // role kasir = bisa buka kasir; role karyawan lama (dengan outlet) = juga kasir
+  const isKasir = user.role==="kasir"||user.role==="staff"||(user.role==="karyawan"&&!!(user.outletId||(user.outletIds?.length)));
+  const isBank  = user.role==="bank"||user.role==="staff";
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
@@ -11120,11 +11120,14 @@ export default function App() {
 
   const [user,        setUserState]   = useState(savedUser);
   const [page,        setPage]        = useState(()=>{
-    const r = savedUser?.role;
-    if(r==="monitor")  return "monitor";
-    if(r==="karyawan") return "portal";
-    if(r==="kasir"||r==="bank") return "pilih";
-    return "menu";
+    const u = savedUser;
+    if(!u) return "menu";
+    if(u.role==="monitor")  return "monitor";
+    if(u.role==="admin")    return "menu";
+    if(u.role==="kasir"||u.role==="bank"||u.role==="staff") return "pilih";
+    // karyawan lama dengan outlet → pilih dulu
+    if(u.role==="karyawan"&&(u.outletId||(u.outletIds&&u.outletIds.length>0))) return "pilih";
+    return "portal";
   });
 
   // -- GPS & pilih akses state --
@@ -11761,7 +11764,7 @@ export default function App() {
   const kasirGpsHook = useGpsMonitor({
     user,
     outlets,
-    enabled: !!(user && (user.role==="kasir"||user.role==="bank") && (page==="kasir"||page==="bank")),
+    enabled: !!(user && (user.role==="kasir"||user.role==="bank"||user.role==="staff"||(user.role==="karyawan"&&(user.outletId||(user.outletIds?.length)))) && (page==="kasir"||page==="bank")),
     onViolation: handleGpsViolation,
   });
 
@@ -11799,11 +11802,18 @@ export default function App() {
       <style>{css+`@keyframes fadeUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}`}</style>
       <LoginPage users={users} onLogin={u=>{
         setUser(u);
-        // Routing berdasarkan role
-        if(u.role==="monitor")  setPage("monitor");
-        else if(u.role==="karyawan") setPage("portal");
-        else if(u.role==="kasir"||u.role==="bank") setPage("pilih");
-        else setPage("menu"); // admin
+        if(u.role==="monitor") { setPage("monitor"); return; }
+        if(u.role==="admin")   { setPage("menu");    return; }
+        // kasir/bank → halaman pilih akses dulu (dengan cek GPS)
+        if(u.role==="kasir"||u.role==="bank"||u.role==="staff") { setPage("pilih"); return; }
+        // karyawan lama (sebelum ada role kasir/bank) yang punya outletId → pilih dulu
+        // karyawan tanpa outletId → langsung portal
+        if(u.role==="karyawan") {
+          if(u.outletId||(u.outletIds&&u.outletIds.length>0)) setPage("pilih");
+          else setPage("portal");
+          return;
+        }
+        setPage("menu");
       }}/>
     </>
   );
@@ -11827,7 +11837,7 @@ export default function App() {
       </div>
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
-      {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
+      {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
       {page==="portal"    && user?.role==="karyawan" && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} notify={notify}/>}
       {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="kasir"     && (<>
