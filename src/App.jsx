@@ -460,30 +460,49 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
     if (!uForm.username.trim()||!uForm.nama.trim()) return notify("Isi username & nama!","err");
     if (!editUser && !uForm.pass) return notify("Isi password!","err");
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
-    if((uForm.role==="kasir"||uForm.role==="bank"||uForm.role==="staff")&&(uForm.outletIds||[]).length===0) return notify("Kasir/Bank harus ditugaskan ke outlet!","err");
+    if((uForm.role==="kasir"||uForm.role==="bank"||uForm.role==="staff")&&(uForm.outletIds||[]).length===0)
+      return notify("Kasir/Bank harus ditugaskan ke minimal 1 outlet!","err");
     const outletIds = uForm.outletIds||[];
-    const outletId  = outletIds[0]||uForm.outletId||null; // primary outlet
+    const outletId  = outletIds[0]||uForm.outletId||null;
     const userData = {
       pass:     uForm.pass || (editUser?users[editUser]?.pass:""),
       nama:     uForm.nama.trim(),
       role:     uForm.role,
-      outletId, // single primary outlet (untuk GPS check)
+      outletId,
       outletIds,
     };
     try {
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
       }
+      // Simpan via db.upsertUser (primary)
       await db.upsertUser(uForm.username.toLowerCase(), userData);
+      // Simpan outletIds & outletId langsung ke kolom Supabase
+      // (pastikan kolom outlet_ids TEXT dan outlet_id TEXT ada di tabel users)
+      try {
+        await supabase.from('users').update({
+          outlet_ids: JSON.stringify(outletIds),
+          outlet_id: outletId,
+          role: uForm.role,
+          nama: uForm.nama.trim(),
+        }).eq('username', uForm.username.toLowerCase());
+      } catch(e2){ console.warn('outletIds direct update:',e2); }
       setUsers(prev=>{
         const n={...prev};
         if(editUser&&editUser!==uForm.username.toLowerCase()){delete n[editUser];}
         n[uForm.username.toLowerCase()]=userData;
         return n;
       });
+      // Update saved user di localStorage kalau itu user yang sedang login
+      try{
+        const saved=JSON.parse(localStorage.getItem('ammar_user')||'null');
+        if(saved&&saved.username===uForm.username.toLowerCase()){
+          localStorage.setItem('ammar_user',JSON.stringify({...saved,...userData,username:uForm.username.toLowerCase()}));
+        }
+      }catch{}
       notify(editUser?"User diperbarui ✓":"User ditambahkan ✓","ok");
       setShowUserForm(false);
-    } catch(e) { notify("Gagal simpan user!","err"); }
+    } catch(e) { notify("Gagal simpan user: "+e.message,"err"); }
   };
   const deleteUser = async k=>{
     try {
@@ -4360,6 +4379,19 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   };
 
   const openShift = async (data) => {
+    // -- Cek apakah outlet sudah ada shift aktif dari user lain --
+    try {
+      const {data:activeRows} = await supabase.from('active_shifts').select('*').eq('outlet_id', selectedOutlet);
+      if(activeRows && activeRows.length > 0) {
+        const existing = activeRows[0];
+        const shiftUser = existing.kasir || existing.nama_shift || "kasir lain";
+        if(shiftUser !== user.username && shiftUser !== user.nama) {
+          notify(`⚠️ Outlet ini masih ada shift aktif milik "${shiftUser}". Shift harus ditutup dulu sebelum bisa buka shift baru!`, "err");
+          return;
+        }
+      }
+    } catch(e){ console.warn('cek active_shifts gagal:', e); }
+
     const s={id:uid(),nama:data.namaShift,start:now(),...data};
     const saldoData = {
       namaShift: data.namaShift,
@@ -4730,7 +4762,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           </div>
         </Modal>
       )}
-      {showShift&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)}/>}
+      {showShift&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
     </div>
   );
 }
@@ -4878,10 +4910,11 @@ function SaldoAppsPage({ saldoApps, setSaldoApps, saldoBank, setSaldoBank, title
 // ==============================================================================
 // SHIFT MODAL
 // ==============================================================================
-function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onCancel }) {
+function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onCancel, userName="", userUsername="" }) {
   const APPS = saldoApps || DEFAULT_SALDO_APPS;
   const blank=()=>{const m={};APPS.forEach(a=>{m[a]="";});return m;};
-  const [namaShift,setNamaShift]=useState("");
+  // Nama shift SELALU dari username — tidak bisa diubah manual
+  const namaShift = userUsername||userName||"Kasir";
   const [cashKemb,setCashKemb]=useState("");
   const [saldoOpen,setSaldoOpen]=useState(blank());
   const [saldoClose,setSaldoClose]=useState(blank());
@@ -4915,8 +4948,13 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
         </div>
         {mode==="open"&&(
           <>
-            <label style={lS}>Nama Shift *</label>
-            <input type="text" value={namaShift} onChange={e=>setNamaShift(e.target.value)} placeholder="Pagi / Siang / Nama kasir..." style={{...iS,marginBottom:6}}/>
+            <div style={{background:"#e0faf5",borderRadius:9,padding:"8px 12px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:14}}>👤</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"#0d9488",fontWeight:700}}>Nama Shift (otomatis dari username)</div>
+                <div style={{fontWeight:900,fontSize:14,color:"#1a2e2a"}}>{namaShift}</div>
+              </div>
+            </div>
             <Sh t="💵 Cash Kembalian (Catatan)"/>
             <div style={{fontSize:10,color:"#aaa",fontWeight:600,marginBottom:6}}>* Hanya catatan, tidak masuk perhitungan</div>
             <label style={lS}>Cash Kembalian</label>
@@ -11157,6 +11195,25 @@ function GpsWarningOverlay({ warnCD, gpsStatus, gpsJarak, gpsAcc, onVerify, onLo
   );
 }
 
+
+// Helper: pastikan outletIds ter-parse dengan benar dari DB
+const parseUserOutletIds = (usrs) => {
+  if(!usrs||typeof usrs!=="object") return usrs;
+  const result = {};
+  Object.entries(usrs).forEach(([k,u])=>{
+    let outletIds = u.outletIds||[];
+    // Parse dari outlet_ids string (dari kolom DB)
+    if((!outletIds||outletIds.length===0)&&u.outlet_ids){
+      try{ outletIds=JSON.parse(u.outlet_ids); }catch{ outletIds=[]; }
+    }
+    // Fallback dari outletId/outlet_id tunggal
+    const outletId = u.outletId||u.outlet_id||null;
+    if(outletIds.length===0&&outletId) outletIds=[outletId];
+    result[k]={...u, outletId:outletId, outletIds, role:u.role||"karyawan"};
+  });
+  return result;
+};
+
 export default function App() {
   // -- Session: ambil dari localStorage agar tidak login ulang --------------
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
@@ -11455,7 +11512,7 @@ export default function App() {
         total:t.total, cash:t.cash, kembalian:t.kembalian,
         items:t.items||[],
       })));
-      setUsersState(usrs);
+      setUsersState(parseUserOutletIds(usrs));
     } catch(e) { console.error("Reload gagal:",e); }
   };
 
@@ -11526,8 +11583,8 @@ export default function App() {
           total:t.total, cash:t.cash, kembalian:t.kembalian,
           items:t.items||[],
         })));
-        setUsersState(usrs);
-        setLoading(false);
+      setUsersState(parseUserOutletIds(usrs));
+      setLoading(false);
       } catch(e) {
         clearTimeout(timeout);
         console.error('Load error:', e);
@@ -11621,7 +11678,7 @@ export default function App() {
         { event: '*', schema: 'public', table: 'users' },
         async () => {
           const usrs = await db.getUsers().catch(()=>null);
-          if (usrs) setUsersState(usrs);
+          if (usrs) setUsersState(parseUserOutletIds(usrs));
         }
       )
       .subscribe();
