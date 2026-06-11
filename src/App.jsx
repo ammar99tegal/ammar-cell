@@ -10385,7 +10385,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
                 {m.selesai&&<><div style={{position:"absolute",top:0,right:0,width:0,height:0,borderStyle:"solid",borderWidth:"0 44px 44px 0",borderColor:"transparent #16a34a transparent transparent"}}/><div style={{position:"absolute",top:4,right:5,fontSize:13,color:"#fff"}}>✓</div></>}
                 <div style={{display:"flex",gap:12}}>
                   <div style={{width:42,height:42,borderRadius:12,background:m.selesai?"#f0fdf4":"#f0faf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,border:`2px solid ${m.selesai?"#86efac":"#e0f5f1"}`}}>{m.selesai?"✅":m.icon||"🎯"}</div>
-                  <div style={{flex:1}}><div style={{fontWeight:800,fontSize:13,color:m.selesai?"#16a34a":"#1a2e2a"}}>{m.judul}</div><div style={{fontSize:10,color:"#aaa",marginTop:2,marginBottom:8}}>{m.desc}</div><BarP v={m.progress||0} m={m.target||1} c={m.selesai?"#16a34a":"#0d9488"} h={6}/><div style={{display:"flex",justifyContent:"space-between",marginTop:3}}><span style={{fontSize:9,color:"#aaa"}}>{m.progress||0}/{m.target} {m.satuan}</span><span style={{fontSize:9,color:"#aaa"}}>{pctN(m.progress||0,m.target)}%</span></div><div style={{marginTop:7,display:"flex",gap:6}}><span style={{background:"#fef9c3",color:"#92400e",fontSize:10,fontWeight:800,padding:"2px 10px",borderRadius:20}}>🏅 {m.poin} poin</span>{m.selesai&&<span style={{background:"#f0fdf4",color:"#16a34a",fontSize:10,fontWeight:700,padding:"2px 10px",borderRadius:20}}>Selesai!</span>}</div></div>
+                  <div style={{flex:1}}><div style={{fontWeight:800,fontSize:13,color:m.selesai?"#16a34a":"#1a2e2a"}}>{m.judul}</div><div style={{fontSize:10,color:"#aaa",marginTop:2,marginBottom:8}}>{m.deskripsi}</div><BarP v={m.progress||0} m={m.target||1} c={m.selesai?"#16a34a":"#0d9488"} h={6}/><div style={{display:"flex",justifyContent:"space-between",marginTop:3}}><span style={{fontSize:9,color:"#aaa"}}>{m.progress||0}/{m.target} {m.satuan}</span><span style={{fontSize:9,color:"#aaa"}}>{pctN(m.progress||0,m.target)}%</span></div><div style={{marginTop:7,display:"flex",gap:6}}><span style={{background:"#fef9c3",color:"#92400e",fontSize:10,fontWeight:800,padding:"2px 10px",borderRadius:20}}>🏅 {m.poin} poin</span>{m.selesai&&<span style={{background:"#f0fdf4",color:"#16a34a",fontSize:10,fontWeight:700,padding:"2px 10px",borderRadius:20}}>Selesai!</span>}</div></div>
                 </div>
               </div>
             ))}
@@ -10501,13 +10501,13 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
     if(editMisiId) {
       const updated = misi.map(m=>m.id===editMisiId?{...m,...misiForm,poin:+misiForm.poin,target:+misiForm.target}:m);
       setMisi(updated);
-      try{ await supabase.from('portal_misi').update({...misiForm,poin:+misiForm.poin,target:+misiForm.target}).eq('id',editMisiId); }catch(e){ console.warn('misi update:',e); }
+      try{ await supabase.from('portal_misi').update({judul:misiForm.judul,deskripsi:misiForm.deskripsi,icon:misiForm.icon,poin:+misiForm.poin,target:+misiForm.target,satuan:misiForm.satuan}).eq('id',editMisiId); }catch(e){ console.warn('misi update:',e); }
     } else {
       const newM={...misiForm,id:Date.now(),poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false};
       setMisi(p=>[...p,newM]);
-      try{ await supabase.from('portal_misi').insert({...misiForm,poin:+misiForm.poin,target:+misiForm.target,progress:0,selesai:false}); }catch(e){ console.warn('misi insert:',e); }
+      try{ await supabase.from('portal_misi').insert({judul:misiForm.judul,deskripsi:misiForm.deskripsi,icon:misiForm.icon,poin:+misiForm.poin,target:+misiForm.target,satuan:misiForm.satuan,progress:0,selesai:false}); }catch(e){ console.warn('misi insert:',e); }
     }
-    notify("Misi disimpan ✓","ok"); setShowMisiForm(false); setEditMisiId(null); setMisiForm({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});
+    notify("Misi disimpan ✓","ok"); setShowMisiForm(false); setEditMisiId(null); setMisiForm({icon:"🎯",judul:"",deskripsi:"",poin:100,target:1,satuan:"hari"});
   };
 
   const hapusMisi = async (id) => {
@@ -10619,7 +10619,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
           <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Kelola Misi</div>
-          <button onClick={()=>{setShowMisiForm(true);setEditMisiId(null);setMisiForm({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});}}
+          <button onClick={()=>{setShowMisiForm(true);setEditMisiId(null);setMisiForm({icon:"🎯",judul:"",deskripsi:"",poin:100,target:1,satuan:"hari"});}}
             style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"8px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Tambah Misi</button>
         </div>
 
@@ -10633,7 +10633,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
               <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Poin</label><input type="number" value={misiForm.poin} onChange={e=>setMisiForm(p=>({...p,poin:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
               <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Target</label><input type="number" value={misiForm.target} onChange={e=>setMisiForm(p=>({...p,target:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
               <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Satuan</label><input value={misiForm.satuan} onChange={e=>setMisiForm(p=>({...p,satuan:e.target.value}))} placeholder="hari/trx/ulasan" style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
-              <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Deskripsi</label><input value={misiForm.desc} onChange={e=>setMisiForm(p=>({...p,desc:e.target.value}))} placeholder="Jelaskan detail misi..." style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
+              <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Deskripsi</label><input value={misiForm.deskripsi} onChange={e=>setMisiForm(p=>({...p,deskripsi:e.target.value}))} placeholder="Jelaskan detail misi..." style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/></div>
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>{setShowMisiForm(false);setEditMisiId(null);}} style={{flex:1,padding:"9px",borderRadius:9,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
@@ -10649,14 +10649,14 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
                 <div style={{width:44,height:44,borderRadius:12,background:m.selesai?"#f0fdf4":"#f0faf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0,border:`2px solid ${m.selesai?"#86efac":"#e0f5f1"}`}}>{m.icon||"🎯"}</div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{m.judul}</div>
-                  <div style={{fontSize:10,color:"#aaa",marginTop:2}}>{m.desc}</div>
+                  <div style={{fontSize:10,color:"#aaa",marginTop:2}}>{m.deskripsi}</div>
                   <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
                     <span style={{background:"#fef9c3",color:"#92400e",fontSize:10,fontWeight:800,padding:"2px 10px",borderRadius:20}}>🏅 {m.poin} poin</span>
                     <span style={{background:"#e0faf5",color:"#0d9488",fontSize:10,fontWeight:700,padding:"2px 10px",borderRadius:20}}>Target: {m.target} {m.satuan}</span>
                   </div>
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <button onClick={()=>{setEditMisiId(m.id);setMisiForm({icon:m.icon||"🎯",judul:m.judul,desc:m.desc||"",poin:m.poin,target:m.target,satuan:m.satuan});setShowMisiForm(true);}} style={{padding:"5px 10px",borderRadius:8,border:"2px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Edit</button>
+                  <button onClick={()=>{setEditMisiId(m.id);setMisiForm({icon:m.icon||"🎯",judul:m.judul,deskripsi:m.deskripsi||"",poin:m.poin,target:m.target,satuan:m.satuan});setShowMisiForm(true);}} style={{padding:"5px 10px",borderRadius:8,border:"2px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Edit</button>
                   <button onClick={()=>hapusMisi(m.id)} style={{padding:"5px 10px",borderRadius:8,border:"2px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🗑</button>
                 </div>
               </div>
