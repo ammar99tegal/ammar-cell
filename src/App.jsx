@@ -448,12 +448,18 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
 
   const openAddUser  = ()=>{ setEditUser(null); setUForm({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"}); setShowUserForm(true); };
   const openEditUser = (u,k)=>{
-    // Fallback: kalau outletIds kosong tapi outletId ada, pre-fill dari outletId
-    const outletIds = (u.outletIds&&u.outletIds.length>0)
-      ? u.outletIds
-      : (u.outletId ? [u.outletId] : []);
+    // Rebuild outletIds dari semua sumber yang mungkin
+    let outletIds = [];
+    if(Array.isArray(u.outletIds)&&u.outletIds.length>0) outletIds=[...u.outletIds];
+    else if(typeof u.outletIds==="string"){ try{outletIds=JSON.parse(u.outletIds);}catch{} }
+    if(outletIds.length===0&&u.outlet_ids){ try{outletIds=JSON.parse(u.outlet_ids);}catch{} }
+    if(outletIds.length===0&&u.outletId) outletIds=[u.outletId];
+    if(outletIds.length===0&&u.outlet_id) outletIds=[u.outlet_id];
+    outletIds=[...new Set(outletIds)].filter(Boolean);
+
+    const outletId=outletIds[0]||u.outletId||u.outlet_id||"";
     setEditUser(k);
-    setUForm({username:k, pass:u.pass, nama:u.nama, outletId:u.outletId||"", outletIds, role:u.role||"karyawan"});
+    setUForm({username:k, pass:u.pass||"", nama:u.nama||"", outletId, outletIds, role:u.role||"karyawan"});
     setShowUserForm(true);
   };
   const saveUser = async ()=>{
@@ -462,47 +468,65 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
     if (!editUser && users[uForm.username.toLowerCase()]) return notify("Username sudah ada!","err");
     if((uForm.role==="kasir"||uForm.role==="bank"||uForm.role==="staff")&&(uForm.outletIds||[]).length===0)
       return notify("Kasir/Bank harus ditugaskan ke minimal 1 outlet!","err");
-    const outletIds = uForm.outletIds||[];
+
+    const outletIds = [...new Set(uForm.outletIds||[])].filter(Boolean);
     const outletId  = outletIds[0]||uForm.outletId||null;
+    const pass      = uForm.pass||(editUser?users[editUser]?.pass:"");
+
+    // userData lengkap — outletIds HARUS ada di sini agar masuk ke JSON di DB
     const userData = {
-      pass:     uForm.pass || (editUser?users[editUser]?.pass:""),
-      nama:     uForm.nama.trim(),
-      role:     uForm.role,
-      outletId,
-      outletIds,
+      pass, nama:uForm.nama.trim(), role:uForm.role,
+      outletId, outletIds,
     };
+
+    // 1. Update state lokal DULU (langsung tampil)
+    setUsers(prev=>{
+      const n={...prev};
+      if(editUser&&editUser!==uForm.username.toLowerCase()) delete n[editUser];
+      n[uForm.username.toLowerCase()]={...userData};
+      return n;
+    });
+
     try {
       if(editUser && editUser!==uForm.username.toLowerCase()) {
         await db.deleteUser(editUser);
       }
-      // Simpan via db.upsertUser (primary)
+
+      // 2. Simpan via db.upsertUser
       await db.upsertUser(uForm.username.toLowerCase(), userData);
-      // Simpan outletIds & outletId langsung ke kolom Supabase
-      // (pastikan kolom outlet_ids TEXT dan outlet_id TEXT ada di tabel users)
+
+      // 3. Coba update langsung via supabase (untuk kolom outlet_ids jika ada)
       try {
-        await supabase.from('users').update({
+        await supabase.from('users').upsert({
+          username: uForm.username.toLowerCase(),
+          pass,
+          nama:     uForm.nama.trim(),
+          role:     uForm.role,
+          outlet_id:  outletId,
           outlet_ids: JSON.stringify(outletIds),
-          outlet_id: outletId,
-          role: uForm.role,
-          nama: uForm.nama.trim(),
-        }).eq('username', uForm.username.toLowerCase());
-      } catch(e2){ console.warn('outletIds direct update:',e2); }
-      setUsers(prev=>{
-        const n={...prev};
-        if(editUser&&editUser!==uForm.username.toLowerCase()){delete n[editUser];}
-        n[uForm.username.toLowerCase()]=userData;
-        return n;
-      });
-      // Update saved user di localStorage kalau itu user yang sedang login
+          data: JSON.stringify(userData), // beberapa implementasi simpan semua di kolom data
+        },{onConflict:'username'});
+      } catch(e2){ console.warn('[saveUser] direct upsert:',e2?.message||e2); }
+
+      // 4. Update localStorage jika user yang sedang login
       try{
         const saved=JSON.parse(localStorage.getItem('ammar_user')||'null');
         if(saved&&saved.username===uForm.username.toLowerCase()){
           localStorage.setItem('ammar_user',JSON.stringify({...saved,...userData,username:uForm.username.toLowerCase()}));
         }
       }catch{}
+
       notify(editUser?"User diperbarui ✓":"User ditambahkan ✓","ok");
       setShowUserForm(false);
-    } catch(e) { notify("Gagal simpan user: "+e.message,"err"); }
+    } catch(e) {
+      notify("Gagal simpan user: "+e.message,"err");
+      // Rollback state lokal jika gagal
+      setUsers(prev=>{
+        const n={...prev};
+        if(editUser) n[editUser]=users[editUser]; else delete n[uForm.username.toLowerCase()];
+        return n;
+      });
+    }
   };
   const deleteUser = async k=>{
     try {
@@ -11197,19 +11221,43 @@ function GpsWarningOverlay({ warnCD, gpsStatus, gpsJarak, gpsAcc, onVerify, onLo
 
 
 // Helper: pastikan outletIds ter-parse dengan benar dari DB
+// Handles: {outletIds:[], outletId, outlet_ids:"[...]", outlet_id, data:"{...}"}
 const parseUserOutletIds = (usrs) => {
   if(!usrs||typeof usrs!=="object") return usrs;
   const result = {};
   Object.entries(usrs).forEach(([k,u])=>{
-    let outletIds = u.outletIds||[];
-    // Parse dari outlet_ids string (dari kolom DB)
-    if((!outletIds||outletIds.length===0)&&u.outlet_ids){
-      try{ outletIds=JSON.parse(u.outlet_ids); }catch{ outletIds=[]; }
+    if(!u||typeof u!=="object") return;
+
+    // Coba parse dari field data (JSON string) jika ada
+    let base = {...u};
+    if(typeof u.data==="string"){
+      try{ base={...base,...JSON.parse(u.data)}; }catch{}
     }
-    // Fallback dari outletId/outlet_id tunggal
-    const outletId = u.outletId||u.outlet_id||null;
+
+    let outletIds = base.outletIds||[];
+    // Array sudah benar
+    if(!Array.isArray(outletIds)) {
+      try{ outletIds=JSON.parse(outletIds); }catch{ outletIds=[]; }
+    }
+    // Parse dari outlet_ids string
+    if(outletIds.length===0&&base.outlet_ids){
+      try{ outletIds=JSON.parse(base.outlet_ids); }catch{ outletIds=[]; }
+    }
+    // Ensure array
+    if(!Array.isArray(outletIds)) outletIds=[];
+
+    const outletId = base.outletId||base.outlet_id||outletIds[0]||null;
+    // Fallback: kalau masih kosong tapi outletId ada
     if(outletIds.length===0&&outletId) outletIds=[outletId];
-    result[k]={...u, outletId:outletId, outletIds, role:u.role||"karyawan"};
+
+    result[k]={
+      ...base,
+      outletId,
+      outletIds,
+      role: base.role||"karyawan",
+      pass: base.pass||u.pass||"",
+      nama: base.nama||u.nama||k,
+    };
   });
   return result;
 };
