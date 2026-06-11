@@ -386,22 +386,29 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   const [editOutlet,    setEditOutlet]    = useState(null);
   const [editUser,      setEditUser]      = useState(null);
   const [confirmDel,    setConfirmDel]    = useState(null);
-  const [oForm, setOForm] = useState({nama:"",alamat:""});
+  const [oForm, setOForm] = useState({nama:"",alamat:"",lat:"",lng:"",radius:100});
   const [uForm, setUForm] = useState({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"});
 
-  const openAddOutlet = ()=>{ setEditOutlet(null); setOForm({nama:"",alamat:""}); setShowOutletForm(true); };
-  const openEditOutlet= o=>{ setEditOutlet(o); setOForm({nama:o.nama,alamat:o.alamat}); setShowOutletForm(true); };
+  const openAddOutlet = ()=>{ setEditOutlet(null); setOForm({nama:"",alamat:"",lat:"",lng:"",radius:100}); setShowOutletForm(true); };
+  const openEditOutlet= o=>{ setEditOutlet(o); setOForm({nama:o.nama,alamat:o.alamat||"",lat:o.lat||"",lng:o.lng||"",radius:o.radius||100}); setShowOutletForm(true); };
   const saveOutlet = async ()=>{
     if (!oForm.nama.trim()) return notify("Isi nama outlet!","err");
+    const outletData = {
+      nama: oForm.nama.trim(),
+      alamat: oForm.alamat.trim(),
+      lat: oForm.lat ? +oForm.lat : null,
+      lng: oForm.lng ? +oForm.lng : null,
+      radius: +oForm.radius || 100,
+    };
     if (editOutlet) {
       try {
-        await db.updateOutlet(editOutlet.id, oForm);
-        setOutlets(prev=>prev.map(o=>o.id===editOutlet.id?{...o,...oForm}:o));
+        await db.updateOutlet(editOutlet.id, outletData);
+        setOutlets(prev=>prev.map(o=>o.id===editOutlet.id?{...o,...outletData}:o));
         notify("Outlet diperbarui","ok");
       } catch(e) { notify("Gagal simpan outlet!","err"); return; }
     } else {
       const id="o"+uid();
-      const newOutlet = {id,nama:oForm.nama.trim(),alamat:oForm.alamat.trim(),aktif:true};
+      const newOutlet = {id,...outletData,aktif:true};
       try {
         await db.addOutlet(newOutlet);
         setOutlets(prev=>[...prev,newOutlet]);
@@ -571,6 +578,25 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
         <Modal onClose={()=>setShowOutletForm(false)} title={editOutlet?"✏️ Edit Outlet":"🏪 Tambah Outlet"}>
           <Field label="Nama Outlet *" value={oForm.nama} onChange={e=>setOForm(p=>({...p,nama:e.target.value}))} placeholder="Nama outlet..."/>
           <Field label="Alamat" value={oForm.alamat} onChange={e=>setOForm(p=>({...p,alamat:e.target.value}))} placeholder="Alamat outlet..."/>
+          {/* GPS fields */}
+          <div style={{background:"#f0faf8",borderRadius:10,padding:"12px",border:"2px solid #e0f5f1",marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:11,color:"#0d9488",marginBottom:8}}>📍 Koordinat GPS (untuk batasi akses kasir/bank)</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div>
+                <label style={{fontSize:10,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>Latitude</label>
+                <input type="number" step="any" value={oForm.lat} onChange={e=>setOForm(p=>({...p,lat:e.target.value}))} placeholder="-6.9175" style={{width:"100%",padding:"7px 9px",borderRadius:8,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>Longitude</label>
+                <input type="number" step="any" value={oForm.lng} onChange={e=>setOForm(p=>({...p,lng:e.target.value}))} placeholder="107.6191" style={{width:"100%",padding:"7px 9px",borderRadius:8,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>Radius (meter) — default 100m</label>
+              <input type="number" value={oForm.radius} onChange={e=>setOForm(p=>({...p,radius:e.target.value}))} placeholder="100" style={{width:"100%",padding:"7px 9px",borderRadius:8,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+            </div>
+            <div style={{marginTop:8,fontSize:9,color:"#aaa"}}>💡 Kosongkan jika tidak ingin batasi lokasi. Koordinat dari Google Maps (tap & tahan pada titik toko)</div>
+          </div>
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <button onClick={()=>setShowOutletForm(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
             <button onClick={saveOutlet} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -10777,12 +10803,303 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   );
 }
 
+// ==============================================================================
+// GPS LOCATION HOOK — cek lokasi vs radius outlet
+// ==============================================================================
+function useGpsMonitor({ user, outlets, enabled, onViolation }) {
+  const CEK_INTERVAL_MS = 5 * 60 * 1000; // 5 menit
+  const WARN_DETIK      = 30;
+
+  const [gpsStatus,  setGpsStatus]  = useState("pending"); // pending|loading|aman|jauh|fake|off
+  const [gpsJarak,   setGpsJarak]   = useState(null);
+  const [gpsAcc,     setGpsAcc]     = useState(null);
+  const [gpsCoords,  setGpsCoords]  = useState(null);
+  const [warnCD,     setWarnCD]     = useState(null);
+  const [nextCek,    setNextCek]    = useState(CEK_INTERVAL_MS/1000);
+  const [gpsLog,     setGpsLog]     = useState([]);
+  const warnRef = useRef(null), nextRef = useRef(null);
+
+  const hitungJarak = (lat1,lng1,lat2,lng2) => {
+    const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+    const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  };
+
+  const cekSekarang = useCallback(()=>{
+    if(!enabled||!user) return;
+    const outlet = outlets.find(o=>o.id===user.outletId);
+    // Kalau outlet belum punya koordinat, skip GPS check
+    if(!outlet?.lat||!outlet?.lng) { setGpsStatus("off"); return; }
+
+    setGpsStatus("loading");
+    navigator.geolocation?.getCurrentPosition(
+      (pos)=>{
+        const {latitude:lat,longitude:lng,accuracy:acc} = pos.coords;
+        setGpsCoords({lat,lng});
+        setGpsAcc(Math.round(acc));
+        const isMock  = acc===0||acc<1;
+        const jarak   = hitungJarak(lat,lng,outlet.lat,outlet.lng);
+        const inArea  = jarak<=(outlet.radius||100) && !isMock;
+        const status  = isMock?"fake":inArea?"aman":"jauh";
+        const fmtJ    = jarak<1000?`${Math.round(jarak)}m`:`${(jarak/1000).toFixed(1)}km`;
+        setGpsStatus(status);
+        setGpsJarak(fmtJ);
+        setGpsLog(p=>[{waktu:new Date().toLocaleTimeString("id-ID"),status,jarak:fmtJ,acc:Math.round(acc),mock:isMock},...p.slice(0,19)]);
+        if(status!=="aman") {
+          // Simpan log kecurigaan ke Supabase
+          supabase.from('portal_absensi_log').insert({user_id:user.id||user.username,user_nama:user.nama,tipe:'gps_violation',detail:JSON.stringify({status,jarak:fmtJ,acc,lat,lng,outletId:outlet.id}),waktu:new Date().toISOString()}).catch(()=>{});
+          startWarning();
+        } else {
+          clearInterval(warnRef.current); setWarnCD(null);
+        }
+      },
+      ()=>{ setGpsStatus("off"); },
+      {enableHighAccuracy:true,timeout:10000,maximumAge:30000}
+    );
+  },[enabled,user,outlets]);
+
+  const startWarning = useCallback(()=>{
+    clearInterval(warnRef.current);
+    setWarnCD(WARN_DETIK);
+    warnRef.current = setInterval(()=>{
+      setWarnCD(p=>{
+        if(p<=1){ clearInterval(warnRef.current); if(onViolation) onViolation(); return 0; }
+        return p-1;
+      });
+    },1000);
+  },[onViolation]);
+
+  const dismissWarning = useCallback(()=>{
+    clearInterval(warnRef.current); setWarnCD(null); cekSekarang();
+  },[cekSekarang]);
+
+  // Timer berkala
+  useEffect(()=>{
+    if(!enabled) return;
+    cekSekarang();
+    setNextCek(CEK_INTERVAL_MS/1000);
+    clearInterval(nextRef.current);
+    nextRef.current = setInterval(()=>{
+      setNextCek(p=>{
+        if(p<=1){ cekSekarang(); return CEK_INTERVAL_MS/1000; }
+        return p-1;
+      });
+    },1000);
+    return()=>{ clearInterval(warnRef.current); clearInterval(nextRef.current); };
+  },[enabled,user?.id,outlets.length]);
+
+  return { gpsStatus, gpsJarak, gpsAcc, gpsCoords, warnCD, nextCek, gpsLog, cekSekarang, dismissWarning };
+}
+
+// ==============================================================================
+// HALAMAN PILIH AKSES (kasir/bank setelah login)
+// ==============================================================================
+function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
+  const outletUser = outlets.find(o=>o.id===user.outletId);
+  const hasGps = !!(outletUser?.lat && outletUser?.lng);
+  const [lokasiCek, setLokasiCek] = useState(null); // null|{inArea,jarak,isMock,acc}
+  const [loadGps, setLoadGps]     = useState(false);
+  const [clock,setClock]          = useState(new Date().toLocaleTimeString("id-ID"));
+
+  useEffect(()=>{ const iv=setInterval(()=>setClock(new Date().toLocaleTimeString("id-ID")),1000); return()=>clearInterval(iv); },[]);
+
+  const hitungJarak=(lat1,lng1,lat2,lng2)=>{
+    const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+    const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  };
+
+  useEffect(()=>{
+    if(!hasGps){ setLokasiCek({inArea:true,jarak:null,isMock:false,acc:0}); return; }
+    setLoadGps(true);
+    navigator.geolocation?.getCurrentPosition(
+      (pos)=>{
+        const {latitude:lat,longitude:lng,accuracy:acc}=pos.coords;
+        const isMock=acc===0||acc<1;
+        const jarak=hitungJarak(lat,lng,outletUser.lat,outletUser.lng);
+        const inArea=jarak<=(outletUser.radius||100)&&!isMock;
+        const fmtJ=jarak<1000?`${Math.round(jarak)}m`:`${(jarak/1000).toFixed(1)}km`;
+        setLokasiCek({inArea,jarak:fmtJ,isMock,acc:Math.round(acc)});
+        setLoadGps(false);
+      },
+      ()=>{ setLokasiCek({inArea:!hasGps,jarak:null,isMock:false,acc:0}); setLoadGps(false); },
+      {enableHighAccuracy:true,timeout:8000,maximumAge:10000}
+    );
+  },[]);
+
+  const bolehKasirBank = lokasiCek?.inArea === true;
+  const isKasir = user.role==="kasir";
+  const isBank  = user.role==="bank";
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"16px 20px",boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:44,height:44,borderRadius:13,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:17,color:"#fff",border:"2px solid rgba(255,255,255,.3)",flexShrink:0}}>
+            {user.nama?.slice(0,2).toUpperCase()}
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>{user.nama}</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.7)",display:"flex",alignItems:"center",gap:5}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"#2ecc71",display:"inline-block",flexShrink:0}}/>
+              {outletUser?.nama||"--"}
+            </div>
+          </div>
+          <div style={{fontFamily:"monospace",fontWeight:900,fontSize:14,color:"#fff"}}>{clock}</div>
+        </div>
+      </div>
+
+      <div style={{padding:"20px 18px",maxWidth:440,margin:"0 auto"}}>
+        <div style={{fontWeight:800,fontSize:17,color:"#1a2e2a",marginBottom:4}}>Selamat datang! 👋</div>
+        <div style={{fontSize:12,color:"#aaa",marginBottom:16}}>Mau buka apa hari ini?</div>
+
+        {/* Status GPS */}
+        {hasGps&&(
+          <div style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:16,border:"2px solid #e0f5f1",display:"flex",alignItems:"center",gap:10}}>
+            {loadGps?(
+              <><div style={{width:28,height:28,border:"3px solid #b2ede6",borderTopColor:"#0d9488",borderRadius:"50%",animation:"spin 1s linear infinite",flexShrink:0}}/><div style={{fontSize:12,color:"#aaa",fontWeight:600}}>Memeriksa lokasi GPS...</div></>
+            ):lokasiCek?.isMock?(
+              <><span style={{fontSize:20,flexShrink:0}}>🚫</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#dc2626"}}>GPS Palsu Terdeteksi</div><div style={{fontSize:10,color:"#aaa"}}>Akurasi: {lokasiCek.acc}m — Tidak normal</div></div></>
+            ):lokasiCek?.inArea?(
+              <><span style={{fontSize:20,flexShrink:0}}>✅</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#16a34a"}}>Lokasi Terverifikasi — {lokasiCek.jarak}</div><div style={{fontSize:10,color:"#aaa"}}>Dalam radius {outletUser?.radius||100}m outlet</div></div></>
+            ):(
+              <><span style={{fontSize:20,flexShrink:0}}>📍</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#d97706"}}>Di luar area outlet — {lokasiCek?.jarak}</div><div style={{fontSize:10,color:"#aaa"}}>Harus dalam radius {outletUser?.radius||100}m</div></div>
+              <button onClick={()=>{ setLokasiCek(null); setLoadGps(true); navigator.geolocation?.getCurrentPosition(p=>{const{latitude:lat,longitude:lng,accuracy:acc}=p.coords;const isMock=acc===0||acc<1;const jarak=hitungJarak(lat,lng,outletUser.lat,outletUser.lng);const inArea=jarak<=(outletUser.radius||100)&&!isMock;const fmtJ=jarak<1000?`${Math.round(jarak)}m`:`${(jarak/1000).toFixed(1)}km`;setLokasiCek({inArea,jarak:fmtJ,isMock,acc:Math.round(acc)});setLoadGps(false);},()=>{setLoadGps(false);},{enableHighAccuracy:true,timeout:8000}); }}
+                style={{padding:"5px 10px",borderRadius:8,border:"2px solid #b2ede6",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🔄</button></>
+            )}
+          </div>
+        )}
+
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {/* KASIR */}
+          {isKasir&&(
+            <button onClick={()=>bolehKasirBank&&onPilih("kasir")}
+              style={{background:"#fff",borderRadius:16,padding:"16px 18px",border:`2px solid ${bolehKasirBank?"#0d9488":"#e0e0e0"}`,cursor:bolehKasirBank?"pointer":"not-allowed",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14,opacity:bolehKasirBank||!hasGps?1:.65,boxShadow:bolehKasirBank?"0 4px 16px rgba(13,148,136,.1)":"none",transition:"all .2s"}}
+              onMouseEnter={e=>bolehKasirBank&&(e.currentTarget.style.background="#f0fdfb")}
+              onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+              <div style={{width:52,height:52,borderRadius:14,background:bolehKasirBank?"linear-gradient(135deg,#0d9488,#14b8a6)":"#f0f0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:bolehKasirBank?"0 4px 12px rgba(13,148,136,.3)":"none"}}>🛒</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:900,fontSize:15,color:bolehKasirBank?"#1a2e2a":"#aaa"}}>Kasir</div>
+                <div style={{fontSize:11,color:bolehKasirBank?"#0d9488":"#bbb",marginTop:2}}>Buka transaksi penjualan</div>
+                {hasGps&&!bolehKasirBank&&!loadGps&&<div style={{fontSize:10,color:"#ef4444",marginTop:3,fontWeight:700}}>{lokasiCek?.isMock?"⚠️ GPS palsu — akses diblokir":lokasiCek?.jarak?`📍 ${lokasiCek.jarak} dari outlet — harus di toko`:"📍 Harus di area outlet"}</div>}
+              </div>
+              {bolehKasirBank?<span style={{fontSize:22,color:"#0d9488"}}>→</span>:<span style={{fontSize:22}}>{loadGps?"⌛":"🔒"}</span>}
+            </button>
+          )}
+
+          {/* BANK */}
+          {isBank&&(
+            <button onClick={()=>bolehKasirBank&&onPilih("bank")}
+              style={{background:"#fff",borderRadius:16,padding:"16px 18px",border:`2px solid ${bolehKasirBank?"#2980b9":"#e0e0e0"}`,cursor:bolehKasirBank?"pointer":"not-allowed",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14,opacity:bolehKasirBank||!hasGps?1:.65,boxShadow:bolehKasirBank?"0 4px 16px rgba(41,128,185,.1)":"none",transition:"all .2s"}}
+              onMouseEnter={e=>bolehKasirBank&&(e.currentTarget.style.background="#eff6ff")}
+              onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+              <div style={{width:52,height:52,borderRadius:14,background:bolehKasirBank?"linear-gradient(135deg,#2980b9,#3498db)":"#f0f0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:bolehKasirBank?"0 4px 12px rgba(41,128,185,.3)":"none"}}>🏦</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:900,fontSize:15,color:bolehKasirBank?"#1a2e2a":"#aaa"}}>Bank</div>
+                <div style={{fontSize:11,color:bolehKasirBank?"#2980b9":"#bbb",marginTop:2}}>Pencatatan transaksi keuangan</div>
+                {hasGps&&!bolehKasirBank&&!loadGps&&<div style={{fontSize:10,color:"#ef4444",marginTop:3,fontWeight:700}}>{lokasiCek?.isMock?"⚠️ GPS palsu — akses diblokir":lokasiCek?.jarak?`📍 ${lokasiCek.jarak} dari outlet`:"📍 Harus di area outlet"}</div>}
+              </div>
+              {bolehKasirBank?<span style={{fontSize:22,color:"#2980b9"}}>→</span>:<span style={{fontSize:22}}>{loadGps?"⌛":"🔒"}</span>}
+            </button>
+          )}
+
+          {/* PORTAL */}
+          <button onClick={()=>onPilih("portal")}
+            style={{background:"linear-gradient(135deg,#f0faf8,#e0faf5)",borderRadius:16,padding:"16px 18px",border:"2px solid #0d9488",cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14,boxShadow:"0 4px 16px rgba(13,148,136,.1)",transition:"all .2s"}}
+            onMouseEnter={e=>e.currentTarget.style.background="linear-gradient(135deg,#e0faf5,#b2f5ea)"}
+            onMouseLeave={e=>e.currentTarget.style.background="linear-gradient(135deg,#f0faf8,#e0faf5)"}>
+            <div style={{width:52,height:52,borderRadius:14,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:"0 4px 12px rgba(13,148,136,.3)"}}>👤</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>Portal Saya</div>
+              <div style={{fontSize:11,color:"#0d9488",marginTop:2,opacity:.8}}>Absensi, izin, misi & gaji</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+              <span style={{fontSize:22,color:"#0d9488"}}>→</span>
+              <span style={{fontSize:8,background:"#0d9488",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:800}}>BEBAS AKSES</span>
+            </div>
+          </button>
+        </div>
+
+        {!hasGps&&(
+          <div style={{marginTop:14,background:"#fffbeb",borderRadius:10,padding:"10px 13px",border:"1px solid #fcd34d",fontSize:11,color:"#92400e"}}>
+            💡 Koordinat GPS outlet belum diisi admin. Kasir/Bank bisa diakses tanpa pembatasan lokasi.
+          </div>
+        )}
+
+        <button onClick={onLogout} style={{width:"100%",marginTop:16,padding:"11px",borderRadius:12,border:"2px solid #fca5a5",background:"#fff",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🚪 Logout</button>
+      </div>
+    </div>
+  );
+}
+
+// ==============================================================================
+// GPS WARNING OVERLAY — tampil di atas kasir/bank saat keluar area
+// ==============================================================================
+function GpsWarningOverlay({ warnCD, gpsStatus, gpsJarak, gpsAcc, onVerify, onLock, pilihScene }) {
+  if(!warnCD && warnCD !== 0) return null;
+  const WARN_TOTAL = 30;
+  const isFake = gpsStatus==="fake";
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#fff",borderRadius:20,padding:"24px",width:"100%",maxWidth:380,border:"3px solid #fca5a5",boxShadow:"0 8px 32px rgba(220,38,38,.25)",textAlign:"center",animation:"slideUp .4s ease"}}>
+        <style>{`@keyframes slideUp{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}`}</style>
+        {/* Countdown ring */}
+        <div style={{position:"relative",width:80,height:80,margin:"0 auto 16px"}}>
+          <svg width={80} height={80} style={{transform:"rotate(-90deg)"}}>
+            <circle cx={40} cy={40} r={30} fill="none" stroke="#ffe4e6" strokeWidth={6}/>
+            <circle cx={40} cy={40} r={30} fill="none" stroke={warnCD>15?"#f59e0b":warnCD>8?"#ef4444":"#dc2626"} strokeWidth={6}
+              strokeDasharray={2*Math.PI*30} strokeDashoffset={2*Math.PI*30*(1-warnCD/WARN_TOTAL)}
+              strokeLinecap="round" style={{transition:"stroke-dashoffset .9s ease,stroke .3s"}}/>
+          </svg>
+          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <div style={{fontWeight:900,fontSize:20,color:warnCD>15?"#f59e0b":warnCD>8?"#ef4444":"#dc2626",lineHeight:1}}>{warnCD}</div>
+            <div style={{fontSize:8,color:"#aaa",fontWeight:700}}>detik</div>
+          </div>
+        </div>
+        <div style={{fontWeight:900,fontSize:17,color:"#dc2626",marginBottom:8}}>{isFake?"GPS Palsu Terdeteksi!":"Kamu Di Luar Area Outlet!"}</div>
+        <div style={{fontSize:12,color:"#b91c1c",lineHeight:1.6,marginBottom:16}}>
+          {isFake?<>Terdeteksi <b>Mock Location</b>. {pilihScene==="kasir"?"Kasir":"Bank"} akan dikunci otomatis.</>
+          :<>Terdeteksi <b>{gpsJarak}</b> dari outlet. {pilihScene==="kasir"?"Kasir":"Bank"} akan dikunci dalam <b>{warnCD} detik</b>.</>}
+        </div>
+        <div style={{background:"#fff5f5",borderRadius:10,padding:"8px 12px",marginBottom:16,fontSize:10,textAlign:"left",border:"1px solid #fca5a5"}}>
+          {[["Jarak",gpsJarak||"--"],["Akurasi GPS",`±${gpsAcc}m${isFake?" ⚠️":""}`],["Status",isFake?"FAKE GPS":"DI LUAR AREA"]].map(r=>(
+            <div key={r[0]} style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderTop:"1px solid #ffe4e6"}}>
+              <span style={{color:"#aaa"}}>{r[0]}</span><span style={{fontWeight:700,color:isFake&&r[0]!=="Jarak"?"#dc2626":"#1a2e2a"}}>{r[1]}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {!isFake&&<button onClick={onVerify} style={{width:"100%",padding:12,borderRadius:12,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:900,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📍 Saya Sudah di Outlet — Verifikasi Ulang</button>}
+          <button onClick={onLock} style={{width:"100%",padding:10,borderRadius:11,border:"2px solid #fca5a5",background:"#fff",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🔒 Kunci {pilihScene==="kasir"?"Kasir":"Bank"} Sekarang</button>
+        </div>
+        <div style={{marginTop:10,fontSize:9,color:"#aaa"}}>⚠️ Aktivitas ini dicatat & dikirim ke admin</div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // -- Session: ambil dari localStorage agar tidak login ulang --------------
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
 
   const [user,        setUserState]   = useState(savedUser);
-  const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":savedUser?.role==="karyawan"?"portal":"menu");
+  const [page,        setPage]        = useState(savedUser?.role==="monitor"?"monitor":savedUser?.role==="karyawan"?"portal":(savedUser?.role==="kasir"||savedUser?.role==="bank")?"pilih":"menu");
+
+  // -- GPS & pilih akses state --
+  const [pilihScene,  setPilihScene]  = useState(null); // "kasir"|"bank"|"portal"
+  const [kasirLocked, setKasirLocked] = useState(false);
+
+  const handlePilih = (akses) => {
+    setPilihScene(akses);
+    setPage(akses==="portal"?"portal":akses);
+    setKasirLocked(false);
+  };
+
+  const handleGpsViolation = () => {
+    setKasirLocked(true);
+    setPage("pilih");
+    setPilihScene(null);
+  };
 
   // PWA dihandle di index.html
   const [products,    setProductsState] = useState([]);
@@ -11398,6 +11715,14 @@ export default function App() {
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
 
+  // GPS monitoring hook untuk kasir/bank
+  const kasirGpsHook = useGpsMonitor({
+    user,
+    outlets,
+    enabled: !!(user && (user.role==="kasir"||user.role==="bank") && (page==="kasir"||page==="bank")),
+    onViolation: handleGpsViolation,
+  });
+
   // -- Loading screen --------------------------------------------------------
   if (loading) return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif"}}>
@@ -11432,8 +11757,11 @@ export default function App() {
       <style>{css+`@keyframes fadeUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}`}</style>
       <LoginPage users={users} onLogin={u=>{
         setUser(u);
-        // Monitor role langsung ke halaman monitor, karyawan ke portal
-        setPage(u.role==="monitor"?"monitor":u.role==="karyawan"?"portal":"menu");
+        // Routing berdasarkan role
+        if(u.role==="monitor")  setPage("monitor");
+        else if(u.role==="karyawan") setPage("portal");
+        else if(u.role==="kasir"||u.role==="bank") setPage("pilih");
+        else setPage("menu"); // admin
       }}/>
     </>
   );
@@ -11457,10 +11785,17 @@ export default function App() {
       </div>
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
+      {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
       {page==="portal"    && user?.role==="karyawan" && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} notify={notify}/>}
       {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
-      {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="kasir"     && (<>
+        {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
+        <KasirApp user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang}/>
+      </>)}
+      {page==="bank"      && (<>
+        {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="bank"/>}
+        <BankPage user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify}/>
+      </>)}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
