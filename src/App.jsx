@@ -244,12 +244,22 @@ function Field({label,value,onChange,type="text",placeholder="",note,style:sx={}
 // ==============================================================================
 // LOGIN
 // ==============================================================================
-function LoginPage({ users, onLogin }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
+function LoginPage({ users, onLogin, onChangePass }) {
+  const [username,  setUsername] = useState("");
+  const [password,  setPassword] = useState("");
+  const [showPass,  setShowPass] = useState(false);
+  const [error,     setError]    = useState("");
+  const [loading,   setLoading]  = useState(false);
+  // Ganti password mandiri
+  const [showGanti, setShowGanti]= useState(false);
+  const [gpUser,    setGpUser]   = useState("");
+  const [gpLama,    setGpLama]   = useState("");
+  const [gpBaru,    setGpBaru]   = useState("");
+  const [gpKonfirm, setGpKonfirm]= useState("");
+  const [showGL,    setShowGL]   = useState(false);
+  const [showGB,    setShowGB]   = useState(false);
+  const [gpErr,     setGpErr]    = useState("");
+  const [gpOk,      setGpOk]     = useState(false);
 
   const onlyAngka = v => v.replace(/[^0-9]/g,"");
   const blockNonAngka = e => { if(!/[0-9]|Backspace|Delete|Tab|Enter|ArrowLeft|ArrowRight/.test(e.key)) e.preventDefault(); };
@@ -264,14 +274,49 @@ function LoginPage({ users, onLogin }) {
     },600);
   };
 
+  const handleGanti = async () => {
+    setGpErr("");
+    if(!gpUser||!gpLama||!gpBaru||!gpKonfirm) return setGpErr("Semua kolom harus diisi!");
+    if(!/^\d+$/.test(gpBaru)) return setGpErr("Password baru harus angka saja!");
+    if(gpBaru.length<4) return setGpErr("Password baru minimal 4 digit!");
+    if(gpBaru!==gpKonfirm) return setGpErr("Konfirmasi tidak cocok!");
+    const u = users[gpUser.toLowerCase()];
+    if(!u) return setGpErr("Username tidak ditemukan!");
+    if(u.pass!==gpLama) return setGpErr("Password lama salah!");
+    setLoading(true);
+    try {
+      if(onChangePass) await onChangePass(gpUser.toLowerCase(), gpBaru);
+      setGpOk(true);
+      setTimeout(()=>{ setGpOk(false); setShowGanti(false); setGpUser(""); setGpLama(""); setGpBaru(""); setGpKonfirm(""); }, 2200);
+    } catch(e){ setGpErr("Gagal: "+e.message); }
+    setLoading(false);
+  };
+
+  const PwInput = ({val,set,show,tog,ph})=>(
+    <div style={{position:"relative"}}>
+      <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Lock(16)}</span>
+      <input type={show?"text":"password"} inputMode="numeric" pattern="[0-9]*"
+        value={val} onChange={e=>{set(onlyAngka(e.target.value));setGpErr("");}}
+        onKeyDown={blockNonAngka} placeholder={ph} maxLength={12}
+        style={{...inp,paddingLeft:34,paddingRight:34,fontSize:13,padding:"8px 34px",letterSpacing:show?"normal":"3px",fontWeight:700}}/>
+      <button onClick={tog} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#aaa",cursor:"pointer"}}>
+        {show?Ic.EyeOff():Ic.Eye()}
+      </button>
+    </div>
+  );
+
   return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif"}}>
-      <div style={{background:"#fff",borderRadius:24,padding:"36px 32px",width:360,boxShadow:"0 24px 80px rgba(0,0,0,.25)",animation:"fadeUp .4s ease"}}>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:16}}>
+      <style>{`@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}`}</style>
+      <div style={{background:"#fff",borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:380,boxShadow:"0 24px 80px rgba(0,0,0,.25)",animation:"fadeUp .4s ease"}}>
+        {/* Logo */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{fontSize:44,marginBottom:8}}>🏪</div>
           <div style={{fontWeight:900,fontSize:22,color:"#0d9488"}}>Ammar Cell</div>
           <div style={{fontSize:12,color:"#aaa",fontWeight:600,marginTop:2}}>Sistem Kasir Terpadu</div>
         </div>
+
+        {/* Username */}
         <div style={{marginBottom:12}}>
           <label style={{...lbl}}>Username</label>
           <div style={{position:"relative"}}>
@@ -281,7 +326,9 @@ function LoginPage({ users, onLogin }) {
               style={{...inp,paddingLeft:38,border:`2px solid ${error?"#ff4757":"#b2ede6"}`}}/>
           </div>
         </div>
-        <div style={{marginBottom:16}}>
+
+        {/* Password */}
+        <div style={{marginBottom:4}}>
           <label style={{...lbl}}>Password <span style={{fontSize:10,color:"#aaa",fontWeight:600}}>(angka saja)</span></label>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Lock(18)}</span>
@@ -295,6 +342,60 @@ function LoginPage({ users, onLogin }) {
             </button>
           </div>
         </div>
+
+        {/* Link ganti password */}
+        <div style={{textAlign:"right",marginBottom:10}}>
+          <button onClick={()=>{setShowGanti(p=>!p);setGpErr("");setGpOk(false);}}
+            style={{background:"none",border:"none",color:"#0d9488",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0,textDecoration:"underline",textUnderlineOffset:2}}>
+            {showGanti?"✕ Tutup":"🔑 Ganti Password?"}
+          </button>
+        </div>
+
+        {/* Panel ganti password */}
+        {showGanti&&(
+          <div style={{background:"#f0faf8",borderRadius:14,padding:"14px 16px",marginBottom:12,border:"2px solid #b2ede6",animation:"slideDown .25s ease"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>🔑 Ganti Password</div>
+            {gpOk?(
+              <div style={{textAlign:"center",padding:"10px 0"}}>
+                <div style={{fontSize:32,marginBottom:6}}>✅</div>
+                <div style={{fontWeight:800,fontSize:13,color:"#16a34a"}}>Password Berhasil Diubah!</div>
+              </div>
+            ):(
+              <>
+                <div style={{marginBottom:8}}>
+                  <label style={{...lbl,fontSize:10}}>Username</label>
+                  <div style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.User(14)}</span>
+                    <input type="text" value={gpUser} onChange={e=>{setGpUser(e.target.value);setGpErr("");}} placeholder="Username kamu..."
+                      style={{...inp,paddingLeft:34,fontSize:12,padding:"8px 10px 8px 34px"}}/>
+                  </div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{...lbl,fontSize:10}}>Password Lama</label>
+                  <PwInput val={gpLama} set={setGpLama} show={showGL} tog={()=>setShowGL(p=>!p)} ph="Password lama..."/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{...lbl,fontSize:10}}>Password Baru <span style={{color:"#aaa"}}>(min. 4 angka)</span></label>
+                  <PwInput val={gpBaru} set={setGpBaru} show={showGB} tog={()=>setShowGB(p=>!p)} ph="Password baru..."/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{...lbl,fontSize:10}}>Konfirmasi Password Baru</label>
+                  <PwInput val={gpKonfirm} set={setGpKonfirm} show={showGB} tog={()=>setShowGB(p=>!p)} ph="Ulangi password baru..."/>
+                  {gpBaru&&gpKonfirm&&(gpBaru===gpKonfirm
+                    ?<div style={{fontSize:10,color:"#16a34a",marginTop:3,fontWeight:700}}>✅ Cocok</div>
+                    :<div style={{fontSize:10,color:"#ff4757",marginTop:3,fontWeight:700}}>❌ Tidak cocok</div>
+                  )}
+                </div>
+                {gpErr&&<div style={{fontSize:11,color:"#ff4757",fontWeight:700,marginBottom:8,padding:"6px 10px",background:"#fff0f0",borderRadius:8}}>⚠️ {gpErr}</div>}
+                <button onClick={handleGanti} disabled={loading}
+                  style={{width:"100%",padding:"9px",borderRadius:10,border:"none",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit"}}>
+                  {loading?"⏳ Menyimpan...":"💾 Simpan Password Baru"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {error&&<div style={{fontSize:12,color:"#ff4757",fontWeight:700,marginBottom:8,padding:"6px 10px",background:"#fff0f0",borderRadius:8}}>⚠ {error}</div>}
         <button onClick={handleLogin} disabled={loading}
           style={{width:"100%",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:800,fontSize:15,cursor:loading?"not-allowed":"pointer",marginTop:4,boxShadow:loading?"none":"0 4px 16px rgba(13,148,136,.4)"}}>
@@ -12089,6 +12190,12 @@ export default function App() {
           return;
         }
         setPage("menu");
+      }} onChangePass={async(username,newPass)=>{
+        const u=users[username];
+        if(!u) throw new Error("User tidak ditemukan");
+        const updated={...u,pass:newPass};
+        setUsers(prev=>({...prev,[username]:updated}));
+        try{ await db.upsertUser(username,updated); }catch(e){ console.warn('changePass:',e); }
       }}/>
     </>
   );
