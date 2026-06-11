@@ -704,44 +704,59 @@ function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutl
 
 // -- StokAktifTab -- kelola produk aktif per outlet ------------------------------
 function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifProds, notify }) {
-  const [saved,  setSaved]  = useState(false);
-  const [search, setSearch] = useState("");
+  const [saving,  setSaving]  = useState(false);
+  const [search,  setSearch]  = useState("");
+  const [dirty,   setDirty]   = useState(false);
 
-  const outletAktif = aktifProds[selectedOutlet] || products.map(p=>String(p.id));
+  // Jika belum ada setting untuk outlet ini, inisialisasi semua aktif
+  const outletAktif = aktifProds[selectedOutlet] != null
+    ? aktifProds[selectedOutlet]
+    : products.map(p=>String(p.id));
+
   const isAktif = id => outletAktif.includes(String(id));
-  const toggle  = id => {
-    setAktifProds(prev=>({
-      ...prev,
-      [selectedOutlet]: isAktif(id)
-        ? outletAktif.filter(x=>x!==String(id))
-        : [...outletAktif, String(id)]
-    }));
+
+  const toggle = id => {
+    const next = isAktif(id)
+      ? outletAktif.filter(x=>x!==String(id))
+      : [...outletAktif, String(id)];
+    setAktifProds(prev=>({...prev,[selectedOutlet]:next}));
+    setDirty(true);
   };
+
   const filtered = products.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase()));
+
   const toggleAll = () => {
     const allIds = filtered.map(p=>String(p.id));
     const allOn  = allIds.every(id=>outletAktif.includes(id));
-    setAktifProds(prev=>({...prev,[selectedOutlet]: allOn ? outletAktif.filter(id=>!allIds.includes(id)) : [...new Set([...outletAktif,...allIds])]}));
+    const next   = allOn
+      ? outletAktif.filter(id=>!allIds.includes(id))
+      : [...new Set([...outletAktif,...allIds])];
+    setAktifProds(prev=>({...prev,[selectedOutlet]:next}));
+    setDirty(true);
   };
 
   const aktifCount = outletAktif.length;
   const outlet = outlets?.find(o=>o.id===selectedOutlet);
+
   const save = async () => {
-    setSaved(true);
-    // Simpan ke Supabase
+    setSaving(true);
     try {
       await dbAktifProduk.saveAktif(selectedOutlet, outletAktif);
-      // Sync ke App root
-      if(setAktifProds) setAktifProds(prev=>{
-        const updated = {...prev, [selectedOutlet]: outletAktif};
-        return updated;
-      });
+      setDirty(false);
       notify("Produk aktif disimpan ✓","ok");
     } catch(e) {
       notify("Gagal simpan: "+e.message,"err");
     }
-    setTimeout(()=>setSaved(false),2000);
+    setSaving(false);
   };
+
+  // Auto-init: jika outlet ini belum punya setting, simpan default semua aktif
+  useEffect(()=>{
+    if(aktifProds[selectedOutlet]==null && products.length>0){
+      // Set ke semua aktif tapi JANGAN auto-save supaya user bisa pilih dulu
+      setAktifProds(prev=>({...prev,[selectedOutlet]:products.map(p=>String(p.id))}));
+    }
+  },[selectedOutlet, products.length]);
 
   return (
     <div style={{padding:"14px 18px",maxWidth:900,margin:"0 auto"}}>
@@ -788,9 +803,14 @@ function StokAktifTab({ products, outlets, selectedOutlet, aktifProds, setAktifP
           );
         })}
       </div>
-      <div style={{marginTop:12,display:"flex",justifyContent:"flex-end"}}>
-        <button onClick={save} style={{background:saved?"#27ae60":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:11,padding:"11px 28px",color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit",transition:"background .3s"}}>
-          {saved?"✅ Tersimpan!":"💾 Simpan Perubahan"}
+      <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontSize:11,color:dirty?"#d97706":"#aaa",fontWeight:700}}>
+          {dirty?"⚠️ Ada perubahan belum disimpan":"✅ Tersimpan"}
+        </div>
+        <button onClick={save} disabled={saving||!dirty}
+          style={{background:dirty?"linear-gradient(135deg,#0d9488,#14b8a6)":"#e0f5f1",border:"none",borderRadius:11,padding:"11px 28px",
+            color:dirty?"#fff":"#0d9488",fontWeight:900,fontSize:14,cursor:dirty?"pointer":"default",fontFamily:"inherit",transition:"all .3s",opacity:saving?0.7:1}}>
+          {saving?"⏳ Menyimpan...":dirty?"💾 Simpan Perubahan":"✅ Tersimpan"}
         </button>
       </div>
     </div>
@@ -804,6 +824,9 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   const [mainTab,      setMainTab]     = useState("produk"); // produk|opname|masuk|keluar|transfer|aktif|log
   const [selOutlet,    setSelOutlet]   = useState(outlets?.[0]?.id||"");
   const [aktifProds,   setAktifProds]  = useState(aktifProdsRoot||{});     // {outletId: [productId,...]}
+
+  // Sync lokal saat aktifProdsRoot berubah dari parent (misalnya setelah load DB)
+  useEffect(()=>{ if(aktifProdsRoot&&Object.keys(aktifProdsRoot).length>0) setAktifProds(aktifProdsRoot); },[aktifProdsRoot]);
   const [showModal,   setShowModal]   = useState(false);
   const [editTarget,  setEditTarget]  = useState(null);
   const [form,        setForm]        = useState({name:"",barcode:"",category:"",price:"",modal:""});
@@ -3870,11 +3893,17 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ==============================================================================
 // KASIR APP (per outlet)
 // ==============================================================================
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{} }) {
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{} }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
   const outletStock = stocks[selectedOutlet]||{};
+
+  // Produk aktif untuk outlet ini — jika belum ada setting, semua aktif
+  const aktifList = aktifProds[selectedOutlet];
+  const activeProducts = aktifList && aktifList.length > 0
+    ? products.filter(p => aktifList.includes(String(p.id)))
+    : products;
 
   // -- Persist shift & cart ke localStorage DAN Supabase --------------------
   const shiftKey = `ammar_shift_${selectedOutlet}`;
@@ -4013,8 +4042,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     });
   };
 
-  const CATEGORIES = ["Semua",...Array.from(new Set(products.map(p=>p.category)))];
-  const filteredProds = products.filter(p=>
+  const CATEGORIES = ["Semua",...Array.from(new Set(activeProducts.map(p=>p.category)))];
+  const filteredProds = activeProducts.filter(p=>
     (activeCat==="Semua"||p.category===activeCat)&&
     (p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search))
   );
@@ -4452,7 +4481,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       {/* STOK OUTLET -- opname lengkap untuk karyawan */}
       {page==="stok"&&(
         <KasirStokPage
-          products={products}
+          products={activeProducts}
           outletStock={outletStock}
           outletNama={outlet?.nama}
           selectedOutlet={selectedOutlet}
@@ -10347,6 +10376,19 @@ export default function App() {
       )
       .subscribe();
 
+    // Channel aktif_produk: perubahan produk aktif otomatis sync ke kasir
+    const aktifChannel = supabase
+      .channel('realtime-aktif-produk')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'aktif_produk' },
+        async () => {
+          // Reload semua aktif produk dan update root state
+          const aktifMap = await dbAktifProduk.getAllAktif().catch(()=>({}));
+          if(aktifMap && Object.keys(aktifMap).length > 0) setAktifProdsRoot(aktifMap);
+        }
+      )
+      .subscribe();
+
     // Cleanup saat komponen unmount
     return () => {
       supabase.removeChannel(stockChannel);
@@ -10354,6 +10396,7 @@ export default function App() {
       supabase.removeChannel(outletChannel);
       supabase.removeChannel(userChannel);
       supabase.removeChannel(trxChannel);
+      supabase.removeChannel(aktifChannel);
     };
   },[]);
 
@@ -10548,12 +10591,12 @@ export default function App() {
       </div>
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
-      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
+      {page==="kasir"     && <KasirApp     user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>setPage("menu")} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue}/>}
       {page==="bank"      && <BankPage     user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
-      {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot}/>}
+      {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
+      {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
       {page==="saldo"     && isAdmin && <SaldoAppsPage saldoApps={saldoApps} setSaldoApps={setSaldoApps} saldoBank={saldoBank} setSaldoBank={setSaldoBank} onBack={()=>setPage("menu")} notify={notify}/>}
 
