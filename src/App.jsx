@@ -113,6 +113,17 @@ const css = `
     html { font-size: 13px; }
   }
 
+  /* -- Portal & PilihAkses: full portrait centered -- */
+  .portal-root, .pilih-root {
+    max-width: 430px;
+    margin: 0 auto;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+  @media (max-width: 430px) {
+    .portal-root, .pilih-root { max-width: 100%; }
+  }
+
   /* -- Cashflow Mobile -- */
   @media (max-width: 767px) {
     .cf-kalkulator-grid { grid-template-columns: 1fr !important; }
@@ -10243,8 +10254,8 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   const outletNama=outlets.find(o=>o.id===user.outletId)?.nama||"Outlet";
 
   return (
-    <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif",paddingBottom:76}}>
-      <style>{`*{box-sizing:border-box}@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.pk-card{animation:fadeUp .25s ease}::-webkit-scrollbar{display:none}@keyframes blk{0%,100%{opacity:1}50%{opacity:.4}}.blk{animation:blk 1.4s infinite}`}</style>
+    <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif",paddingBottom:76,position:"relative"}}>
+      <style>{`*{box-sizing:border-box}@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.pk-card{animation:fadeUp .25s ease}::-webkit-scrollbar{display:none}@keyframes blk{0%,100%{opacity:1}50%{opacity:.4}}.blk{animation:blk 1.4s infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       {/* HEADER */}
       <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"14px 18px 16px",position:"sticky",top:0,zIndex:50,boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -10927,14 +10938,15 @@ function useGpsMonitor({ user, outlets, enabled, onViolation }) {
 }
 
 // ==============================================================================
-// HALAMAN PILIH AKSES (kasir/bank setelah login)
+// HALAMAN PILIH AKSES — full mobile portrait, max 430px centered
 // ==============================================================================
 function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
-  const outletUser = outlets.find(o=>o.id===user.outletId);
+  const outletUser = outlets.find(o=>o.id===user.outletId)
+    || outlets.find(o=>(user.outletIds||[]).includes(o.id));
   const hasGps = !!(outletUser?.lat && outletUser?.lng);
-  const [lokasiCek, setLokasiCek] = useState(null); // null|{inArea,jarak,isMock,acc}
-  const [loadGps, setLoadGps]     = useState(false);
-  const [clock,setClock]          = useState(new Date().toLocaleTimeString("id-ID"));
+  const [lokasiCek, setLokasiCek] = useState(null);
+  const [loadGps,   setLoadGps]   = useState(false);
+  const [clock,     setClock]     = useState(new Date().toLocaleTimeString("id-ID"));
 
   useEffect(()=>{ const iv=setInterval(()=>setClock(new Date().toLocaleTimeString("id-ID")),1000); return()=>clearInterval(iv); },[]);
 
@@ -10944,9 +10956,9 @@ function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
     return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
   };
 
-  useEffect(()=>{
+  const cekGps = () => {
     if(!hasGps){ setLokasiCek({inArea:true,jarak:null,isMock:false,acc:0}); return; }
-    setLoadGps(true);
+    setLoadGps(true); setLokasiCek(null);
     navigator.geolocation?.getCurrentPosition(
       (pos)=>{
         const {latitude:lat,longitude:lng,accuracy:acc}=pos.coords;
@@ -10960,109 +10972,141 @@ function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
       ()=>{ setLokasiCek({inArea:!hasGps,jarak:null,isMock:false,acc:0}); setLoadGps(false); },
       {enableHighAccuracy:true,timeout:8000,maximumAge:10000}
     );
-  },[]);
+  };
 
-  const bolehKasirBank = lokasiCek?.inArea === true;
-  // role kasir = bisa buka kasir; role karyawan lama (dengan outlet) = juga kasir
-  const isKasir = user.role==="kasir"||user.role==="staff"||(user.role==="karyawan"&&!!(user.outletId||(user.outletIds?.length)));
-  const isBank  = user.role==="bank"||user.role==="staff";
+  useEffect(()=>{ cekGps(); },[]);
+
+  const boleh  = lokasiCek?.inArea === true;
+  const isKasir= user.role==="kasir"||user.role==="staff"||(user.role==="karyawan"&&!!(user.outletId||(user.outletIds?.length)));
+  const isBank = user.role==="bank"||user.role==="staff";
+
+  const MENU = [
+    isKasir && {
+      k:"kasir", icon:"🛒", label:"Kasir",
+      sub:"Buka transaksi penjualan",
+      color:"#0d9488", grad:"linear-gradient(135deg,#0d9488,#14b8a6)",
+      glow:"rgba(13,148,136,.35)", locked:!boleh,
+    },
+    isBank && {
+      k:"bank", icon:"🏦", label:"Bank",
+      sub:"Pencatatan transaksi keuangan",
+      color:"#2980b9", grad:"linear-gradient(135deg,#2980b9,#3498db)",
+      glow:"rgba(41,128,185,.35)", locked:!boleh,
+    },
+    {
+      k:"portal", icon:"👤", label:"Portal Saya",
+      sub:"Absensi, izin, misi & gaji",
+      color:"#0d9488", grad:"linear-gradient(135deg,#059669,#0d9488)",
+      glow:"rgba(5,150,105,.3)", locked:false, free:true,
+    },
+  ].filter(Boolean);
 
   return (
-    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"16px 20px",boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:44,height:44,borderRadius:13,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:17,color:"#fff",border:"2px solid rgba(255,255,255,.3)",flexShrink:0}}>
-            {user.nama?.slice(0,2).toUpperCase()}
-          </div>
-          <div style={{flex:1}}>
-            <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>{user.nama}</div>
-            <div style={{fontSize:10,color:"rgba(255,255,255,.7)",display:"flex",alignItems:"center",gap:5}}>
-              <span style={{width:6,height:6,borderRadius:"50%",background:"#2ecc71",display:"inline-block",flexShrink:0}}/>
-              {outletUser?.nama||"--"}
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#064e3b 0%,#0a6a5e 40%,#0d9488 100%)",fontFamily:"'Nunito',sans-serif",display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+        *{box-sizing:border-box}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+        .pa-fade{animation:fadeUp .35s ease}
+        .blink{animation:pulse 1.4s infinite}
+      `}</style>
+
+      {/* Konten terpusat max 420px */}
+      <div style={{width:"100%",maxWidth:420,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+
+        {/* ── HEADER ── */}
+        <div style={{padding:"20px 20px 0",paddingTop:"max(20px,env(safe-area-inset-top,20px))"}}>
+          {/* Avatar + nama */}
+          <div className="pa-fade" style={{display:"flex",alignItems:"center",gap:14,marginBottom:20}}>
+            <div style={{width:52,height:52,borderRadius:16,background:"rgba(255,255,255,.2)",border:"2px solid rgba(255,255,255,.35)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:20,color:"#fff",flexShrink:0,boxShadow:"0 4px 16px rgba(0,0,0,.15)"}}>
+              {user.nama?.slice(0,2).toUpperCase()}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:900,fontSize:17,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.nama}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.7)",display:"flex",alignItems:"center",gap:5,marginTop:2}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:"#2ecc71",display:"inline-block",flexShrink:0,boxShadow:"0 0 0 3px rgba(46,204,113,.25)"}}/>
+                {outletUser?.nama||"—"}
+              </div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{fontFamily:"monospace",fontWeight:900,fontSize:15,color:"#fff",letterSpacing:".5px"}}>{clock}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:1}}>{new Date().toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})}</div>
             </div>
           </div>
-          <div style={{fontFamily:"monospace",fontWeight:900,fontSize:14,color:"#fff"}}>{clock}</div>
+
+          {/* Greeting */}
+          <div className="pa-fade" style={{marginBottom:20}}>
+            <div style={{fontWeight:900,fontSize:22,color:"#fff",lineHeight:1.2}}>Selamat datang! 👋</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.65)",marginTop:4}}>Mau buka apa hari ini?</div>
+          </div>
+
+          {/* Status GPS */}
+          {hasGps&&(
+            <div className="pa-fade" style={{background:"rgba(255,255,255,.12)",borderRadius:14,padding:"11px 14px",marginBottom:20,border:"1px solid rgba(255,255,255,.2)",display:"flex",alignItems:"center",gap:10}}>
+              {loadGps?(
+                <><div style={{width:24,height:24,border:"3px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 1s linear infinite",flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,.9)"}}>Memeriksa lokasi GPS...</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)"}}>Izinkan akses lokasi jika diminta</div></div></>
+              ):lokasiCek?.isMock?(
+                <><span style={{fontSize:22,flexShrink:0}}>🚫</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:"#fca5a5"}}>GPS Palsu Terdeteksi</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)"}}>Akurasi: {lokasiCek.acc}m — tidak normal</div></div></>
+              ):lokasiCek?.inArea?(
+                <><span style={{fontSize:22,flexShrink:0}}>✅</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:"#a7f3d0"}}>Lokasi Terverifikasi</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)"}}>Dalam {lokasiCek.jarak||"area"} dari outlet</div></div></>
+              ):lokasiCek?(
+                <><span style={{fontSize:22,flexShrink:0}}>📍</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:"#fcd34d"}}>Di luar area — {lokasiCek.jarak}</div><div style={{fontSize:10,color:"rgba(255,255,255,.5)"}}>Radius: {outletUser?.radius||100}m</div></div>
+                <button onClick={cekGps} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🔄</button></>
+              ):null}
+            </div>
+          )}
         </div>
-      </div>
 
-      <div style={{padding:"20px 18px",maxWidth:440,margin:"0 auto"}}>
-        <div style={{fontWeight:800,fontSize:17,color:"#1a2e2a",marginBottom:4}}>Selamat datang! 👋</div>
-        <div style={{fontSize:12,color:"#aaa",marginBottom:16}}>Mau buka apa hari ini?</div>
-
-        {/* Status GPS */}
-        {hasGps&&(
-          <div style={{background:"#fff",borderRadius:12,padding:"10px 14px",marginBottom:16,border:"2px solid #e0f5f1",display:"flex",alignItems:"center",gap:10}}>
-            {loadGps?(
-              <><div style={{width:28,height:28,border:"3px solid #b2ede6",borderTopColor:"#0d9488",borderRadius:"50%",animation:"spin 1s linear infinite",flexShrink:0}}/><div style={{fontSize:12,color:"#aaa",fontWeight:600}}>Memeriksa lokasi GPS...</div></>
-            ):lokasiCek?.isMock?(
-              <><span style={{fontSize:20,flexShrink:0}}>🚫</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#dc2626"}}>GPS Palsu Terdeteksi</div><div style={{fontSize:10,color:"#aaa"}}>Akurasi: {lokasiCek.acc}m — Tidak normal</div></div></>
-            ):lokasiCek?.inArea?(
-              <><span style={{fontSize:20,flexShrink:0}}>✅</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#16a34a"}}>Lokasi Terverifikasi — {lokasiCek.jarak}</div><div style={{fontSize:10,color:"#aaa"}}>Dalam radius {outletUser?.radius||100}m outlet</div></div></>
-            ):(
-              <><span style={{fontSize:20,flexShrink:0}}>📍</span><div style={{flex:1}}><div style={{fontWeight:800,fontSize:12,color:"#d97706"}}>Di luar area outlet — {lokasiCek?.jarak}</div><div style={{fontSize:10,color:"#aaa"}}>Harus dalam radius {outletUser?.radius||100}m</div></div>
-              <button onClick={()=>{ setLokasiCek(null); setLoadGps(true); navigator.geolocation?.getCurrentPosition(p=>{const{latitude:lat,longitude:lng,accuracy:acc}=p.coords;const isMock=acc===0||acc<1;const jarak=hitungJarak(lat,lng,outletUser.lat,outletUser.lng);const inArea=jarak<=(outletUser.radius||100)&&!isMock;const fmtJ=jarak<1000?`${Math.round(jarak)}m`:`${(jarak/1000).toFixed(1)}km`;setLokasiCek({inArea,jarak:fmtJ,isMock,acc:Math.round(acc)});setLoadGps(false);},()=>{setLoadGps(false);},{enableHighAccuracy:true,timeout:8000}); }}
-                style={{padding:"5px 10px",borderRadius:8,border:"2px solid #b2ede6",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🔄</button></>
-            )}
-          </div>
-        )}
-
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {/* KASIR */}
-          {isKasir&&(
-            <button onClick={()=>bolehKasirBank&&onPilih("kasir")}
-              style={{background:"#fff",borderRadius:16,padding:"16px 18px",border:`2px solid ${bolehKasirBank?"#0d9488":"#e0e0e0"}`,cursor:bolehKasirBank?"pointer":"not-allowed",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14,opacity:bolehKasirBank||!hasGps?1:.65,boxShadow:bolehKasirBank?"0 4px 16px rgba(13,148,136,.1)":"none",transition:"all .2s"}}
-              onMouseEnter={e=>bolehKasirBank&&(e.currentTarget.style.background="#f0fdfb")}
-              onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
-              <div style={{width:52,height:52,borderRadius:14,background:bolehKasirBank?"linear-gradient(135deg,#0d9488,#14b8a6)":"#f0f0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:bolehKasirBank?"0 4px 12px rgba(13,148,136,.3)":"none"}}>🛒</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:900,fontSize:15,color:bolehKasirBank?"#1a2e2a":"#aaa"}}>Kasir</div>
-                <div style={{fontSize:11,color:bolehKasirBank?"#0d9488":"#bbb",marginTop:2}}>Buka transaksi penjualan</div>
-                {hasGps&&!bolehKasirBank&&!loadGps&&<div style={{fontSize:10,color:"#ef4444",marginTop:3,fontWeight:700}}>{lokasiCek?.isMock?"⚠️ GPS palsu — akses diblokir":lokasiCek?.jarak?`📍 ${lokasiCek.jarak} dari outlet — harus di toko`:"📍 Harus di area outlet"}</div>}
+        {/* ── MENU CARDS ── */}
+        <div style={{flex:1,padding:"0 20px",display:"flex",flexDirection:"column",gap:12}}>
+          {MENU.map((m,i)=>(
+            <button key={m.k} onClick={()=>!m.locked&&onPilih(m.k)}
+              className="pa-fade"
+              style={{
+                width:"100%",borderRadius:20,padding:"20px 22px",border:"none",
+                background:m.locked?"rgba(255,255,255,.07)":m.grad,
+                cursor:m.locked?"not-allowed":"pointer",fontFamily:"inherit",
+                textAlign:"left",display:"flex",alignItems:"center",gap:16,
+                boxShadow:m.locked?"none":`0 8px 24px ${m.glow}`,
+                opacity:m.locked?0.55:1,
+                transition:"transform .15s,box-shadow .15s",
+                animationDelay:`${i*0.08}s`,
+              }}
+              onMouseEnter={e=>{ if(!m.locked){e.currentTarget.style.transform="scale(1.02)"; e.currentTarget.style.boxShadow=`0 12px 32px ${m.glow}`;} }}
+              onMouseLeave={e=>{ e.currentTarget.style.transform=""; e.currentTarget.style.boxShadow=m.locked?"none":`0 8px 24px ${m.glow}`; }}>
+              {/* Icon circle */}
+              <div style={{width:60,height:60,borderRadius:18,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,flexShrink:0,border:"2px solid rgba(255,255,255,.25)"}}>
+                {m.locked ? "🔒" : m.icon}
               </div>
-              {bolehKasirBank?<span style={{fontSize:22,color:"#0d9488"}}>→</span>:<span style={{fontSize:22}}>{loadGps?"⌛":"🔒"}</span>}
-            </button>
-          )}
-
-          {/* BANK */}
-          {isBank&&(
-            <button onClick={()=>bolehKasirBank&&onPilih("bank")}
-              style={{background:"#fff",borderRadius:16,padding:"16px 18px",border:`2px solid ${bolehKasirBank?"#2980b9":"#e0e0e0"}`,cursor:bolehKasirBank?"pointer":"not-allowed",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14,opacity:bolehKasirBank||!hasGps?1:.65,boxShadow:bolehKasirBank?"0 4px 16px rgba(41,128,185,.1)":"none",transition:"all .2s"}}
-              onMouseEnter={e=>bolehKasirBank&&(e.currentTarget.style.background="#eff6ff")}
-              onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
-              <div style={{width:52,height:52,borderRadius:14,background:bolehKasirBank?"linear-gradient(135deg,#2980b9,#3498db)":"#f0f0f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:bolehKasirBank?"0 4px 12px rgba(41,128,185,.3)":"none"}}>🏦</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:900,fontSize:15,color:bolehKasirBank?"#1a2e2a":"#aaa"}}>Bank</div>
-                <div style={{fontSize:11,color:bolehKasirBank?"#2980b9":"#bbb",marginTop:2}}>Pencatatan transaksi keuangan</div>
-                {hasGps&&!bolehKasirBank&&!loadGps&&<div style={{fontSize:10,color:"#ef4444",marginTop:3,fontWeight:700}}>{lokasiCek?.isMock?"⚠️ GPS palsu — akses diblokir":lokasiCek?.jarak?`📍 ${lokasiCek.jarak} dari outlet`:"📍 Harus di area outlet"}</div>}
+              {/* Label */}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:900,fontSize:18,color:"#fff",marginBottom:3}}>{m.label}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>{m.locked?(lokasiCek?.isMock?"GPS palsu — akses diblokir":lokasiCek?.jarak?`${lokasiCek.jarak} dari outlet — harus di toko`:"Harus di area outlet"):m.sub}</div>
+                {m.free&&!m.locked&&<div style={{marginTop:5,display:"inline-block",background:"rgba(255,255,255,.25)",borderRadius:20,padding:"2px 10px",fontSize:9,fontWeight:800,color:"#fff"}}>BEBAS AKSES</div>}
               </div>
-              {bolehKasirBank?<span style={{fontSize:22,color:"#2980b9"}}>→</span>:<span style={{fontSize:22}}>{loadGps?"⌛":"🔒"}</span>}
+              {/* Arrow */}
+              {!m.locked&&<div style={{color:"rgba(255,255,255,.7)",fontSize:24,flexShrink:0}}>›</div>}
             </button>
-          )}
+          ))}
+        </div>
 
-          {/* PORTAL */}
-          <button onClick={()=>onPilih("portal")}
-            style={{background:"linear-gradient(135deg,#f0faf8,#e0faf5)",borderRadius:16,padding:"16px 18px",border:"2px solid #0d9488",cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:14,boxShadow:"0 4px 16px rgba(13,148,136,.1)",transition:"all .2s"}}
-            onMouseEnter={e=>e.currentTarget.style.background="linear-gradient(135deg,#e0faf5,#b2f5ea)"}
-            onMouseLeave={e=>e.currentTarget.style.background="linear-gradient(135deg,#f0faf8,#e0faf5)"}>
-            <div style={{width:52,height:52,borderRadius:14,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0,boxShadow:"0 4px 12px rgba(13,148,136,.3)"}}>👤</div>
-            <div style={{flex:1}}>
-              <div style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>Portal Saya</div>
-              <div style={{fontSize:11,color:"#0d9488",marginTop:2,opacity:.8}}>Absensi, izin, misi & gaji</div>
+        {/* ── FOOTER ── */}
+        <div style={{padding:"16px 20px",paddingBottom:"max(16px,env(safe-area-inset-bottom,16px))"}}>
+          {!hasGps&&(
+            <div style={{background:"rgba(255,255,255,.08)",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:10,color:"rgba(255,255,255,.5)",textAlign:"center"}}>
+              💡 Koordinat outlet belum diisi — akses kasir/bank tidak dibatasi lokasi
             </div>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
-              <span style={{fontSize:22,color:"#0d9488"}}>→</span>
-              <span style={{fontSize:8,background:"#0d9488",color:"#fff",borderRadius:20,padding:"1px 7px",fontWeight:800}}>BEBAS AKSES</span>
-            </div>
+          )}
+          <button onClick={onLogout}
+            style={{width:"100%",padding:"12px",borderRadius:13,border:"2px solid rgba(255,255,255,.2)",background:"rgba(255,255,255,.08)",color:"rgba(255,255,255,.7)",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}
+            onMouseEnter={e=>{e.currentTarget.style.background="rgba(239,68,68,.2)";e.currentTarget.style.borderColor="rgba(239,68,68,.4)";e.currentTarget.style.color="#fca5a5";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,.08)";e.currentTarget.style.borderColor="rgba(255,255,255,.2)";e.currentTarget.style.color="rgba(255,255,255,.7)";}}>
+            🚪 Logout
           </button>
         </div>
 
-        {!hasGps&&(
-          <div style={{marginTop:14,background:"#fffbeb",borderRadius:10,padding:"10px 13px",border:"1px solid #fcd34d",fontSize:11,color:"#92400e"}}>
-            💡 Koordinat GPS outlet belum diisi admin. Kasir/Bank bisa diakses tanpa pembatasan lokasi.
-          </div>
-        )}
-
-        <button onClick={onLogout} style={{width:"100%",marginTop:16,padding:"11px",borderRadius:12,border:"2px solid #fca5a5",background:"#fff",color:"#dc2626",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🚪 Logout</button>
       </div>
     </div>
   );
