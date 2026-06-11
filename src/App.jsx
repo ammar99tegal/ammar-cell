@@ -842,6 +842,8 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   const [importText,  setImportText]  = useState("");
   const [importError, setImportError] = useState("");
   const [saving,      setSaving]      = useState(false);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkAddRows, setBulkAddRows] = useState([]);
   // prodOrder local -- init dari prodOrderRoot (App root) agar sudah terisi saat buka
   const [prodOrder,   setProdOrder]   = useState(prodOrderRoot||null);
   const [sortProd,    setSortProd]    = useState("default");
@@ -1115,29 +1117,18 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           </div>
         )}
 
-        {/* -- Action Toolbar -- */}
-        <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap",alignItems:"center",background:"#fff",borderRadius:13,padding:"10px 14px",border:"2px solid #e0f5f1",boxShadow:"0 1px 6px rgba(13,148,136,.06)"}}>
-          <button onClick={openAdd}
-            style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"7px 16px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 8px rgba(13,148,136,.3)"}}>
-            {Ic.PlusCirc(15)} + Tambah Produk
-          </button>
-          <div style={{width:1,height:28,background:"#e0f5f1",margin:"0 2px"}}/>
-          <button onClick={()=>setEditCats(p=>!p)}
-            style={{background:editCats?"#e0faf5":"#f8fffe",border:`2px solid ${editCats?"#0d9488":"#e0f5f1"}`,borderRadius:9,padding:"6px 13px",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
-            {Ic.Edit(13)} Kategori
-          </button>
-          <button onClick={startBulkEdit}
-            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
-            📝 Edit Massal
-          </button>
-          <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}}
-            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
-            📥 Import
-          </button>
-          <button onClick={exportCSV}
-            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
-            📤 Export
-          </button>
+        {/* -- Stats -- */}
+        <div style={{display:"flex",gap:9,marginBottom:10}}>
+          {[
+            {l:"Total Produk", v:products.length,   c:"#0d9488", bg:"#e0faf5"},
+            {l:"Kategori",     v:uniqueCats.length,  c:"#8e44ad", bg:"#f5f0ff"},
+            {l:"Harga Modal Total", v:fmtRp(fp.reduce((s,p)=>s+(p.modal||0),0)), c:"#2980b9", bg:"#e8f4fd"},
+          ].map(s=>(
+            <div key={s.l} style={{background:s.bg,borderRadius:11,padding:"10px 16px",border:`2px solid ${s.c}20`,flex:1,textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:18,color:s.c}}>{s.v}</div>
+              <div style={{fontSize:10,fontWeight:700,color:s.c,opacity:.8,marginTop:1}}>{s.l}</div>
+            </div>
+          ))}
         </div>
 
         {/* -- Search + Category Filter -- */}
@@ -1154,14 +1145,33 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
           </div>
         </div>
 
-        {/* Stats */}
-        <div style={{display:"flex",gap:9,marginBottom:12}}>
-          {[{l:"Total Produk",v:products.length,c:"#0d9488"},{l:"Kategori",v:uniqueCats.length,c:"#8e44ad"}].map(s=>(
-            <div key={s.l} style={{background:"#fff",borderRadius:11,padding:"10px 14px",border:"2px solid #e0f5f1",minWidth:100,textAlign:"center"}}>
-              <div style={{fontWeight:900,fontSize:20,color:s.c}}>{s.v}</div>
-              <div style={{fontSize:10,fontWeight:700,color:s.c,opacity:.8}}>{s.l}</div>
-            </div>
-          ))}
+        {/* -- Action Toolbar -- */}
+        <div style={{display:"flex",gap:7,marginBottom:12,flexWrap:"wrap",alignItems:"center",background:"#fff",borderRadius:13,padding:"10px 14px",border:"2px solid #e0f5f1",boxShadow:"0 1px 6px rgba(13,148,136,.06)"}}>
+          <button onClick={openAdd}
+            style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"7px 16px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:5,boxShadow:"0 2px 8px rgba(13,148,136,.3)"}}>
+            {Ic.PlusCirc(15)} + Tambah Produk
+          </button>
+          <button onClick={()=>setShowBulkAdd(true)}
+            style={{background:"linear-gradient(135deg,#27ae60,#2ecc71)",border:"none",borderRadius:9,padding:"7px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📋 Tambah Massal
+          </button>
+          <div style={{width:1,height:28,background:"#e0f5f1",margin:"0 2px"}}/>
+          <button onClick={()=>setEditCats(p=>!p)}
+            style={{background:editCats?"#e0faf5":"#f8fffe",border:`2px solid ${editCats?"#0d9488":"#e0f5f1"}`,borderRadius:9,padding:"6px 13px",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            {Ic.Edit(13)} Kategori
+          </button>
+          <button onClick={startBulkEdit}
+            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📝 Edit Massal
+          </button>
+          <button onClick={()=>{setShowImport(true);setImportText("");setImportError("");}}
+            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📥 Import CSV
+          </button>
+          <button onClick={exportCSV}
+            style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:9,padding:"6px 13px",color:"#555",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+            📤 Export
+          </button>
         </div>
 
         {/* Sort & drag info */}
@@ -1293,6 +1303,105 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
         </Modal>
       )}
       {confirmDel&&<ConfirmModal msg={`Hapus produk "${confirmDel.name}"?`} onConfirm={()=>del(confirmDel.id)} onCancel={()=>setConfirmDel(null)}/>}
+
+      {/* -- MODAL TAMBAH MASSAL -- */}
+      {showBulkAdd&&(()=>{
+        const emptyRow = ()=>({_id:uid(),name:"",barcode:"",category:"",modal:"",price:""});
+        if(bulkAddRows.length===0) setBulkAddRows([emptyRow(),emptyRow(),emptyRow(),emptyRow(),emptyRow()]);
+        const updateRow = (idx,field,val) => setBulkAddRows(prev=>prev.map((r,i)=>i===idx?{...r,[field]:val}:r));
+        const addRow    = () => setBulkAddRows(prev=>[...prev,emptyRow()]);
+        const delRow    = idx => setBulkAddRows(prev=>prev.filter((_,i)=>i!==idx));
+        const saveBulkAdd = async () => {
+          const valid = bulkAddRows.filter(r=>r.name.trim()&&r.price);
+          if(!valid.length) return notify("Isi minimal 1 baris dengan Nama & Harga Jual!","err");
+          setSaving(true);
+          try {
+            for(const r of valid){
+              const np={name:r.name.trim(),barcode:r.barcode.trim(),category:r.category.trim()||"Umum",modal:+r.modal||0,price:+r.price||0};
+              const saved = await db.addProduct(np).catch(()=>null);
+              if(saved) setProducts(prev=>[...prev,saved]);
+            }
+            notify(`${valid.length} produk berhasil ditambahkan ✓`,"ok");
+            setShowBulkAdd(false); setBulkAddRows([]);
+          } catch(e){ notify("Gagal simpan: "+e.message,"err"); }
+          setSaving(false);
+        };
+        const allCatsOpt = ["Umum",...uniqueCats.filter(c=>c!=="Semua"&&c!=="Umum")];
+        const filled = bulkAddRows.filter(r=>r.name.trim()).length;
+        return (
+          <Modal title="📋 Tambah Produk Massal" onClose={()=>{setShowBulkAdd(false);setBulkAddRows([]);}}>
+            <div style={{marginBottom:10,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{fontSize:11,color:"#555",fontWeight:600,flex:1}}>
+                Isi nama & harga jual. Kolom lain opsional. Baris kosong dilewati.
+              </div>
+              <span style={{fontSize:11,background:"#e0faf5",color:"#0d9488",fontWeight:700,padding:"3px 10px",borderRadius:20}}>{filled} baris diisi</span>
+              <button onClick={addRow} style={{padding:"5px 12px",borderRadius:8,border:"2px solid #0d9488",background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Tambah Baris</button>
+            </div>
+            <div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#e0faf5",position:"sticky",top:0}}>
+                    {["#","Nama Produk *","Barcode","Kategori","Harga Modal","Harga Jual *",""].map(h=>(
+                      <th key={h} style={{padding:"7px 8px",textAlign:"left",fontWeight:800,color:"#0d9488",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkAddRows.map((row,i)=>{
+                    const hasName = row.name.trim().length>0;
+                    const hasPrice = row.price;
+                    return (
+                      <tr key={row._id} style={{background:hasName?"#f0fdfb":i%2===0?"#fff":"#fafffe",borderTop:"1px solid #f0faf8"}}>
+                        <td style={{padding:"4px 6px",color:"#aaa",fontSize:11,width:24}}>{i+1}</td>
+                        <td style={{padding:"4px 5px"}}>
+                          <input value={row.name} onChange={e=>updateRow(i,"name",e.target.value)}
+                            placeholder="Nama produk..."
+                            style={{width:"100%",minWidth:160,padding:"5px 8px",borderRadius:7,border:`2px solid ${hasName?"#0d9488":"#b2ede6"}`,fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                        </td>
+                        <td style={{padding:"4px 5px"}}>
+                          <input value={row.barcode} onChange={e=>updateRow(i,"barcode",e.target.value)}
+                            placeholder="--"
+                            style={{width:90,padding:"5px 8px",borderRadius:7,border:"1px solid #b2ede6",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+                        </td>
+                        <td style={{padding:"4px 5px"}}>
+                          <input list={`cats-${i}`} value={row.category} onChange={e=>updateRow(i,"category",e.target.value)}
+                            placeholder="Kategori"
+                            style={{width:100,padding:"5px 8px",borderRadius:7,border:"1px solid #b2ede6",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+                          <datalist id={`cats-${i}`}>{allCatsOpt.map(c=><option key={c} value={c}/>)}</datalist>
+                        </td>
+                        <td style={{padding:"4px 5px"}}>
+                          <input type="number" value={row.modal} onChange={e=>updateRow(i,"modal",e.target.value)}
+                            placeholder="0"
+                            style={{width:80,padding:"5px 8px",borderRadius:7,border:"1px solid #b2ede6",fontSize:12,textAlign:"right",outline:"none",fontFamily:"inherit"}}/>
+                        </td>
+                        <td style={{padding:"4px 5px"}}>
+                          <input type="number" value={row.price} onChange={e=>updateRow(i,"price",e.target.value)}
+                            placeholder="0"
+                            style={{width:80,padding:"5px 8px",borderRadius:7,border:`2px solid ${hasPrice?"#0d9488":"#b2ede6"}`,fontSize:12,fontWeight:700,textAlign:"right",outline:"none",fontFamily:"inherit"}}/>
+                        </td>
+                        <td style={{padding:"4px 5px"}}>
+                          <button onClick={()=>delRow(i)} style={{background:"none",border:"none",color:"#fca5a5",cursor:"pointer",fontSize:14,padding:"2px 4px"}}
+                            onMouseEnter={e=>e.currentTarget.style.color="#dc2626"} onMouseLeave={e=>e.currentTarget.style.color="#fca5a5"}>✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{marginTop:12,display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>{setShowBulkAdd(false);setBulkAddRows([]);}}
+                style={{padding:"8px 18px",borderRadius:9,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+              <button onClick={saveBulkAdd} disabled={saving||filled===0}
+                style={{padding:"8px 22px",borderRadius:9,border:"none",
+                  background:saving||filled===0?"#ccc":"linear-gradient(135deg,#27ae60,#2ecc71)",
+                  color:"#fff",fontWeight:800,fontSize:13,cursor:filled>0?"pointer":"default",fontFamily:"inherit"}}>
+                {saving?"⏳ Menyimpan...":filled>0?`💾 Simpan ${filled} Produk`:"💾 Simpan"}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* -- STOK TABS (Opname/Masuk/Keluar/Transfer/Log) -- */}
       {["opname","masuk","keluar","transfer","log"].includes(mainTab)&&(
@@ -1684,6 +1793,34 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
                 <button key={s.k} onClick={()=>setSortField(s.k)} style={{padding:"4px 11px",borderRadius:20,border:`2px solid ${sortField===s.k?"#0d9488":"#b2ede6"}`,background:sortField===s.k?"#0d9488":"#fff",color:sortField===s.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{s.l}</button>
               ))}
             </div>
+
+            {/* -- Total Modal Keseluruhan -- */}
+            {(()=>{
+              const allProds = filteredProds;
+              const totalModalOutlet   = products.reduce((s,p)=>s+(outletStock[p.id]??0)*(p.modal||0),0);
+              const totalStokOutlet    = products.reduce((s,p)=>s+(outletStock[p.id]??0),0);
+              const habisCount         = products.filter(p=>(outletStock[p.id]??0)===0).length;
+              const menipisCount       = products.filter(p=>{ const q=outletStock[p.id]??0; return q>0&&q<=5; }).length;
+              const totalModalNyata    = products.reduce((s,p)=>s+(realStocks[p.id]??outletStock[p.id]??0)*(p.modal||0),0);
+              return (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:9,marginBottom:12}}>
+                  {[
+                    {l:"Total Stok",    v:`${totalStokOutlet} pcs`,  c:"#0d9488", bg:"#e0faf5"},
+                    {l:"Nilai Modal",   v:fmtRp(totalModalOutlet),   c:"#7c3aed", bg:"#f5f3ff"},
+                    {l:"Modal Nyata",   v:fmtRp(totalModalNyata),    c:"#2980b9", bg:"#e8f4fd"},
+                    {l:"SKU",           v:products.length,           c:"#555",    bg:"#f9fafb"},
+                    {l:"Habis",         v:habisCount,                c:"#dc2626", bg:"#fff5f5"},
+                    {l:"Menipis ≤5",    v:menipisCount,              c:"#d97706", bg:"#fffbeb"},
+                  ].map(k=>(
+                    <div key={k.l} style={{background:k.bg,borderRadius:11,padding:"10px 14px",border:`1px solid ${k.c}20`,textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:16,color:k.c}}>{k.v}</div>
+                      <div style={{fontSize:9,fontWeight:700,color:k.c,opacity:.75,marginTop:2}}>{k.l}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
             <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
               <div style={{position:"relative",flex:1}}>
                 <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Search()}</span>
