@@ -10162,7 +10162,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
 // ==============================================================================
 // PORTAL KARYAWAN
 // ==============================================================================
-function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, notify }) {
+function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, onKembali, notify }) {
   const [tab,setTab]           = useState("beranda");
   const [clock,setClock]       = useState(new Date().toLocaleTimeString("id-ID"));
   const [absenMasuk,setAbsenM] = useState(()=>{ const t=today(); return (absensiMap[user.id]||[]).find(a=>a.tgl===t&&a.masuk)?absensiMap[user.id].find(a=>a.tgl===t):null; });
@@ -10259,6 +10259,10 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
       {/* HEADER */}
       <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",padding:"14px 18px 16px",position:"sticky",top:0,zIndex:50,boxShadow:"0 4px 16px rgba(13,148,136,.3)"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
+          {/* Tombol kembali untuk kasir/bank/staff */}
+          {onKembali&&(user.role==="kasir"||user.role==="bank"||user.role==="staff")&&(
+            <button onClick={onKembali} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>←</button>
+          )}
           <div style={{width:44,height:44,borderRadius:14,background:"rgba(255,255,255,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:17,color:"#fff",border:"2px solid rgba(255,255,255,.3)",flexShrink:0}}>{user.nama?.slice(0,2).toUpperCase()}</div>
           <div style={{flex:1}}>
             <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>{user.nama}</div>
@@ -11868,21 +11872,23 @@ export default function App() {
       <Toast toast={toast}/>
       <ConnStatusBar status={connStatus} lastPing={lastPing} offlineQueue={offlineQueue}/>
 
-      {/* Portrait warning untuk HP */}
-      <div className="portrait-warn">
-        <div style={{fontSize:48,marginBottom:16}}>🔄</div>
-        <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar HP Kamu</div>
-        <div style={{fontSize:14,opacity:.85,lineHeight:1.6}}>
-          Aplikasi kasir lebih nyaman digunakan dalam mode <b>Landscape</b> (horizontal)
+      {/* Portrait warning — DISEMBUNYIKAN untuk halaman pilih & portal (memang portrait) */}
+      {page!=="pilih"&&page!=="portal"&&(
+        <div className="portrait-warn">
+          <div style={{fontSize:48,marginBottom:16}}>🔄</div>
+          <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar HP Kamu</div>
+          <div style={{fontSize:14,opacity:.85,lineHeight:1.6}}>
+            Aplikasi kasir lebih nyaman digunakan dalam mode <b>Landscape</b> (horizontal)
+          </div>
+          <div style={{marginTop:20,background:"rgba(255,255,255,.15)",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:700}}>
+            Putar HP 90° untuk melanjutkan
+          </div>
         </div>
-        <div style={{marginTop:20,background:"rgba(255,255,255,.15)",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:700}}>
-          Putar HP 90° untuk melanjutkan
-        </div>
-      </div>
+      )}
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
-      {page==="portal"    && user?.role==="karyawan" && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} notify={notify}/>}
+      {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify}/>}
       {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="kasir"     && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
