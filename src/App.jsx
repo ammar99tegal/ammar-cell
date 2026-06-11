@@ -489,20 +489,21 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
 
     try {
       if(editUser && editUser!==uForm.username.toLowerCase()) {
-        await db.deleteUser(editUser);
-        // Hapus mapping outlet lama
+        try{ await db.deleteUser(editUser); }catch(e2){ console.warn('deleteUser:',e2); }
         try{ await supabase.from('user_outlets').delete().eq('username', editUser); }catch{}
       }
-      await db.upsertUser(uForm.username.toLowerCase(), userData);
+      try{ await db.upsertUser(uForm.username.toLowerCase(), userData); }catch(e2){ console.warn('upsertUser:',e2); }
 
       // Simpan outletIds ke tabel user_outlets
       if(outletIds.length>0) {
         try{
           await supabase.from('user_outlets').delete().eq('username', uForm.username.toLowerCase());
+        }catch{}
+        try{
           await supabase.from('user_outlets').insert(
             outletIds.map(oid=>({username:uForm.username.toLowerCase(), outlet_id:oid, role:uForm.role}))
           );
-        }catch(e){ console.warn('user_outlets save:',e); }
+        }catch(e){ console.warn('user_outlets insert:',e); }
       }
 
       try{
