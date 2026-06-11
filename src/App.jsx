@@ -244,29 +244,18 @@ function Field({label,value,onChange,type="text",placeholder="",note,style:sx={}
 // ==============================================================================
 // LOGIN
 // ==============================================================================
-function LoginPage({ users, onLogin, onChangePass }) {
-  const [username,  setUsername] = useState("");
-  const [password,  setPassword] = useState("");
-  const [showPass,  setShowPass] = useState(false);
-  const [error,     setError]    = useState("");
-  const [loading,   setLoading]  = useState(false);
-  const [showGanti, setShowGanti]= useState(false);
-  // Ganti password
-  const [gpUser,    setGpUser]   = useState("");
-  const [gpLama,    setGpLama]   = useState("");
-  const [gpBaru,    setGpBaru]   = useState("");
-  const [gpKonfirm, setGpKonfirm]= useState("");
-  const [showGL,    setShowGL]   = useState(false);
-  const [showGB,    setShowGB]   = useState(false);
-  const [gpErr,     setGpErr]    = useState("");
-  const [gpOk,      setGpOk]     = useState(false);
+function LoginPage({ users, onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error,    setError]    = useState("");
+  const [loading,  setLoading]  = useState(false);
 
   const onlyAngka = v => v.replace(/[^0-9]/g,"");
   const blockNonAngka = e => { if(!/[0-9]|Backspace|Delete|Tab|Enter|ArrowLeft|ArrowRight/.test(e.key)) e.preventDefault(); };
 
   const handleLogin = () => {
     if(!username||!password) return setError("Isi username dan password!");
-    if(!/^\d+$/.test(password)) return setError("Password harus angka saja!");
     setLoading(true);
     setTimeout(()=>{
       const user = users[username.toLowerCase()];
@@ -275,50 +264,14 @@ function LoginPage({ users, onLogin, onChangePass }) {
     },600);
   };
 
-  const handleGanti = async () => {
-    setGpErr("");
-    if(!gpUser||!gpLama||!gpBaru||!gpKonfirm) return setGpErr("Semua kolom harus diisi!");
-    if(!/^\d+$/.test(gpBaru)) return setGpErr("Password baru harus angka saja!");
-    if(gpBaru.length<4) return setGpErr("Password baru minimal 4 digit!");
-    if(gpBaru!==gpKonfirm) return setGpErr("Konfirmasi password tidak cocok!");
-    const u = users[gpUser.toLowerCase()];
-    if(!u) return setGpErr("Username tidak ditemukan!");
-    if(u.pass!==gpLama) return setGpErr("Password lama salah!");
-    setLoading(true);
-    try {
-      if(onChangePass) await onChangePass(gpUser.toLowerCase(), gpBaru);
-      setGpOk(true);
-      setTimeout(()=>{ setGpOk(false); setShowGanti(false); setGpUser(""); setGpLama(""); setGpBaru(""); setGpKonfirm(""); }, 2200);
-    } catch(e){ setGpErr("Gagal: "+e.message); }
-    setLoading(false);
-  };
-
-  const PwInput = ({val,set,show,tog,ph,err})=>(
-    <div style={{position:"relative"}}>
-      <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Lock(18)}</span>
-      <input type={show?"text":"password"} inputMode="numeric" pattern="[0-9]*"
-        value={val} onChange={e=>{set(onlyAngka(e.target.value));setGpErr("");}}
-        onKeyDown={blockNonAngka} placeholder={ph} maxLength={12}
-        style={{...inp,paddingLeft:38,paddingRight:38,border:`2px solid ${err?"#ff4757":"#b2ede6"}`,letterSpacing:show?"normal":"3px",fontWeight:700}}/>
-      <button onClick={tog} style={{position:"absolute",right:11,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#aaa",cursor:"pointer"}}>
-        {show?Ic.EyeOff():Ic.Eye()}
-      </button>
-    </div>
-  );
-
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif"}}>
-      <style>{`@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}`}</style>
       <div style={{background:"#fff",borderRadius:24,padding:"36px 32px",width:360,boxShadow:"0 24px 80px rgba(0,0,0,.25)",animation:"fadeUp .4s ease"}}>
-
-        {/* Header */}
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{fontSize:44,marginBottom:8}}>🏪</div>
           <div style={{fontWeight:900,fontSize:22,color:"#0d9488"}}>Ammar Cell</div>
           <div style={{fontSize:12,color:"#aaa",fontWeight:600,marginTop:2}}>Sistem Kasir Terpadu</div>
         </div>
-
-        {/* Username */}
         <div style={{marginBottom:12}}>
           <label style={{...lbl}}>Username</label>
           <div style={{position:"relative"}}>
@@ -328,9 +281,7 @@ function LoginPage({ users, onLogin, onChangePass }) {
               style={{...inp,paddingLeft:38,border:`2px solid ${error?"#ff4757":"#b2ede6"}`}}/>
           </div>
         </div>
-
-        {/* Password */}
-        <div style={{marginBottom:4}}>
+        <div style={{marginBottom:16}}>
           <label style={{...lbl}}>Password <span style={{fontSize:10,color:"#aaa",fontWeight:600}}>(angka saja)</span></label>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.Lock(18)}</span>
@@ -338,70 +289,14 @@ function LoginPage({ users, onLogin, onChangePass }) {
               value={password} onChange={e=>{setPassword(onlyAngka(e.target.value));setError("");}}
               onKeyDown={e=>{blockNonAngka(e);if(e.key==="Enter")handleLogin();}}
               placeholder="Password angka..." maxLength={12}
-              style={{...inp,paddingLeft:38,paddingRight:38,border:`2px solid ${error?"#ff4757":"#b2ede6"}`,letterSpacing:showPass?"normal":"3px",fontWeight:700}}/>
+              style={{...inp,paddingLeft:38,paddingRight:38,border:`2px solid ${error?"#ff4757":"#b2ede6"}`,letterSpacing:showPass?"normal":"4px",fontWeight:700}}/>
             <button onClick={()=>setShowPass(p=>!p)} style={{position:"absolute",right:11,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#aaa",cursor:"pointer"}}>
               {showPass?Ic.EyeOff():Ic.Eye()}
             </button>
           </div>
         </div>
-
-        {/* Link lupa/ganti password */}
-        <div style={{textAlign:"right",marginBottom:8}}>
-          <button onClick={()=>{setShowGanti(p=>!p);setGpErr("");setGpOk(false);}}
-            style={{background:"none",border:"none",color:"#0d9488",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0,textDecoration:"underline",textUnderlineOffset:2}}>
-            {showGanti?"✕ Tutup":"🔑 Lupa / Ganti Password?"}
-          </button>
-        </div>
-
-        {/* Panel ganti password */}
-        {showGanti&&(
-          <div style={{background:"#f0faf8",borderRadius:14,padding:"14px 16px",marginBottom:12,border:"2px solid #b2ede6",animation:"slideDown .25s ease"}}>
-            <div style={{fontWeight:800,fontSize:13,color:"#0d9488",marginBottom:10}}>🔑 Ganti Password</div>
-
-            {gpOk?(
-              <div style={{textAlign:"center",padding:"12px 0"}}>
-                <div style={{fontSize:32,marginBottom:6}}>✅</div>
-                <div style={{fontWeight:800,fontSize:13,color:"#16a34a"}}>Password Berhasil Diubah!</div>
-              </div>
-            ):(
-              <>
-                <div style={{marginBottom:8}}>
-                  <label style={{...lbl,fontSize:10}}>Username</label>
-                  <div style={{position:"relative"}}>
-                    <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#0d9488"}}>{Ic.User(14)}</span>
-                    <input type="text" value={gpUser} onChange={e=>{setGpUser(e.target.value);setGpErr("");}} placeholder="Username..."
-                      style={{...inp,paddingLeft:34,fontSize:12,padding:"8px 10px 8px 34px",border:`2px solid ${gpErr?"#ff4757":"#b2ede6"}`}}/>
-                  </div>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <label style={{...lbl,fontSize:10}}>Password Lama</label>
-                  <PwInput val={gpLama} set={setGpLama} show={showGL} tog={()=>setShowGL(p=>!p)} ph="Password lama..." err={!!gpErr}/>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <label style={{...lbl,fontSize:10}}>Password Baru <span style={{color:"#aaa"}}>(min. 4 angka)</span></label>
-                  <PwInput val={gpBaru} set={setGpBaru} show={showGB} tog={()=>setShowGB(p=>!p)} ph="Password baru..." err={!!gpErr}/>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <label style={{...lbl,fontSize:10}}>Konfirmasi Password Baru</label>
-                  <PwInput val={gpKonfirm} set={setGpKonfirm} show={showGB} tog={()=>setShowGB(p=>!p)} ph="Ulangi password baru..." err={gpBaru!==gpKonfirm&&!!gpKonfirm}/>
-                  {gpBaru&&gpKonfirm&&(gpBaru===gpKonfirm
-                    ?<div style={{fontSize:10,color:"#16a34a",marginTop:3,fontWeight:700}}>✅ Password cocok</div>
-                    :<div style={{fontSize:10,color:"#ff4757",marginTop:3,fontWeight:700}}>❌ Tidak cocok</div>
-                  )}
-                </div>
-                {gpErr&&<div style={{fontSize:11,color:"#ff4757",fontWeight:700,marginBottom:8,padding:"6px 10px",background:"#fff0f0",borderRadius:8}}>⚠️ {gpErr}</div>}
-                <button onClick={handleGanti} disabled={loading}
-                  style={{width:"100%",padding:"9px",borderRadius:10,border:"none",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:loading?"not-allowed":"pointer",fontFamily:"inherit"}}>
-                  {loading?"⏳ Menyimpan...":"💾 Simpan Password Baru"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
         {error&&<div style={{fontSize:12,color:"#ff4757",fontWeight:700,marginBottom:8,padding:"6px 10px",background:"#fff0f0",borderRadius:8}}>⚠ {error}</div>}
-
-        <button onClick={handleLogin}
+        <button onClick={handleLogin} disabled={loading}
           style={{width:"100%",background:loading?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:13,color:"#fff",fontWeight:800,fontSize:15,cursor:loading?"not-allowed":"pointer",marginTop:4,boxShadow:loading?"none":"0 4px 16px rgba(13,148,136,.4)"}}>
           {loading?"⏳ Masuk...":"Masuk →"}
         </button>
@@ -409,7 +304,6 @@ function LoginPage({ users, onLogin, onChangePass }) {
     </div>
   );
 }
-
 // ==============================================================================
 // MENU UTAMA
 // ==============================================================================
@@ -512,6 +406,9 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   const [editOutlet,    setEditOutlet]    = useState(null);
   const [editUser,      setEditUser]      = useState(null);
   const [confirmDel,    setConfirmDel]    = useState(null);
+  const [resetPassTarget, setResetPassTarget] = useState(null); // {key, nama}
+  const [resetPassVal,  setResetPassVal]  = useState("");
+  const [resetPassOk,   setResetPassOk]   = useState(false);
   const [oForm, setOForm] = useState({nama:"",alamat:"",lat:"",lng:"",radius:100});
   const [uForm, setUForm] = useState({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"});
 
@@ -742,8 +639,9 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                         )}
                       </td>
                       <td style={{padding:"10px 13px"}}>
-                        <div style={{display:"flex",gap:5}}>
+                        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                           <button onClick={()=>openEditUser(u,key)} style={{background:"#e0faf5",border:"none",borderRadius:7,padding:"5px 10px",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",gap:3,fontFamily:"inherit"}}>{Ic.Edit()} Edit</button>
+                          <button onClick={()=>setResetPassTarget({key,nama:u.nama})} style={{background:"#fffbeb",border:"none",borderRadius:7,padding:"5px 10px",color:"#d97706",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>🔑 Reset</button>
                           <button onClick={()=>setConfirmDel({type:"user",id:key,nama:u.nama})} style={{background:"#fff0f0",border:"none",borderRadius:7,padding:"5px 10px",color:"#ff4757",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{Ic.Trash()} Hapus</button>
                         </div>
                       </td>
@@ -891,6 +789,61 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
           onConfirm={()=>confirmDel.type==="outlet"?deleteOutlet(confirmDel.id):deleteUser(confirmDel.id)}
           onCancel={()=>setConfirmDel(null)}
         />
+      )}
+
+      {/* MODAL RESET PASSWORD */}
+      {resetPassTarget&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#fff",borderRadius:18,padding:"24px",width:"100%",maxWidth:380,boxShadow:"0 16px 48px rgba(0,0,0,.25)"}}>
+            {resetPassOk?(
+              <div style={{textAlign:"center",padding:"12px 0"}}>
+                <div style={{fontSize:48,marginBottom:10}}>✅</div>
+                <div style={{fontWeight:900,fontSize:16,color:"#16a34a"}}>Password Berhasil Direset!</div>
+                <div style={{fontSize:12,color:"#aaa",marginTop:4}}>Password baru: <b style={{color:"#0d9488",letterSpacing:2}}>{resetPassVal}</b></div>
+              </div>
+            ):(
+              <>
+                <div style={{fontWeight:900,fontSize:16,color:"#1a2e2a",marginBottom:4}}>🔑 Reset Password</div>
+                <div style={{fontSize:12,color:"#aaa",marginBottom:16}}>
+                  User: <b style={{color:"#0d9488"}}>{resetPassTarget.nama}</b> <span style={{color:"#ccc"}}>({resetPassTarget.key})</span>
+                </div>
+                <div style={{marginBottom:16}}>
+                  <label style={{...lbl}}>Password Baru <span style={{fontSize:10,color:"#aaa"}}>(angka saja, min. 4 digit)</span></label>
+                  <input type="text" inputMode="numeric" pattern="[0-9]*"
+                    value={resetPassVal}
+                    onChange={e=>setResetPassVal(e.target.value.replace(/[^0-9]/g,""))}
+                    onKeyDown={e=>{ if(!/[0-9]|Backspace|Delete|Tab|Enter|ArrowLeft|ArrowRight/.test(e.key)) e.preventDefault(); }}
+                    placeholder="Contoh: 1234"
+                    maxLength={12} autoFocus
+                    style={{...inp,letterSpacing:"6px",fontWeight:900,fontSize:20,textAlign:"center"}}/>
+                  {resetPassVal&&resetPassVal.length<4&&<div style={{fontSize:11,color:"#d97706",marginTop:4}}>⚠ Minimal 4 digit</div>}
+                  {resetPassVal&&resetPassVal.length>=4&&<div style={{fontSize:11,color:"#16a34a",marginTop:4}}>✅ Password valid</div>}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>{setResetPassTarget(null);setResetPassVal("");}}
+                    style={{flex:1,padding:"10px",borderRadius:10,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
+                  <button disabled={!resetPassVal||resetPassVal.length<4}
+                    onClick={async()=>{
+                      const u=users[resetPassTarget.key];
+                      if(!u) return;
+                      const updated={...u,pass:resetPassVal};
+                      setUsers(prev=>({...prev,[resetPassTarget.key]:updated}));
+                      try{ await db.upsertUser(resetPassTarget.key,updated); }catch(e){ console.warn('resetPass:',e); }
+                      notify(`Password "${resetPassTarget.nama}" berhasil direset ✓`,"ok");
+                      setResetPassOk(true);
+                      setTimeout(()=>{ setResetPassTarget(null); setResetPassVal(""); setResetPassOk(false); },2200);
+                    }}
+                    style={{flex:2,padding:"10px",borderRadius:10,border:"none",
+                      background:resetPassVal&&resetPassVal.length>=4?"linear-gradient(135deg,#d97706,#f59e0b)":"#e0e0e0",
+                      color:"#fff",fontWeight:800,fontSize:13,
+                      cursor:resetPassVal&&resetPassVal.length>=4?"pointer":"not-allowed",fontFamily:"inherit"}}>
+                    🔑 Reset Password
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -12136,12 +12089,6 @@ export default function App() {
           return;
         }
         setPage("menu");
-      }} onChangePass={async (username, newPass)=>{
-        const u = users[username];
-        if(!u) throw new Error("User tidak ditemukan");
-        const updated = {...u, pass:newPass};
-        try{ await db.upsertUser(username, updated); }catch(e){ console.warn('upsertUser changePass:',e); }
-        setUsers(prev=>({...prev,[username]:updated}));
       }}/>
     </>
   );
