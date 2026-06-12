@@ -10852,6 +10852,26 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
 // ==============================================================================
 // ADMIN PORTAL PAGE — kelola misi, note, shift, review izin & absensi
 // ==============================================================================
+// Komponen pilih waktu format 24 jam (WIB) — hindari AM/PM browser
+function Time24Input({value, onChange}) {
+  const [h,m] = (value||"08:00").split(":");
+  const setH = nh => onChange(`${nh.padStart(2,"0")}:${m||"00"}`);
+  const setM = nm => onChange(`${h||"08"}:${nm.padStart(2,"0")}`);
+  const selStyle = {flex:1,padding:"8px 6px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",cursor:"pointer",textAlign:"center",fontWeight:700};
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:4}}>
+      <select value={h} onChange={e=>setH(e.target.value)} style={selStyle}>
+        {Array.from({length:24},(_,i)=>String(i).padStart(2,"0")).map(v=><option key={v} value={v}>{v}</option>)}
+      </select>
+      <span style={{fontWeight:900,color:"#aaa"}}>:</span>
+      <select value={m} onChange={e=>setM(e.target.value)} style={selStyle}>
+        {["00","15","30","45"].map(v=><option key={v} value={v}>{v}</option>)}
+      </select>
+      <span style={{fontSize:10,color:"#aaa",fontWeight:700,flexShrink:0}}>WIB</span>
+    </div>
+  );
+}
+
 function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, izinMap, setIzinMap, onBack, notify }) {
   const [tab,setTab]         = useState("overview"); // overview|misi|izin|absensi|settings
   const [editNote,setEditNote]=useState(false);
@@ -11214,13 +11234,11 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
                 <div>
                   <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Masuk</label>
-                  <input type="time" value={sh.masuk} onChange={e=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,masuk:e.target.value}:x)}))}
-                    style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+                  <Time24Input value={sh.masuk} onChange={v=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,masuk:v}:x)}))}/>
                 </div>
                 <div>
                   <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Pulang</label>
-                  <input type="time" value={sh.pulang} onChange={e=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,pulang:e.target.value}:x)}))}
-                    style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+                  <Time24Input value={sh.pulang} onChange={v=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,pulang:v}:x)}))}/>
                 </div>
                 <div>
                   <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Total Jam</label>
@@ -11475,6 +11493,98 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
         const totalPotongan = kasbon + potLain + potIzin + potSakit;
         const totalGaji = Math.max(0, gajiPokok + lemburPay - totalPotongan);
 
+        const printSlip = () => {
+          const w = window.open("","_blank");
+          if(!w) return;
+          const fmtRpL = n => "Rp " + n.toLocaleString("id-ID");
+          const rowsHtml = [
+            {l:"Gaji Pokok", v:fmtRpL(gajiPokok)},
+            {l:`Lembur (${lemburN}x — ${draftShift.lemburTipe==="pershift"?"per sesi":"per jam"})`, v:fmtRpL(lemburPay)},
+            {l:"Subtotal", v:fmtRpL(gajiPokok+lemburPay), bold:true},
+          ];
+          const potHtml = [
+            {l:`Izin (${izinN}x)`, v:"- "+fmtRpL(potIzin)},
+            {l:`Sakit (${sakitN}x)`, v:"- "+fmtRpL(potSakit)},
+            {l:"Kasbon", v:"- "+fmtRpL(kasbon)},
+            {l:"Potongan Lain", v:"- "+fmtRpL(potLain)},
+            {l:"Total Potongan", v:"- "+fmtRpL(totalPotongan), bold:true},
+          ];
+          const rowHTML = r => `<div class="row${r.bold?' bold':''}"><span>${r.l}</span><span class="${r.bold?'':''}">${r.v}</span></div>`;
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Slip Gaji - ${k.nama}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+            *{box-sizing:border-box;margin:0;padding:0}
+            body{font-family:'Nunito',Arial,sans-serif;background:#f0faf8;padding:24px;color:#1a2e2a;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+            .card{max-width:480px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08);border:1px solid #e0f5f1}
+            .head{background:linear-gradient(135deg,#064e3b,#0d9488,#14b8a6);color:#fff;padding:28px 26px 22px;position:relative}
+            .head .label{font-size:12px;opacity:.85;font-weight:700;letter-spacing:2px}
+            .head .company{font-weight:900;font-size:24px;margin-top:4px}
+            .head .icon{position:absolute;top:24px;right:24px;font-size:30px}
+            .who{display:flex;align-items:center;gap:12px;margin-top:20px}
+            .avatar{width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px}
+            .who .nama{font-weight:900;font-size:18px}
+            .who .sub{font-size:12px;opacity:.85;margin-top:2px}
+            .periode{margin-top:18px;background:rgba(255,255,255,.15);border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700}
+            .body{padding:26px}
+            .section-title{font-weight:900;font-size:13px;letter-spacing:2px;margin-bottom:10px}
+            .section-title.in{color:#0d9488}
+            .section-title.out{color:#dc2626}
+            .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0faf8;font-size:14px}
+            .row.bold{font-weight:900;font-size:15px}
+            .row span:last-child{font-weight:700}
+            .row.bold span:last-child{font-weight:900}
+            .gap{height:18px}
+            .total-box{margin-top:20px;background:linear-gradient(135deg,#e0faf5,#d1fae5);border:2px solid #86efac;border-radius:14px;padding:18px;text-align:center}
+            .total-box .l{font-size:13px;font-weight:700;color:#16a34a;margin-bottom:4px;letter-spacing:1px}
+            .total-box .v{font-weight:900;font-size:32px;color:#16a34a}
+            .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:18px}
+            .stat{border-radius:10px;padding:12px;text-align:center}
+            .stat .v{font-weight:900;font-size:20px}
+            .stat .l{font-size:11px;font-weight:700;margin-top:2px}
+            .footer{margin-top:20px;font-size:11px;color:#aaa;text-align:center;line-height:1.6}
+            @media print{
+              body{background:#fff;padding:0}
+              .card{box-shadow:none;border:none;max-width:100%}
+              @page{size:A4;margin:14mm}
+            }
+          </style></head><body>
+            <div class="card">
+              <div class="head">
+                <div class="icon">🧾</div>
+                <div class="label">SLIP GAJI KARYAWAN</div>
+                <div class="company">Ammar Cell</div>
+                <div class="who">
+                  <div class="avatar">${(k.nama||"--").slice(0,2).toUpperCase()}</div>
+                  <div>
+                    <div class="nama">${k.nama}</div>
+                    <div class="sub">${outlets.find(o=>o.id===k.outletId)?.nama||"--"} · ${k.role==="staff"?"Kasir+Bank":k.role}</div>
+                  </div>
+                </div>
+                <div class="periode">📅 Periode: ${bulanIni}</div>
+              </div>
+              <div class="body">
+                <div class="section-title in">💵 PENDAPATAN</div>
+                ${rowsHtml.map(rowHTML).join("")}
+                <div class="gap"></div>
+                <div class="section-title out">✂️ POTONGAN</div>
+                ${potHtml.map(rowHTML).join("")}
+                <div class="total-box">
+                  <div class="l">TOTAL DITERIMA</div>
+                  <div class="v">${fmtRpL(totalGaji)}</div>
+                </div>
+                <div class="stats">
+                  <div class="stat" style="background:#f0fdf4"><div class="v" style="color:#16a34a">${hadirN}</div><div class="l" style="color:#16a34a">Hadir</div></div>
+                  <div class="stat" style="background:#fffbeb"><div class="v" style="color:#d97706">${izinN}</div><div class="l" style="color:#d97706">Izin</div></div>
+                  <div class="stat" style="background:#fff5f5"><div class="v" style="color:#dc2626">${sakitN}</div><div class="l" style="color:#dc2626">Sakit</div></div>
+                </div>
+                <div class="footer">Slip gaji ini dibuat otomatis oleh sistem Ammar Cell<br>${new Date().toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"})}</div>
+              </div>
+            </div>
+            <script>setTimeout(()=>window.print(),400)</script>
+          </body></html>`);
+          w.document.close();
+        };
+
         const Row=({label,val,bold,color})=>(
           <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f0faf8"}}>
             <span style={{fontSize:12,color:bold?"#1a2e2a":"#666",fontWeight:bold?800:600}}>{label}</span>
@@ -11545,7 +11655,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
 
                 <div style={{display:"flex",gap:8,marginTop:16}}>
                   <button onClick={()=>setSlipGajiTarget(null)} style={{flex:1,padding:"11px",borderRadius:11,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Tutup</button>
-                  <button onClick={()=>window.print()} style={{flex:2,padding:"11px",borderRadius:11,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🖨️ Cetak / Simpan PDF</button>
+                  <button onClick={printSlip} style={{flex:2,padding:"11px",borderRadius:11,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🖨️ Cetak / Simpan PDF</button>
                 </div>
               </div>
             </div>
