@@ -10387,8 +10387,8 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
 function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, onKembali, notify }) {
   const [tab,setTab]           = useState("beranda");
   const [clock,setClock]       = useState(new Date().toLocaleTimeString("id-ID"));
-  const [absenMasuk,setAbsenM] = useState(()=>{ const t=today(); return (absensiMap[user.id]||[]).find(a=>a.tgl===t&&a.masuk)?absensiMap[user.id].find(a=>a.tgl===t):null; });
-  const [absenPulang,setAbsenP]= useState(()=>{ const t=today(); return (absensiMap[user.id]||[]).find(a=>a.tgl===t&&a.pulang)?absensiMap[user.id].find(a=>a.tgl===t):null; });
+  const [absenMasuk,setAbsenM] = useState(()=>{ const t=today(); return (absensiMap[user.username]||[]).find(a=>a.tgl===t&&a.masuk)?absensiMap[user.username].find(a=>a.tgl===t):null; });
+  const [absenPulang,setAbsenP]= useState(()=>{ const t=today(); return (absensiMap[user.username]||[]).find(a=>a.tgl===t&&a.pulang)?absensiMap[user.username].find(a=>a.tgl===t):null; });
   const [kameraMode,setKamMode]= useState(null);
   const [lokasiStr,setLokasiStr]=useState("Mengambil lokasi...");
   const [gpsOk,setGpsOk]       = useState(null); // null=loading, true=di outlet, false=di luar
@@ -10401,8 +10401,8 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   const [formAjuan,setFormAjuan]=useState({tgl:"",jam:"",ket:""});
   const [submitOk,setSubmitOk] = useState(false);
 
-  const myIzin = izinMap[user.id]||[];
-  const myAbsensi = absensiMap[user.id]||[];
+  const myIzin = izinMap[user.username]||[];
+  const myAbsensi = absensiMap[user.username]||[];
 
   useEffect(()=>{ const iv=setInterval(()=>setClock(new Date().toLocaleTimeString("id-ID")),1000); return()=>clearInterval(iv); },[]);
 
@@ -10450,14 +10450,14 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
     if(kameraMode==="masuk"){
       const rec={...entry,masuk:jam,pulang:null};
       setAbsenM(rec);
-      setAbsensiMap(prev=>({...prev,[user.id]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
-      (async()=>{ try{ await supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,masuk:jam,foto_masuk:foto,lokasi:lokasiStr},{onConflict:'user_id,tgl'}); }catch{} })();
+      setAbsensiMap(prev=>({...prev,[user.username]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
+      (async()=>{ try{ await supabase.from('portal_absensi').upsert({user_id:user.username,tgl:tglStr,masuk:jam,foto_masuk:foto,lokasi:lokasiStr},{onConflict:'user_id,tgl'}); }catch{} })();
     } else {
-      const existing=(absensiMap[user.id]||[]).find(a=>a.tgl===tglStr)||{};
+      const existing=(absensiMap[user.username]||[]).find(a=>a.tgl===tglStr)||{};
       const rec={...existing,tgl:tglStr,pulang:jam,foto_pulang:foto};
       setAbsenP(rec);
-      setAbsensiMap(prev=>({...prev,[user.id]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
-      (async()=>{ try{ await supabase.from('portal_absensi').upsert({user_id:user.id,tgl:tglStr,pulang:jam,foto_pulang:foto},{onConflict:'user_id,tgl'}); }catch{} })();
+      setAbsensiMap(prev=>({...prev,[user.username]:[...(prev[user.id]||[]).filter(a=>a.tgl!==tglStr),rec]}));
+      (async()=>{ try{ await supabase.from('portal_absensi').upsert({user_id:user.username,tgl:tglStr,pulang:jam,foto_pulang:foto},{onConflict:'user_id,tgl'}); }catch{} })();
     }
     stream?.getTracks().forEach(t=>t.stop()); setStream(null); setKamMode(null);
   };
@@ -10492,7 +10492,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
     const tglFmt=new Date(formAjuan.tgl).toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit",year:"numeric"});
     const entry={id:Date.now(),tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu",userId:user.id,userName:user.nama};
     setIzinMap(prev=>({...prev,[user.id]:[entry,...(prev[user.id]||[])]}));
-    (async()=>{ try{ await supabase.from('portal_izin').insert({user_id:user.id,user_nama:user.nama,tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu"}); }catch{} })();
+    (async()=>{ try{ await supabase.from('portal_izin').insert({user_id:user.username,user_nama:user.nama,tgl:tglFmt,jenis:selJenis.k,jam:formAjuan.jam,ket:formAjuan.ket,status:"menunggu"}); }catch{} })();
     setSubmitOk(true);
     setTimeout(()=>{setSubmitOk(false);setShowSheet(false);setSheetMode("pilih");setSelJenis(null);setFormAjuan({tgl:"",jam:"",ket:""});},1800);
   };
@@ -10857,11 +10857,18 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   const [editNote,setEditNote]=useState(false);
   const [draftNote,setDraftNote]=useState(note);
   const [draftShift,setDraftShift]=useState({...shift});
+  const [draftPotongan,setDraftPotongan]=useState({
+    gajiPokok:2800000, rateLembur:15000,
+    potonganIzin:50000, potonganAlpha:100000, potonganSakit:25000, potonganTelat:1000,
+  });
+  const [draftGajiKaryawan,setDraftGajiKaryawan]=useState({}); // {username:{gajiPokok,kasbon,potonganLain}}
   const [showMisiForm,setShowMisiForm]=useState(false);
   const [misiForm,setMisiForm]=useState({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});
   const [editMisiId,setEditMisiId]=useState(null);
 
-  const karyawanList = Object.values(users||{}).filter(u=>u.role==="karyawan");
+  const karyawanList = Object.entries(users||{})
+    .filter(([k,u])=>["karyawan","kasir","bank","staff"].includes(u.role))
+    .map(([k,u])=>({...u,username:k}));
   const allIzin = Object.entries(izinMap||{}).flatMap(([uid,list])=>list.map(i=>({...i,userId:uid,userName:i.userName||users?.[uid]?.nama||uid})));
   const pendingIzin = allIzin.filter(i=>i.status==="menunggu");
 
@@ -10875,6 +10882,30 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
     setShift(draftShift);
     try{ await supabase.from('portal_settings').upsert({key:"shift",value:JSON.stringify(draftShift)},{onConflict:"key"}); }catch(e){ console.warn('save shift:',e); }
     notify("Jadwal shift disimpan","ok");
+  };
+
+  // Load settings gaji & per-karyawan saat mount
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const {data} = await supabase.from('portal_settings').select('*').eq('key','potongan').single();
+        if(data?.value){ try{ setDraftPotongan(JSON.parse(data.value)); }catch{} }
+      }catch{}
+      try{
+        const {data} = await supabase.from('portal_settings').select('*').eq('key','gaji_karyawan').single();
+        if(data?.value){ try{ setDraftGajiKaryawan(JSON.parse(data.value)); }catch{} }
+      }catch{}
+    })();
+  },[]);
+
+  const savePotongan = async () => {
+    try{ await supabase.from('portal_settings').upsert({key:"potongan",value:JSON.stringify(draftPotongan)},{onConflict:"key"}); }catch(e){ console.warn('save potongan:',e); }
+    notify("Pengaturan gaji & potongan disimpan ✓","ok");
+  };
+
+  const saveGajiKaryawan = async () => {
+    try{ await supabase.from('portal_settings').upsert({key:"gaji_karyawan",value:JSON.stringify(draftGajiKaryawan)},{onConflict:"key"}); }catch(e){ console.warn('save gaji karyawan:',e); }
+    notify("Gaji & kasbon karyawan disimpan ✓","ok");
   };
 
   const saveMisi = async () => {
@@ -10955,10 +10986,10 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
           {karyawanList.length===0?<div style={{color:"#aaa",fontSize:12}}>Belum ada karyawan</div>:(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {karyawanList.map(k=>{
-                const todayAbsen=(absensiMap[k.id]||[]).find(a=>a.tgl===today());
+                const todayAbsen=(absensiMap[k.username]||[]).find(a=>a.tgl===today());
                 const outletName=outlets.find(o=>o.id===k.outletId)?.nama||"--";
                 return (
-                  <div key={k.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:11,background:"#f8fffe",border:"1px solid #e0f5f1"}}>
+                  <div key={k.username} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:11,background:"#f8fffe",border:"1px solid #e0f5f1"}}>
                     <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#fff",flexShrink:0}}>{k.nama?.slice(0,2).toUpperCase()}</div>
                     <div style={{flex:1}}><div style={{fontWeight:700,fontSize:13}}>{k.nama}</div><div style={{fontSize:10,color:"#aaa"}}>{outletName}</div></div>
                     {todayAbsen?(
@@ -11087,17 +11118,17 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
         <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a",marginBottom:14}}>📅 Rekap Absensi Semua Karyawan</div>
         {karyawanList.length===0?<div style={{textAlign:"center",padding:40,color:"#aaa"}}>Belum ada karyawan</div>:(
           karyawanList.map(k=>{
-            const absList=absensiMap[k.id]||[];
+            const absList=absensiMap[k.username]||[];
             const hadirN=absList.filter(a=>a.masuk&&a.masuk!=="--").length;
             const outletN=outlets.find(o=>o.id===k.outletId)?.nama||"--";
             return (
-              <div key={k.id} style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",marginBottom:12,overflow:"hidden"}}>
+              <div key={k.username} style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",marginBottom:12,overflow:"hidden"}}>
                 <div style={{padding:"12px 16px",background:"linear-gradient(90deg,#e0faf5,#f0fdfb)",borderBottom:"1px solid #b2f5ea",display:"flex",alignItems:"center",gap:12}}>
                   <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#fff",flexShrink:0}}>{k.nama?.slice(0,2).toUpperCase()}</div>
                   <div style={{flex:1}}><div style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>{k.nama}</div><div style={{fontSize:10,color:"#aaa"}}>{outletN}</div></div>
                   <div style={{display:"flex",gap:7}}>
                     <span style={{background:"#e0faf5",color:"#0d9488",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:20}}>{hadirN} hadir</span>
-                    <span style={{background:"#fffbeb",color:"#d97706",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>{(izinMap[k.id]||[]).filter(i=>i.status==="disetujui").length} izin</span>
+                    <span style={{background:"#fffbeb",color:"#d97706",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>{(izinMap[k.username]||[]).filter(i=>i.status==="disetujui").length} izin</span>
                   </div>
                 </div>
                 {absList.length===0?<div style={{textAlign:"center",padding:16,color:"#aaa",fontSize:11}}>Belum ada data absensi</div>:(
@@ -11149,6 +11180,126 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
             <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Total Jam/Hari</label><input type="number" value={draftShift.totalJam} onChange={e=>setDraftShift(p=>({...p,totalJam:+e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
           </div>
           <button onClick={saveShift} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Jadwal Shift</button>
+        </div>
+
+        {/* Pengaturan Gaji & Lembur (Global) */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:4}}>💰 Pengaturan Gaji & Lembur</div>
+          <div style={{fontSize:11,color:"#aaa",marginBottom:12}}>Berlaku untuk semua karyawan (default), bisa di-override per karyawan</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Gaji Pokok / Bulan</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftPotongan.gajiPokok} onChange={e=>setDraftPotongan(p=>({...p,gajiPokok:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Rate Lembur / Jam</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftPotongan.rateLembur} onChange={e=>setDraftPotongan(p=>({...p,rateLembur:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{fontSize:9,color:"#aaa",marginTop:3}}>Dibayar per jam lembur di atas jam shift normal</div>
+            </div>
+          </div>
+
+          <div style={{borderTop:"1px solid #f0faf8",margin:"12px 0"}}/>
+
+          <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:10}}>✂️ Potongan Otomatis</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Potongan per Hari Izin</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftPotongan.potonganIzin} onChange={e=>setDraftPotongan(p=>({...p,potonganIzin:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #fca5a5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Potongan per Hari Tanpa Kabar (Alpha)</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftPotongan.potonganAlpha} onChange={e=>setDraftPotongan(p=>({...p,potonganAlpha:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #fca5a5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Potongan Sakit (tanpa surat)</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftPotongan.potonganSakit} onChange={e=>setDraftPotongan(p=>({...p,potonganSakit:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #fca5a5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Potongan per Menit Telat</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftPotongan.potonganTelat} onChange={e=>setDraftPotongan(p=>({...p,potonganTelat:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #fca5a5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{fontSize:9,color:"#aaa",marginTop:3}}>Dihitung dari menit keterlambatan x nominal ini</div>
+            </div>
+          </div>
+
+          <button onClick={savePotongan} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#d97706,#f59e0b)",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Pengaturan Gaji</button>
+        </div>
+
+        {/* Gaji & Kasbon per karyawan */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:4}}>👤 Gaji & Kasbon per Karyawan</div>
+          <div style={{fontSize:11,color:"#aaa",marginBottom:12}}>Override gaji pokok individu & catat kasbon/potongan lain</div>
+
+          {karyawanList.length===0?(
+            <div style={{textAlign:"center",padding:20,color:"#aaa",fontSize:12}}>Belum ada karyawan</div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {karyawanList.map(k=>{
+                const gajiInd = (draftGajiKaryawan[k.username]?.gajiPokok ?? k.gajiPokok ?? draftPotongan.gajiPokok);
+                const kasbon  = (draftGajiKaryawan[k.username]?.kasbon ?? k.kasbon ?? 0);
+                const potonganLain = (draftGajiKaryawan[k.username]?.potonganLain ?? k.potonganLain ?? 0);
+                return (
+                  <div key={k.username} style={{background:"#f8fffe",borderRadius:12,padding:"12px 14px",border:"1px solid #e0f5f1"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                      <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,color:"#fff",flexShrink:0}}>{k.nama?.slice(0,2).toUpperCase()}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:800,fontSize:13}}>{k.nama}</div>
+                        <div style={{fontSize:10,color:"#aaa"}}>{outlets.find(o=>o.id===k.outletId)?.nama||"--"} · {k.role}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                      <div>
+                        <label style={{fontSize:10,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>Gaji Pokok</label>
+                        <input type="number" value={gajiInd} placeholder={`${draftPotongan.gajiPokok}`}
+                          onChange={e=>setDraftGajiKaryawan(p=>({...p,[k.username]:{...p[k.username],gajiPokok:+e.target.value}}))}
+                          style={{width:"100%",padding:"6px 8px",borderRadius:8,border:"2px solid #b2ede6",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+                      </div>
+                      <div>
+                        <label style={{fontSize:10,fontWeight:700,color:"#d97706",display:"block",marginBottom:3}}>Kasbon</label>
+                        <input type="number" value={kasbon}
+                          onChange={e=>setDraftGajiKaryawan(p=>({...p,[k.username]:{...p[k.username],kasbon:+e.target.value}}))}
+                          style={{width:"100%",padding:"6px 8px",borderRadius:8,border:"2px solid #fcd34d",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+                      </div>
+                      <div>
+                        <label style={{fontSize:10,fontWeight:700,color:"#dc2626",display:"block",marginBottom:3}}>Potongan Lain</label>
+                        <input type="number" value={potonganLain}
+                          onChange={e=>setDraftGajiKaryawan(p=>({...p,[k.username]:{...p[k.username],potonganLain:+e.target.value}}))}
+                          style={{width:"100%",padding:"6px 8px",borderRadius:8,border:"2px solid #fca5a5",fontSize:11,outline:"none",fontFamily:"inherit"}}/>
+                      </div>
+                    </div>
+                    {/* Preview estimasi gaji bersih */}
+                    <div style={{marginTop:8,fontSize:10,color:"#16a34a",fontWeight:700,background:"#f0fdf4",borderRadius:8,padding:"4px 8px"}}>
+                      💵 Estimasi take-home: Rp {Math.max(0,gajiInd-kasbon-potonganLain).toLocaleString("id-ID")}
+                    </div>
+                  </div>
+                );
+              })}
+              <button onClick={saveGajiKaryawan} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>💾 Simpan Gaji & Kasbon</button>
+            </div>
+          )}
         </div>
       </div>
       )}
