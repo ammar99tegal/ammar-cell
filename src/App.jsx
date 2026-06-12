@@ -10391,6 +10391,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   const [absenPulang,setAbsenP]= useState(()=>{ const t=today(); return (absensiMap[user.id]||[]).find(a=>a.tgl===t&&a.pulang)?absensiMap[user.id].find(a=>a.tgl===t):null; });
   const [kameraMode,setKamMode]= useState(null);
   const [lokasiStr,setLokasiStr]=useState("Mengambil lokasi...");
+  const [gpsOk,setGpsOk]       = useState(null); // null=loading, true=di outlet, false=di luar
   const [loadGPS,setLoadGPS]   = useState(false);
   const [stream,setStream]     = useState(null);
   const videoRef=useRef(null), canvasRef=useRef(null);
@@ -10406,14 +10407,41 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   useEffect(()=>{ const iv=setInterval(()=>setClock(new Date().toLocaleTimeString("id-ID")),1000); return()=>clearInterval(iv); },[]);
 
   const startKamera = async (mode) => {
-    setKamMode(mode); setLoadGPS(true);
-    try { const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"},audio:false}); setStream(s); } catch{}
-    navigator.geolocation?.getCurrentPosition(p=>{setLokasiStr(`${p.coords.latitude.toFixed(4)},${p.coords.longitude.toFixed(4)}`);setLoadGPS(false);},()=>{setLokasiStr(outlets.find(o=>o.id===user.outletId)?.nama||"Outlet");setLoadGPS(false);});
+    setKamMode(mode); setLoadGPS(true); setGpsOk(null);
+    // Coba kamera belakang (environment) dulu, fallback ke kamera apapun
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:"environment"}},audio:false});
+      setStream(s);
+    } catch {
+      try { const s2 = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false}); setStream(s2); }
+      catch { try{ const s3 = await navigator.mediaDevices.getUserMedia({video:true,audio:false}); setStream(s3); }catch{} }
+    }
+    // Cek GPS terhadap lokasi outlet
+    const outlet = outlets.find(o=>o.id===user.outletId);
+    navigator.geolocation?.getCurrentPosition(p=>{
+      const {latitude:lat,longitude:lng,accuracy:acc} = p.coords;
+      if(outlet?.lat&&outlet?.lng){
+        const R=6371000,dLat=(outlet.lat-lat)*Math.PI/180,dLng=(outlet.lng-lng)*Math.PI/180;
+        const a=Math.sin(dLat/2)**2+Math.cos(lat*Math.PI/180)*Math.cos(outlet.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+        const jarak=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        const isMock=acc===0||acc<1;
+        const dalamRadius=jarak<=(outlet.radius||100)&&!isMock;
+        setGpsOk(dalamRadius);
+        setLokasiStr(dalamRadius?outlet.nama:(isMock?"⚠️ GPS Palsu":`📍 ${jarak<1000?Math.round(jarak)+'m':((jarak/1000).toFixed(1)+'km')} dari outlet`));
+      } else {
+        // Outlet belum punya GPS — izinkan tapi tetap catat koordinat
+        setGpsOk(true);
+        setLokasiStr(outlet?.nama||"Outlet");
+      }
+      setLoadGPS(false);
+    },()=>{ setGpsOk(true); setLokasiStr(outlets.find(o=>o.id===user.outletId)?.nama||"Outlet"); setLoadGPS(false); },
+    {enableHighAccuracy:true,timeout:8000,maximumAge:5000});
   };
 
   useEffect(()=>{ if(stream&&videoRef.current){videoRef.current.srcObject=stream;videoRef.current.play().catch(()=>{});} },[stream,kameraMode]);
 
   const ambilFoto = () => {
+    if(gpsOk===false) return; // diblokir jika di luar area outlet
     const v=videoRef.current, c=canvasRef.current;
     if(v&&c){c.width=v.videoWidth||320;c.height=v.videoHeight||240;c.getContext("2d").drawImage(v,0,0);}
     const foto=c?.toDataURL("image/jpeg",.7)||null;
@@ -10502,20 +10530,75 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
         {note&&<div style={{background:"linear-gradient(135deg,#fffbeb,#fef9c3)",border:"2px solid #fcd34d",borderRadius:14,padding:"11px 13px",marginBottom:12,display:"flex",gap:10}}><span style={{fontSize:20,flexShrink:0}}>📌</span><div><div style={{fontWeight:800,fontSize:10,color:"#92400e",marginBottom:2}}>PESAN DARI PIMPINAN</div><div style={{fontSize:11,color:"#78350f",lineHeight:1.5}}>{note}</div></div></div>}
         {/* Absen */}
         {kameraMode?(
-          <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
-            <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:10}}>{kameraMode==="masuk"?"📸 Absen Masuk":"📸 Absen Pulang"}</div>
-            <div style={{borderRadius:14,overflow:"hidden",position:"relative",background:"#111",minHeight:220}}>
-              <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",display:"block"}}/>
-              <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,.85))",padding:"8px 12px"}}>
-                <div style={{color:"#fff",fontWeight:900,fontSize:14}}>{clock}</div>
-                <div style={{color:"rgba(255,255,255,.8)",fontSize:9}}>📍 {loadGPS?<span className="blk">Mengambil GPS...</span>:lokasiStr}</div>
+          <div style={{background:"#000",borderRadius:18,marginBottom:12,overflow:"hidden",boxShadow:"0 8px 28px rgba(0,0,0,.25)",position:"relative"}}>
+            {/* Header overlay */}
+            <div style={{position:"absolute",top:0,left:0,right:0,zIndex:10,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(rgba(0,0,0,.6),transparent)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:18}}>{kameraMode==="masuk"?"📸":"📸"}</span>
+                <span style={{color:"#fff",fontWeight:800,fontSize:13}}>{kameraMode==="masuk"?"Absen Masuk":"Absen Pulang"}</span>
               </div>
-              <canvas ref={canvasRef} style={{display:"none"}}/>
-              <button onClick={stopKam} style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,.5)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"4px 10px",color:"#fff",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-              <div style={{display:"flex",justifyContent:"center",padding:"10px 0 4px",background:"rgba(0,0,0,.3)"}}>
-                <button onClick={ambilFoto} style={{width:60,height:60,borderRadius:"50%",border:"4px solid #fff",background:kameraMode==="masuk"?"#0d9488":"#e74c3c",cursor:"pointer",fontSize:22,display:"flex",alignItems:"center",justifyContent:"center"}}>📷</button>
+              <button onClick={stopKam} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:"50%",width:30,height:30,color:"#fff",fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            </div>
+
+            {/* Video full */}
+            <div style={{position:"relative",minHeight:340,background:"#111",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:340,objectFit:"cover",display:"block"}}/>
+
+              {/* GPS status overlay */}
+              <div style={{position:"absolute",top:54,left:14,right:14}}>
+                {loadGPS?(
+                  <div style={{background:"rgba(0,0,0,.55)",borderRadius:12,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:14,height:14,border:"2px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+                    <span style={{color:"#fff",fontSize:11,fontWeight:700}}>Memeriksa lokasi GPS...</span>
+                  </div>
+                ):gpsOk===false?(
+                  <div style={{background:"rgba(220,38,38,.85)",borderRadius:12,padding:"10px 12px",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:18}}>🚫</span>
+                    <div>
+                      <div style={{color:"#fff",fontSize:11,fontWeight:800}}>Di Luar Area Outlet</div>
+                      <div style={{color:"rgba(255,255,255,.85)",fontSize:10}}>{lokasiStr} — absen tidak bisa dilakukan</div>
+                    </div>
+                  </div>
+                ):gpsOk===true?(
+                  <div style={{background:"rgba(22,163,74,.85)",borderRadius:12,padding:"8px 12px",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:16}}>✅</span>
+                    <span style={{color:"#fff",fontSize:11,fontWeight:800}}>Lokasi Terverifikasi — {lokasiStr}</span>
+                  </div>
+                ):null}
+              </div>
+
+              {/* Bottom info bar */}
+              <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,.75))",padding:"30px 14px 14px",display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{color:"#fff",fontWeight:900,fontSize:18,fontFamily:"monospace"}}>{clock}</div>
+                  <div style={{color:"rgba(255,255,255,.7)",fontSize:10,marginTop:2}}>{new Date().toLocaleDateString("id-ID",{weekday:"short",day:"2-digit",month:"short"})}</div>
+                </div>
+                <div style={{background:"rgba(255,255,255,.12)",borderRadius:20,padding:"4px 10px",fontSize:9,color:"#fff",fontWeight:700}}>📷 Kamera Belakang</div>
               </div>
             </div>
+
+            <canvas ref={canvasRef} style={{display:"none"}}/>
+
+            {/* Capture button area */}
+            <div style={{padding:"18px 0",display:"flex",justifyContent:"center",background:"#0a0a0a"}}>
+              <button onClick={ambilFoto} disabled={gpsOk===false||loadGPS}
+                style={{
+                  width:74,height:74,borderRadius:"50%",
+                  border:`4px solid ${gpsOk===false?"#666":"#fff"}`,
+                  background:gpsOk===false?"#444":(kameraMode==="masuk"?"linear-gradient(135deg,#0d9488,#14b8a6)":"linear-gradient(135deg,#e74c3c,#ff6b6b)"),
+                  cursor:gpsOk===false||loadGPS?"not-allowed":"pointer",
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  boxShadow:gpsOk===false?"none":"0 0 0 6px rgba(255,255,255,.12)",
+                  transition:"all .2s",opacity:gpsOk===false||loadGPS?0.5:1,
+                }}>
+                <span style={{fontSize:28}}>{gpsOk===false?"🔒":"📷"}</span>
+              </button>
+            </div>
+            {gpsOk===false&&(
+              <div style={{padding:"0 14px 14px",textAlign:"center"}}>
+                <div style={{fontSize:11,color:"#fca5a5",fontWeight:700}}>⚠️ Absen hanya bisa dilakukan di lokasi outlet</div>
+              </div>
+            )}
           </div>
         ):(
           <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1",boxShadow:"0 2px 12px rgba(13,148,136,.06)"}}>
