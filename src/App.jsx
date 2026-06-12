@@ -10856,12 +10856,26 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   const [tab,setTab]         = useState("overview"); // overview|misi|izin|absensi|settings
   const [editNote,setEditNote]=useState(false);
   const [draftNote,setDraftNote]=useState(note);
-  const [draftShift,setDraftShift]=useState({...shift});
+  const [draftShift,setDraftShift]=useState(()=>{
+    const s = shift||{};
+    // Migrasi dari format lama {masuk,pulang,totalJam} ke array shifts
+    if(s.shifts) return s;
+    return {
+      shifts: [
+        {nama:"Pagi", masuk: s.masuk||"08:00", pulang: s.pulang||"17:00", totalJam: s.totalJam||9},
+        {nama:"Siang", masuk:"13:00", pulang:"21:00", totalJam:8},
+      ],
+      lemburTipe: "perjam", // "perjam" | "pershift"
+      lemburFlat: 25000,    // nominal jika "pershift"
+    };
+  });
   const [draftPotongan,setDraftPotongan]=useState({
     gajiPokok:2800000, rateLembur:15000,
     potonganIzin:50000, potonganAlpha:100000, potonganSakit:25000, potonganTelat:1000,
   });
   const [draftGajiKaryawan,setDraftGajiKaryawan]=useState({}); // {username:{gajiPokok,kasbon,potonganLain}}
+  const [absenDetail,setAbsenDetail]=useState(null); // {tgl,masuk,pulang,foto_masuk,foto_pulang,lokasi,nama,outlet}
+  const [slipGajiTarget,setSlipGajiTarget]=useState(null); // username
   const [showMisiForm,setShowMisiForm]=useState(false);
   const [misiForm,setMisiForm]=useState({icon:"🎯",judul:"",desc:"",poin:100,target:1,satuan:"hari"});
   const [editMisiId,setEditMisiId]=useState(null);
@@ -11133,13 +11147,22 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
                 </div>
                 {absList.length===0?<div style={{textAlign:"center",padding:16,color:"#aaa",fontSize:11}}>Belum ada data absensi</div>:(
                   absList.slice(0,5).map((a,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 16px",borderTop:"1px solid #f0faf8"}}>
+                    <div key={i} onClick={()=>setAbsenDetail({...a,nama:k.nama,outlet:outletN})}
+                      style={{display:"flex",alignItems:"center",gap:10,padding:"9px 16px",borderTop:"1px solid #f0faf8",cursor:"pointer",transition:"background .15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#f8fffe"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                       <div style={{width:36,textAlign:"center",flexShrink:0}}><div style={{fontWeight:700,fontSize:10}}>{a.tgl}</div></div>
                       <div style={{flex:1,display:"flex",gap:6,alignItems:"center"}}>
                         {a.masuk?<><span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕐{a.masuk}</span><span style={{fontSize:9,color:"#ccc"}}>→</span><span style={{fontSize:9,background:"#f0faf8",padding:"2px 6px",borderRadius:20}}>🕔{a.pulang||"--"}</span></>:<span style={{fontSize:10,color:"#aaa"}}>Izin</span>}
                       </div>
-                      {a.foto_masuk&&<img src={a.foto_masuk} alt="" style={{width:32,height:32,borderRadius:8,objectFit:"cover"}}/>}
+                      {(a.foto_masuk||a.foto_pulang)&&(
+                        <div style={{display:"flex",gap:3}}>
+                          {a.foto_masuk&&<img src={a.foto_masuk} alt="" style={{width:32,height:32,borderRadius:8,objectFit:"cover",border:"2px solid #86efac"}}/>}
+                          {a.foto_pulang&&<img src={a.foto_pulang} alt="" style={{width:32,height:32,borderRadius:8,objectFit:"cover",border:"2px solid #fca5a5"}}/>}
+                        </div>
+                      )}
                       <span style={{fontSize:9,fontWeight:800,background:a.masuk?"#f0fdf4":"#fffbeb",color:a.masuk?"#16a34a":"#d97706",padding:"2px 8px",borderRadius:20}}>{a.masuk?"✓":"Izin"}</span>
+                      <span style={{color:"#ccc",fontSize:12}}>›</span>
                     </div>
                   ))
                 )}
@@ -11173,12 +11196,75 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
 
         {/* Jadwal shift */}
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:12}}>⏰ Jadwal Shift Karyawan</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
-            <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Masuk</label><input type="time" value={draftShift.masuk} onChange={e=>setDraftShift(p=>({...p,masuk:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
-            <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Pulang</label><input type="time" value={draftShift.pulang} onChange={e=>setDraftShift(p=>({...p,pulang:e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
-            <div><label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Total Jam/Hari</label><input type="number" value={draftShift.totalJam} onChange={e=>setDraftShift(p=>({...p,totalJam:+e.target.value}))} style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/></div>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:4}}>⏰ Jadwal Shift Karyawan</div>
+          <div style={{fontSize:11,color:"#aaa",marginBottom:12}}>Atur jam kerja untuk setiap shift</div>
+
+          {draftShift.shifts.map((sh,i)=>(
+            <div key={i} style={{background:"#f8fffe",borderRadius:12,padding:"12px 14px",border:"1px solid #e0f5f1",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <span style={{fontSize:16}}>{i===0?"🌅":i===1?"☀️":"🌙"}</span>
+                <input type="text" value={sh.nama}
+                  onChange={e=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,nama:e.target.value}:x)}))}
+                  style={{fontWeight:800,fontSize:13,border:"none",borderBottom:"2px solid #e0f5f1",outline:"none",fontFamily:"inherit",background:"transparent",width:120,padding:"2px 4px"}}/>
+                {draftShift.shifts.length>1&&(
+                  <button onClick={()=>setDraftShift(p=>({...p,shifts:p.shifts.filter((_,j)=>j!==i)}))}
+                    style={{marginLeft:"auto",background:"#fff5f5",border:"none",borderRadius:7,padding:"4px 8px",color:"#dc2626",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>🗑 Hapus</button>
+                )}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Masuk</label>
+                  <input type="time" value={sh.masuk} onChange={e=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,masuk:e.target.value}:x)}))}
+                    style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Jam Pulang</label>
+                  <input type="time" value={sh.pulang} onChange={e=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,pulang:e.target.value}:x)}))}
+                    style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Total Jam</label>
+                  <input type="number" value={sh.totalJam} onChange={e=>setDraftShift(p=>({...p,shifts:p.shifts.map((x,j)=>j===i?{...x,totalJam:+e.target.value}:x)}))}
+                    style={{width:"100%",padding:"8px 10px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <button onClick={()=>setDraftShift(p=>({...p,shifts:[...p.shifts,{nama:`Shift ${p.shifts.length+1}`,masuk:"08:00",pulang:"17:00",totalJam:9}]}))}
+            style={{width:"100%",padding:"8px",borderRadius:9,border:"2px dashed #b2ede6",background:"#f8fffe",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",marginBottom:14}}>
+            ➕ Tambah Shift
+          </button>
+
+          <div style={{borderTop:"1px solid #f0faf8",margin:"4px 0 14px"}}/>
+
+          {/* Tipe Lembur */}
+          <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:10}}>⏱️ Perhitungan Lembur</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            {[
+              {k:"perjam",icon:"⏱️",label:"Per Jam",desc:"Dibayar sesuai jumlah jam lembur × rate/jam"},
+              {k:"pershift",icon:"📦",label:"Per Sesi/Shift",desc:"Nominal flat setiap kali lembur (tidak dihitung per jam)"},
+            ].map(t=>(
+              <button key={t.k} onClick={()=>setDraftShift(p=>({...p,lemburTipe:t.k}))}
+                style={{textAlign:"left",padding:"12px",borderRadius:11,border:`2px solid ${draftShift.lemburTipe===t.k?"#0d9488":"#e0f5f1"}`,background:draftShift.lemburTipe===t.k?"#e0faf5":"#fff",cursor:"pointer",fontFamily:"inherit"}}>
+                <div style={{fontWeight:800,fontSize:12,color:draftShift.lemburTipe===t.k?"#0d9488":"#555",marginBottom:3}}>{t.icon} {t.label}</div>
+                <div style={{fontSize:10,color:"#aaa",lineHeight:1.4}}>{t.desc}</div>
+              </button>
+            ))}
           </div>
+
+          {draftShift.lemburTipe==="pershift"&&(
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Nominal Lembur per Sesi</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#aaa"}}>Rp</span>
+                <input type="number" value={draftShift.lemburFlat} onChange={e=>setDraftShift(p=>({...p,lemburFlat:+e.target.value}))}
+                  style={{width:"100%",padding:"8px 10px 8px 28px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+              </div>
+              <div style={{fontSize:9,color:"#aaa",marginTop:3}}>Contoh: karyawan lembur 1x dalam sehari → dapat Rp {(+draftShift.lemburFlat||0).toLocaleString("id-ID")} flat, berapapun jamnya</div>
+            </div>
+          )}
+
           <button onClick={saveShift} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Jadwal Shift</button>
         </div>
 
@@ -11291,8 +11377,11 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
                       </div>
                     </div>
                     {/* Preview estimasi gaji bersih */}
-                    <div style={{marginTop:8,fontSize:10,color:"#16a34a",fontWeight:700,background:"#f0fdf4",borderRadius:8,padding:"4px 8px"}}>
-                      💵 Estimasi take-home: Rp {Math.max(0,gajiInd-kasbon-potonganLain).toLocaleString("id-ID")}
+                    <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,fontSize:10,color:"#16a34a",fontWeight:700,background:"#f0fdf4",borderRadius:8,padding:"4px 8px"}}>
+                        💵 Estimasi take-home: Rp {Math.max(0,gajiInd-kasbon-potonganLain).toLocaleString("id-ID")}
+                      </div>
+                      <button onClick={()=>setSlipGajiTarget(k.username)} style={{flexShrink:0,padding:"5px 12px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>🧾 Slip Gaji</button>
                     </div>
                   </div>
                 );
@@ -11305,13 +11394,167 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
       )}
 
       </div>
+
+      {/* MODAL DETAIL ABSENSI */}
+      {absenDetail&&(
+        <div onClick={()=>setAbsenDetail(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:18,padding:"20px",width:"100%",maxWidth:440,boxShadow:"0 16px 48px rgba(0,0,0,.25)",maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <div style={{width:40,height:40,borderRadius:11,background:"linear-gradient(135deg,#0d9488,#14b8a6)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#fff",flexShrink:0}}>{absenDetail.nama?.slice(0,2).toUpperCase()}</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{absenDetail.nama}</div>
+                <div style={{fontSize:11,color:"#aaa"}}>{absenDetail.tgl} · {absenDetail.outlet}</div>
+              </div>
+              <button onClick={()=>setAbsenDetail(null)} style={{background:"#f0faf8",border:"none",borderRadius:"50%",width:28,height:28,color:"#888",fontSize:13,cursor:"pointer"}}>✕</button>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:11,color:"#16a34a",marginBottom:6,display:"flex",alignItems:"center",gap:5}}>🕐 Absen Masuk</div>
+                {absenDetail.foto_masuk?(
+                  <img src={absenDetail.foto_masuk} alt="" style={{width:"100%",aspectRatio:"3/4",objectFit:"cover",borderRadius:12,border:"2px solid #86efac"}}/>
+                ):(
+                  <div style={{width:"100%",aspectRatio:"3/4",borderRadius:12,background:"#f0fdf4",border:"2px dashed #86efac",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,color:"#86efac"}}>📷</div>
+                )}
+                <div style={{marginTop:6,background:"#f0fdf4",borderRadius:9,padding:"8px 10px"}}>
+                  <div style={{fontWeight:800,fontSize:14,color:"#16a34a"}}>{absenDetail.masuk||"--"}</div>
+                  <div style={{fontSize:9,color:"#666",marginTop:2}}>📍 {absenDetail.lokasi||"--"}</div>
+                </div>
+              </div>
+              <div>
+                <div style={{fontWeight:800,fontSize:11,color:"#dc2626",marginBottom:6,display:"flex",alignItems:"center",gap:5}}>🕔 Absen Pulang</div>
+                {absenDetail.foto_pulang?(
+                  <img src={absenDetail.foto_pulang} alt="" style={{width:"100%",aspectRatio:"3/4",objectFit:"cover",borderRadius:12,border:"2px solid #fca5a5"}}/>
+                ):(
+                  <div style={{width:"100%",aspectRatio:"3/4",borderRadius:12,background:"#fff5f5",border:"2px dashed #fca5a5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,color:"#fca5a5"}}>{absenDetail.masuk?"⏳":"📷"}</div>
+                )}
+                <div style={{marginTop:6,background:"#fff5f5",borderRadius:9,padding:"8px 10px"}}>
+                  <div style={{fontWeight:800,fontSize:14,color:"#dc2626"}}>{absenDetail.pulang||(absenDetail.masuk?"Belum pulang":"--")}</div>
+                  <div style={{fontSize:9,color:"#666",marginTop:2}}>📍 {absenDetail.lokasi_pulang||absenDetail.lokasi||"--"}</div>
+                </div>
+              </div>
+            </div>
+
+            {absenDetail.masuk&&absenDetail.pulang&&(()=>{
+              const [mh,mm]=absenDetail.masuk.split(":").map(Number);
+              const [ph,pm]=absenDetail.pulang.split(":").map(Number);
+              const dur=(ph*60+pm-mh*60-mm)/60;
+              return (
+                <div style={{marginTop:12,background:"#e0faf5",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                  <span style={{fontWeight:800,fontSize:13,color:"#0d9488"}}>⏱️ Total Kerja: {Math.floor(dur)}j {Math.round((dur-Math.floor(dur))*60)}m</span>
+                </div>
+              );
+            })()}
+
+            <button onClick={()=>setAbsenDetail(null)} style={{width:"100%",marginTop:14,padding:"10px",borderRadius:10,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Tutup</button>
+          </div>
+        </div>
+      )}
+
+      {/* SLIP GAJI MODAL */}
+      {slipGajiTarget&&(()=>{
+        const k = karyawanList.find(x=>x.username===slipGajiTarget);
+        if(!k) return null;
+        const gajiPokok = draftGajiKaryawan[k.username]?.gajiPokok ?? k.gajiPokok ?? draftPotongan.gajiPokok;
+        const kasbon    = draftGajiKaryawan[k.username]?.kasbon ?? k.kasbon ?? 0;
+        const potLain   = draftGajiKaryawan[k.username]?.potonganLain ?? k.potonganLain ?? 0;
+        const absList   = absensiMap[k.username]||[];
+        const bulanIni  = new Date().toLocaleDateString("id-ID",{month:"long",year:"numeric"});
+        const hadirN    = absList.filter(a=>a.masuk&&a.masuk!=="--").length;
+        const izinList  = (izinMap[k.username]||[]).filter(i=>i.status==="disetujui");
+        const izinN     = izinList.filter(i=>i.jenis==="Izin").length;
+        const sakitN    = izinList.filter(i=>i.jenis==="Sakit").length;
+        const lemburN   = izinList.filter(i=>i.jenis==="Lembur").length;
+
+        const potIzin   = izinN  * (draftPotongan.potonganIzin||0);
+        const potSakit  = sakitN * (draftPotongan.potonganSakit||0);
+        const lemburPay = draftShift.lemburTipe==="pershift"
+          ? lemburN * (draftShift.lemburFlat||0)
+          : lemburN * (draftPotongan.rateLembur||0);
+
+        const totalPotongan = kasbon + potLain + potIzin + potSakit;
+        const totalGaji = Math.max(0, gajiPokok + lemburPay - totalPotongan);
+
+        const Row=({label,val,bold,color})=>(
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f0faf8"}}>
+            <span style={{fontSize:12,color:bold?"#1a2e2a":"#666",fontWeight:bold?800:600}}>{label}</span>
+            <span style={{fontSize:12,fontWeight:bold?900:700,color:color||(bold?"#1a2e2a":"#1a2e2a")}}>{val}</span>
+          </div>
+        );
+
+        return (
+          <div onClick={()=>setSlipGajiTarget(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:420,boxShadow:"0 20px 60px rgba(0,0,0,.3)",maxHeight:"92vh",overflowY:"auto"}}>
+              <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",borderRadius:"20px 20px 0 0",padding:"24px 24px 20px",color:"#fff",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,.06)",top:-60,right:-60}}/>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",position:"relative"}}>
+                  <div>
+                    <div style={{fontSize:11,opacity:.7,fontWeight:700,letterSpacing:1}}>SLIP GAJI KARYAWAN</div>
+                    <div style={{fontWeight:900,fontSize:20,marginTop:2}}>Ammar Cell</div>
+                  </div>
+                  <div style={{fontSize:28}}>🧾</div>
+                </div>
+                <div style={{marginTop:18,display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:"rgba(255,255,255,.2)",border:"2px solid rgba(255,255,255,.3)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:16}}>{k.nama?.slice(0,2).toUpperCase()}</div>
+                  <div>
+                    <div style={{fontWeight:900,fontSize:16}}>{k.nama}</div>
+                    <div style={{fontSize:11,opacity:.8}}>{outlets.find(o=>o.id===k.outletId)?.nama||"--"} · {k.role==="staff"?"Kasir+Bank":k.role}</div>
+                  </div>
+                </div>
+                <div style={{marginTop:14,background:"rgba(255,255,255,.12)",borderRadius:10,padding:"8px 12px",fontSize:11,fontWeight:700}}>
+                  📅 Periode: {bulanIni}
+                </div>
+              </div>
+
+              <div style={{padding:"20px 24px"}}>
+                <div style={{fontWeight:800,fontSize:11,color:"#0d9488",marginBottom:6,letterSpacing:1}}>💵 PENDAPATAN</div>
+                <Row label="Gaji Pokok" val={`Rp ${gajiPokok.toLocaleString("id-ID")}`}/>
+                <Row label={`Lembur (${lemburN}x — ${draftShift.lemburTipe==="pershift"?"per sesi":"per jam"})`} val={`Rp ${lemburPay.toLocaleString("id-ID")}`}/>
+                <Row label="Subtotal" val={`Rp ${(gajiPokok+lemburPay).toLocaleString("id-ID")}`} bold/>
+
+                <div style={{height:14}}/>
+
+                <div style={{fontWeight:800,fontSize:11,color:"#dc2626",marginBottom:6,letterSpacing:1}}>✂️ POTONGAN</div>
+                <Row label={`Izin (${izinN}x)`} val={`- Rp ${potIzin.toLocaleString("id-ID")}`} color="#dc2626"/>
+                <Row label={`Sakit (${sakitN}x)`} val={`- Rp ${potSakit.toLocaleString("id-ID")}`} color="#dc2626"/>
+                <Row label="Kasbon" val={`- Rp ${kasbon.toLocaleString("id-ID")}`} color="#dc2626"/>
+                <Row label="Potongan Lain" val={`- Rp ${potLain.toLocaleString("id-ID")}`} color="#dc2626"/>
+                <Row label="Total Potongan" val={`- Rp ${totalPotongan.toLocaleString("id-ID")}`} bold color="#dc2626"/>
+
+                <div style={{marginTop:16,background:"linear-gradient(135deg,#e0faf5,#d1fae5)",borderRadius:14,padding:"16px",border:"2px solid #86efac"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#16a34a",marginBottom:4}}>TOTAL DITERIMA</div>
+                  <div style={{fontWeight:900,fontSize:26,color:"#16a34a"}}>Rp {totalGaji.toLocaleString("id-ID")}</div>
+                </div>
+
+                <div style={{marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  {[
+                    {l:"Hadir",v:hadirN,c:"#16a34a",bg:"#f0fdf4"},
+                    {l:"Izin",v:izinN,c:"#d97706",bg:"#fffbeb"},
+                    {l:"Sakit",v:sakitN,c:"#dc2626",bg:"#fff5f5"},
+                  ].map(s=>(
+                    <div key={s.l} style={{background:s.bg,borderRadius:10,padding:"8px",textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:16,color:s.c}}>{s.v}</div>
+                      <div style={{fontSize:9,color:s.c,fontWeight:700}}>{s.l}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{marginTop:16,fontSize:9,color:"#bbb",textAlign:"center"}}>
+                  Slip gaji ini dibuat otomatis oleh sistem Ammar Cell · {new Date().toLocaleDateString("id-ID",{day:"2-digit",month:"long",year:"numeric"})}
+                </div>
+
+                <div style={{display:"flex",gap:8,marginTop:16}}>
+                  <button onClick={()=>setSlipGajiTarget(null)} style={{flex:1,padding:"11px",borderRadius:11,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Tutup</button>
+                  <button onClick={()=>window.print()} style={{flex:2,padding:"11px",borderRadius:11,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>🖨️ Cetak / Simpan PDF</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
-
-// ==============================================================================
-// GPS LOCATION HOOK — cek lokasi vs radius outlet
-// ==============================================================================
 function useGpsMonitor({ user, outlets, enabled, onViolation }) {
   const CEK_INTERVAL_MS = 5 * 60 * 1000; // 5 menit
   const WARN_DETIK      = 30;
