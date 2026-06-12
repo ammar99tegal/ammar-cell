@@ -10888,12 +10888,12 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   useEffect(()=>{
     (async()=>{
       try{
-        const {data} = await supabase.from('portal_settings').select('*').eq('key','potongan').single();
-        if(data?.value){ try{ setDraftPotongan(JSON.parse(data.value)); }catch{} }
+        const {data} = await supabase.from('portal_settings').select('*').eq('key','potongan').limit(1);
+        if(data?.[0]?.value){ try{ setDraftPotongan(JSON.parse(data[0].value)); }catch{} }
       }catch{}
       try{
-        const {data} = await supabase.from('portal_settings').select('*').eq('key','gaji_karyawan').single();
-        if(data?.value){ try{ setDraftGajiKaryawan(JSON.parse(data.value)); }catch{} }
+        const {data} = await supabase.from('portal_settings').select('*').eq('key','gaji_karyawan').limit(1);
+        if(data?.[0]?.value){ try{ setDraftGajiKaryawan(JSON.parse(data[0].value)); }catch{} }
       }catch{}
     })();
   },[]);
@@ -12032,12 +12032,12 @@ export default function App() {
           if(portalMisiRows?.length) setPortalMisi(portalMisiRows);
         } catch(e){ console.warn('portal_misi load:',e); }
         try {
-          const { data: portalNoteRow } = await supabase.from('portal_settings').select('*').eq('key','note').single();
-          if(portalNoteRow?.value) setPortalNote(portalNoteRow.value);
+          const { data: portalNoteRows } = await supabase.from('portal_settings').select('*').eq('key','note').limit(1);
+          if(portalNoteRows?.[0]?.value) setPortalNote(portalNoteRows[0].value);
         } catch(e){ console.warn('portal_note load:',e); }
         try {
-          const { data: portalShiftRow } = await supabase.from('portal_settings').select('*').eq('key','shift').single();
-          if(portalShiftRow?.value) setPortalShift(JSON.parse(portalShiftRow.value));
+          const { data: portalShiftRows } = await supabase.from('portal_settings').select('*').eq('key','shift').limit(1);
+          if(portalShiftRows?.[0]?.value) setPortalShift(JSON.parse(portalShiftRows[0].value));
         } catch(e){ console.warn('portal_shift load:',e); }
         try {
           const { data: portalAbsensiRows } = await supabase.from('portal_absensi').select('*').order('tgl',{ascending:false});
