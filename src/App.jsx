@@ -443,6 +443,7 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"dashboardbank", icon:Ic.Chart(),    label:"Dashboard Bank",     desc:"Pantau transaksi keuangan bank",color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
     {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"laporan",  icon:Ic.Laporan(),  label:"Laporan",            desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
+    {id:"strategi", icon:"🧠",      label:"Strategi Bulanan",   desc:"Insight & misi otomatis dari penjualan", color:"#4338ca", bg:"#eef2ff", roles:["admin"]},
     {id:"portal-admin", icon:"👷",      label:"Portal Karyawan",    desc:"Kelola misi, absensi & izin",  color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
   ];
   const accessible = menus.filter(m=>m.roles.includes(user.role));
@@ -6682,7 +6683,7 @@ function MonthlyHistoryTab({transactions,outlets}){
         if(!imap[i.name]) imap[i.name]={name:i.name,qty:0,omset:0,profit:0,trx:0};
         imap[i.name].qty   += i.qty;
         imap[i.name].omset += i.price*i.qty;
-        imap[i.name].profit+= (i.price-(i.buyPrice||0))*i.qty;
+        imap[i.name].profit+= (i.price-(i.modal||0))*i.qty;
         imap[i.name].trx   += 1;
       });
     });
@@ -7345,7 +7346,7 @@ function AnalisisTab({transactions=[],outlets=[],outletStats=[]}){ // real data 
     const ends  =[new Date(yr,2,31,23,59),new Date(yr,5,30,23,59),new Date(yr,8,30,23,59),new Date(yr,11,31,23,59)];
     const list=(transactions||[]).filter(t=>{try{const p=t.date.split('/');const d=p.length===3?new Date(p[2],p[1]-1,p[0]):new Date(t.date);return d>=starts[qIdx]&&d<=ends[qIdx];}catch{return false;}});
     const omset=list.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
-    const profit=list.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.price-(i.buyPrice||0))*i.qty,0),0);
+    const profit=list.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.price-(i.modal||0))*i.qty,0),0);
     return {omset,profit,trx:list.length};
   };
   const q=[0,1,2,3].map((i,_,__)=>({q:`Q${i+1}`,...buildQ(i)}));
@@ -7458,7 +7459,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
   // -- Compute real data from props -----------------------------------------
   const parseDate = s => { if(!s) return null; const p=s.split('/'); if(p.length===3) return new Date(p[2],p[1]-1,p[0]); return new Date(s); };
   const calcOmset = list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
-  const calcProfit= list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv-(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.buyPrice||0)*i.qty,0); },0);
+  const calcProfit= list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv-(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.modal||0)*i.qty,0); },0);
   const filterTx = (from, to) => (transactions||[]).filter(t=>{ const d=parseDate(t.date); return d&&d>=from&&d<=to; });
   // filteredTx HARUS deklarasi sebelum dipakai
   const userFrom = new Date(dateFrom); userFrom.setHours(0,0,0,0);
@@ -7485,7 +7486,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
   ];
   // Use filteredTx for period totals
   const TOTAL_OMSET_REAL  = filteredTx.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
-  const TOTAL_PROFIT_REAL = filteredTx.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.price-(i.buyPrice||0))*i.qty,0),0);
+  const TOTAL_PROFIT_REAL = filteredTx.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((rs,i)=>rs+(i.price-(i.modal||0))*i.qty,0),0);
   const PROFIT_MARGIN_REAL= TOTAL_OMSET_REAL>0?(TOTAL_PROFIT_REAL/TOTAL_OMSET_REAL*100).toFixed(1):"0.0";
   // Outlet stats real
   const OUTLET_STATS_REAL = (outlets||[]).map((o,i)=>{
@@ -7511,7 +7512,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
   // Top profit real
   const profitMap = {};
   filteredTx.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
-    const p=(i.price-(i.buyPrice||0))*i.qty;
+    const p=(i.price-(i.modal||0))*i.qty;
     if(!profitMap[i.name]) profitMap[i.name]={name:i.name,profit:0};
     profitMap[i.name].profit+=p;
   }));
@@ -11176,6 +11177,315 @@ function Time24Input({value, onChange}) {
   );
 }
 
+// ==============================================================================
+// STRATEGI BULANAN — insight tren penjualan + auto-generate misi (realtime)
+// ==============================================================================
+function StrategiBulananPage({ transactions=[], outlets=[], products=[], misi=[], setMisi=()=>{}, notify, onBack }) {
+  const [tab,setTab] = useState("insight"); // insight | misi
+  const [applied,setApplied] = useState({}); // {idx: true} sudah diterapkan
+
+  // ── Hitung rentang tanggal ──
+  const now = new Date();
+  const hariBerjalan = now.getDate(); // hari ke-N bulan ini
+  const bulanLaluStart = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const bulanLaluEnd   = new Date(now.getFullYear(), now.getMonth(), 0);
+  const hariTotalBulanLalu = bulanLaluEnd.getDate();
+  const bulanIniStart  = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const parseTglTx = (t) => {
+    try{ const p=t.date.split('/'); return p.length===3?new Date(p[2],p[1]-1,p[0]):new Date(t.date); }catch{ return null; }
+  };
+
+  const txBulanLalu = transactions.filter(t=>{ const d=parseTglTx(t); return d&&d>=bulanLaluStart&&d<=bulanLaluEnd; });
+  const txBulanIni  = transactions.filter(t=>{ const d=parseTglTx(t); return d&&d>=bulanIniStart&&d<=now; });
+
+  // ── Analisis per-produk ──
+  const produkMap = {}; // nama -> {terjual, omset, modal}
+  txBulanLalu.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
+    if(!produkMap[i.name]) produkMap[i.name]={nama:i.name,terjual:0,omset:0,modal:0,id:i.id||i.stock?.id||null};
+    produkMap[i.name].terjual+=i.qty;
+    produkMap[i.name].omset+=i.price*i.qty;
+    produkMap[i.name].modal+=(i.modal||0)*i.qty;
+  }));
+  const produkIniMap = {}; // realisasi bulan ini sofar
+  txBulanIni.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
+    produkIniMap[i.name]=(produkIniMap[i.name]||0)+i.qty;
+  }));
+
+  const analisis = Object.values(produkMap).map(p=>{
+    const proyeksi = hariTotalBulanLalu>0 ? (p.terjual/hariTotalBulanLalu)*hariBerjalan : 0;
+    const realisasi = produkIniMap[p.nama]||0;
+    const trend = proyeksi>0.5 ? Math.round(((realisasi-proyeksi)/proyeksi)*100) : 0;
+    const margin = p.omset>0 ? Math.round((p.omset-p.modal)/p.omset*100) : 0;
+    return {...p, proyeksi:Math.round(proyeksi), realisasi, trend, margin, totalMargin:p.omset-p.modal};
+  });
+
+  const naik = analisis.filter(p=>p.trend>15&&p.proyeksi>0).sort((a,b)=>b.trend-a.trend);
+  const turun = analisis.filter(p=>p.trend<-15&&p.proyeksi>0).sort((a,b)=>a.trend-b.trend);
+  const topMargin = [...analisis].filter(p=>p.totalMargin>0).sort((a,b)=>b.totalMargin-a.totalMargin).slice(0,3);
+  const slowMover = [...analisis].filter(p=>p.terjual>0).sort((a,b)=>a.terjual-b.terjual).slice(0,3);
+
+  // ── Jam ramai/sepi (dari transaksi bulan lalu) ──
+  const jamMap = {}; // "08-10" -> count
+  const jamBuckets = [[8,10],[10,12],[12,14],[14,16],[16,18],[18,20],[20,22]];
+  const getJamBucket = (timeStr) => {
+    if(!timeStr) return null;
+    const h = parseInt(timeStr.split(':')[0],10);
+    const b = jamBuckets.find(([s,e])=>h>=s&&h<e);
+    return b ? `${String(b[0]).padStart(2,'0')}-${String(b[1]).padStart(2,'0')}` : null;
+  };
+  txBulanLalu.forEach(t=>{
+    const bucket = getJamBucket(t.time);
+    if(bucket) jamMap[bucket]=(jamMap[bucket]||0)+1;
+  });
+  const jamData = jamBuckets.map(([s,e])=>{
+    const key = `${String(s).padStart(2,'0')}-${String(e).padStart(2,'0')}`;
+    return {jam:key, trx:jamMap[key]||0};
+  });
+  const adaJamData = jamData.some(j=>j.trx>0);
+  const jamPaling = adaJamData ? [...jamData].sort((a,b)=>b.trx-a.trx)[0] : null;
+  const jamSepi   = adaJamData ? [...jamData].sort((a,b)=>a.trx-b.trx)[0] : null;
+
+  const TrendBadge = ({trend}) => {
+    if(trend>15) return <span style={{fontSize:10,fontWeight:800,color:"#16a34a",background:"#f0fdf4",padding:"2px 8px",borderRadius:20}}>📈 +{trend}%</span>;
+    if(trend<-15) return <span style={{fontSize:10,fontWeight:800,color:"#dc2626",background:"#fff5f5",padding:"2px 8px",borderRadius:20}}>📉 {trend}%</span>;
+    return <span style={{fontSize:10,fontWeight:800,color:"#888",background:"#f5f5f5",padding:"2px 8px",borderRadius:20}}>➡️ {trend}%</span>;
+  };
+
+  // ── Auto-generate misi suggestions ──
+  const findProdukId = (nama) => {
+    const p = products.find(x=>(x.name||x.nama)===nama);
+    return p?.id || nama;
+  };
+  const generatedMisi = [];
+  if(naik[0]) generatedMisi.push({
+    icon:"🚀", judul:`Pertahankan Momentum: ${naik[0].nama}`,
+    alasan:`Penjualan naik ${naik[0].trend}% dibanding proyeksi bulan lalu — tingkatkan target untuk capitalize tren`,
+    produk:naik[0].nama, produkId:findProdukId(naik[0].nama),
+    tipe:"auto_produk", target: Math.max(1,Math.round(naik[0].terjual*1.15)), poin:200,
+  });
+  slowMover.filter(p=>p.terjual>0).slice(0,2).forEach(p=>generatedMisi.push({
+    icon:"📣", judul:`Dorong Penjualan: ${p.nama}`,
+    alasan:`Hanya terjual ${p.terjual} unit bulan lalu — stok menumpuk, perlu promosi aktif`,
+    produk:p.nama, produkId:findProdukId(p.nama),
+    tipe:"auto_produk", target: Math.max(p.terjual*2,5), poin:250,
+  }));
+  if(topMargin[0]) generatedMisi.push({
+    icon:"💎", judul:`Fokus Margin Tinggi: ${topMargin[0].nama}`,
+    alasan:`Margin ${topMargin[0].margin}% — kontribusi profit terbesar, prioritaskan tawarkan ke pelanggan`,
+    produk:topMargin[0].nama, produkId:findProdukId(topMargin[0].nama),
+    tipe:"auto_produk", target: Math.max(1,Math.round(topMargin[0].terjual*1.1)), poin:300,
+  });
+  if(jamSepi&&jamSepi.trx>0) generatedMisi.push({
+    icon:"⏰", judul:`Tingkatkan Transaksi Jam Sepi (${jamSepi.jam})`,
+    alasan:`Jam ${jamSepi.jam} hanya ${jamSepi.trx} transaksi bulan lalu — jam paling sepi, perlu strategi seperti promo flash sale`,
+    produk:null, produkId:null,
+    tipe:"auto_transaksi", target: Math.max(jamSepi.trx*2,5), poin:150,
+  });
+
+  // ── Terapkan misi ──
+  const terapkanMisi = async (m, idx) => {
+    const payload = {
+      judul:m.judul, deskripsi:m.alasan, icon:m.icon,
+      poin:m.poin, target:m.target, satuan:m.tipe==="auto_transaksi"?"transaksi":"pcs",
+      periode:"bulanan", tipe:m.tipe, produk_id:m.produkId||null,
+      progress:0, selesai:false,
+    };
+    try{
+      const {data} = await supabase.from('portal_misi').insert(payload).select();
+      if(data?.[0]) setMisi(prev=>[...prev,data[0]]);
+      setApplied(prev=>({...prev,[idx]:true}));
+      notify(`✓ Misi "${m.judul}" diterapkan`,"ok");
+    }catch(e){ notify("Gagal menerapkan misi: "+e.message,"err"); }
+  };
+  const terapkanSemua = async () => {
+    for(let i=0;i<generatedMisi.length;i++){
+      if(!applied[i]) await terapkanMisi(generatedMisi[i],i);
+    }
+  };
+
+  const css = `*{box-sizing:border-box}@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}.fade{animation:fadeUp .3s ease}`;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <style>{css}</style>
+      <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",padding:"16px 24px",display:"flex",alignItems:"center",gap:12}}>
+        <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
+        <div>
+          <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>🧠 Strategi Bulanan Otomatis</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>Analisis penjualan {hariTotalBulanLalu} hari terakhir vs {hariBerjalan} hari bulan ini · realtime</div>
+        </div>
+        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+          {[["insight","📊 Insight & Tren"],["misi","🎯 Misi yang Disarankan"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)}
+              style={{padding:"8px 16px",borderRadius:10,border:"none",background:tab===k?"#fff":"rgba(255,255,255,.12)",color:tab===k?"#312e81":"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"20px 24px",maxWidth:1000,margin:"0 auto"}}>
+
+        {txBulanLalu.length===0&&(
+          <div style={{background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:10,padding:"14px",fontSize:12,color:"#92400e",marginBottom:16}}>
+            ⚠️ Belum ada data transaksi bulan lalu yang cukup untuk analisis. Insight akan muncul setelah ada riwayat transaksi.
+          </div>
+        )}
+
+        {tab==="insight"&&(
+          <>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:20}}>
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px"}}>
+                <div style={{fontSize:22,marginBottom:6}}>📈</div>
+                <div style={{fontWeight:900,fontSize:20,color:"#16a34a"}}>{naik.length}</div>
+                <div style={{fontSize:11,color:"#888",fontWeight:700}}>Produk Naik (&gt;15%)</div>
+              </div>
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px"}}>
+                <div style={{fontSize:22,marginBottom:6}}>📉</div>
+                <div style={{fontWeight:900,fontSize:20,color:"#dc2626"}}>{turun.length}</div>
+                <div style={{fontSize:11,color:"#888",fontWeight:700}}>Produk Turun (&gt;15%)</div>
+              </div>
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px"}}>
+                <div style={{fontSize:22,marginBottom:6}}>⏰</div>
+                <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{jamPaling?jamPaling.jam:"--"}</div>
+                <div style={{fontSize:11,color:"#888",fontWeight:700}}>Jam Paling Ramai {jamPaling?`(${jamPaling.trx} trx)`:""}</div>
+              </div>
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px"}}>
+                <div style={{fontSize:22,marginBottom:6}}>💎</div>
+                <div style={{fontWeight:900,fontSize:16,color:"#8e44ad"}}>{topMargin[0]?.nama?.slice(0,16)||"--"}</div>
+                <div style={{fontSize:11,color:"#888",fontWeight:700}}>Margin Tertinggi {topMargin[0]?`(${topMargin[0].margin}%)`:""}</div>
+              </div>
+            </div>
+
+            {naik.length>0&&(
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#16a34a",marginBottom:10}}>📈 Produk dengan Tren Naik</div>
+                {naik.map(p=>(
+                  <div key={p.nama} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f0faf8"}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:12}}>{p.nama}</div>
+                      <div style={{fontSize:10,color:"#aaa"}}>Bulan lalu: {p.terjual} unit · Proyeksi {hariBerjalan} hari: {p.proyeksi} · Realisasi: {p.realisasi}</div>
+                    </div>
+                    <TrendBadge trend={p.trend}/>
+                  </div>
+                ))}
+                <div style={{marginTop:10,background:"#f0fdf4",borderRadius:9,padding:"10px 12px",fontSize:11,color:"#16a34a"}}>
+                  💡 Pertahankan stok dan promosi untuk produk ini — momentum sedang baik
+                </div>
+              </div>
+            )}
+
+            {turun.length>0&&(
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#dc2626",marginBottom:10}}>📉 Produk dengan Tren Turun</div>
+                {turun.map(p=>(
+                  <div key={p.nama} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f0faf8"}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:12}}>{p.nama}</div>
+                      <div style={{fontSize:10,color:"#aaa"}}>Bulan lalu: {p.terjual} unit · Proyeksi: {p.proyeksi} · Realisasi: {p.realisasi}</div>
+                    </div>
+                    <TrendBadge trend={p.trend}/>
+                  </div>
+                ))}
+                <div style={{marginTop:10,background:"#fff5f5",borderRadius:9,padding:"10px 12px",fontSize:11,color:"#dc2626"}}>
+                  ⚠️ Pertimbangkan promo, bundling, atau cek alasan penurunan (stok, harga kompetitor, dll)
+                </div>
+              </div>
+            )}
+
+            {adaJamData&&(
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:12}}>⏰ Distribusi Transaksi per Jam (Bulan Lalu)</div>
+                <div style={{display:"flex",alignItems:"flex-end",gap:8,height:100}}>
+                  {jamData.map(j=>{
+                    const maxTrx = Math.max(...jamData.map(x=>x.trx),1);
+                    const h = (j.trx/maxTrx)*100;
+                    const isPaling = jamPaling&&j.jam===jamPaling.jam&&j.trx>0;
+                    const isSepi = jamSepi&&j.jam===jamSepi.jam;
+                    return (
+                      <div key={j.jam} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                        <div style={{width:"100%",height:`${h}%`,borderRadius:"6px 6px 0 0",background:isPaling?"#16a34a":isSepi?"#fca5a5":"#0d9488",minHeight:4}}/>
+                        <div style={{fontSize:9,fontWeight:700,color:isPaling?"#16a34a":isSepi?"#dc2626":"#888"}}>{j.jam}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{marginTop:10,fontSize:11,color:"#888",display:"flex",gap:16}}>
+                  <span><span style={{display:"inline-block",width:10,height:10,background:"#16a34a",borderRadius:3,marginRight:4}}/>Paling ramai</span>
+                  <span><span style={{display:"inline-block",width:10,height:10,background:"#fca5a5",borderRadius:3,marginRight:4}}/>Paling sepi</span>
+                </div>
+              </div>
+            )}
+
+            {slowMover.length>0&&(
+              <div className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px"}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#d97706",marginBottom:10}}>🐢 Produk Paling Sedikit Terjual (Restock Perhatian)</div>
+                {slowMover.map(p=>(
+                  <div key={p.nama} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f0faf8"}}>
+                    <div style={{flex:1,fontWeight:700,fontSize:12}}>{p.nama}</div>
+                    <span style={{fontSize:10,fontWeight:800,color:"#d97706",background:"#fffbeb",padding:"2px 10px",borderRadius:20}}>{p.terjual} unit/bulan</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab==="misi"&&(
+          <>
+            <div className="fade" style={{background:"linear-gradient(135deg,#1e1b4b,#4338ca)",borderRadius:14,padding:"16px",marginBottom:16,color:"#fff"}}>
+              <div style={{fontWeight:800,fontSize:13,marginBottom:6}}>🤖 Misi Auto-Generate Berdasarkan Data</div>
+              <div style={{fontSize:11,opacity:.85,lineHeight:1.6}}>
+                {generatedMisi.length>0
+                  ? `Sistem menganalisis tren penjualan dan menyarankan ${generatedMisi.length} misi untuk bulan ini. Klik "Terapkan" untuk menambahkan ke daftar misi karyawan (periode bulanan).`
+                  : "Belum cukup data untuk menyarankan misi. Pastikan ada riwayat transaksi bulan lalu."}
+              </div>
+            </div>
+
+            {generatedMisi.length>0&&(
+              <>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+                {generatedMisi.map((m,i)=>(
+                  <div key={i} className="fade" style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"14px 16px"}}>
+                    <div style={{display:"flex",gap:12}}>
+                      <div style={{width:42,height:42,borderRadius:12,background:"#f0faf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,border:"2px solid #e0f5f1"}}>{m.icon}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{m.judul}</div>
+                        <div style={{fontSize:10,color:"#888",marginTop:3,lineHeight:1.5}}>{m.alasan}</div>
+                        <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                          <span style={{background:"#e0faf5",color:"#0d9488",fontSize:9,fontWeight:700,padding:"2px 9px",borderRadius:20}}>🗓️ Bulanan</span>
+                          {m.produk&&<span style={{background:"#fef9c3",color:"#92400e",fontSize:9,fontWeight:700,padding:"2px 9px",borderRadius:20}}>📱 {m.produk}</span>}
+                          <span style={{background:"#f0fdf4",color:"#16a34a",fontSize:9,fontWeight:700,padding:"2px 9px",borderRadius:20}}>🎯 Target: {m.target}</span>
+                          <span style={{background:"#fffbeb",color:"#d97706",fontSize:9,fontWeight:800,padding:"2px 9px",borderRadius:20}}>🏅 {m.poin} poin</span>
+                        </div>
+                      </div>
+                      <button onClick={()=>terapkanMisi(m,i)} disabled={applied[i]}
+                        style={{padding:"6px 14px",borderRadius:9,border:"none",background:applied[i]?"#86efac":"linear-gradient(135deg,#0d9488,#14b8a6)",color:applied[i]?"#16a34a":"#fff",fontWeight:800,fontSize:11,cursor:applied[i]?"default":"pointer",fontFamily:"inherit",flexShrink:0,alignSelf:"flex-start"}}>
+                        {applied[i]?"✓ Diterapkan":"+ Terapkan"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={terapkanSemua}
+                style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#312e81,#4338ca)",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                ⚡ Terapkan Semua Misi Sekaligus
+              </button>
+
+              <div style={{marginTop:14,background:"#fffbeb",border:"1px solid #fcd34d",borderRadius:10,padding:"12px",fontSize:11,color:"#92400e",lineHeight:1.7}}>
+                💡 <b>Cara kerja:</b> Sistem menganalisis data penjualan {hariTotalBulanLalu} hari bulan lalu dan membuat draft misi bulanan otomatis. Setiap kali halaman ini dibuka, analisis dihitung ulang dari data transaksi terbaru (realtime). Misi yang sudah diterapkan akan langsung muncul di Portal Karyawan.
+              </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, setAbsensiMap, izinMap, setIzinMap, onBack, notify, todos, setTodos, todoStatus, poinRate, setPoinRate, misiProgress, misiFoto, products=[] }) {
   const [tab,setTab]         = useState("overview"); // overview|misi|izin|absensi|settings
   const [editNote,setEditNote]=useState(false);
@@ -13669,6 +13979,7 @@ export default function App() {
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
       {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto}/>}
+      {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
       {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products}/>}
       {page==="kasir"     && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
