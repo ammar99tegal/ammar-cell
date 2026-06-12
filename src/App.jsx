@@ -11574,6 +11574,17 @@ function useGpsMonitor({ user, outlets, enabled, onViolation }) {
     return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
   };
 
+  const startWarning = useCallback(()=>{
+    clearInterval(warnRef.current);
+    setWarnCD(WARN_DETIK);
+    warnRef.current = setInterval(()=>{
+      setWarnCD(p=>{
+        if(p<=1){ clearInterval(warnRef.current); if(onViolation) onViolation(); return 0; }
+        return p-1;
+      });
+    },1000);
+  },[onViolation]);
+
   const cekSekarang = useCallback(()=>{
     if(!enabled||!user) return;
     const outlet = outlets.find(o=>o.id===user.outletId);
@@ -11595,8 +11606,9 @@ function useGpsMonitor({ user, outlets, enabled, onViolation }) {
         setGpsJarak(fmtJ);
         setGpsLog(p=>[{waktu:new Date().toLocaleTimeString("id-ID"),status,jarak:fmtJ,acc:Math.round(acc),mock:isMock},...p.slice(0,19)]);
         if(status!=="aman") {
-          // Simpan log kecurigaan ke Supabase
-          supabase.from('portal_absensi_log').insert({user_id:user.id||user.username,user_nama:user.nama,tipe:'gps_violation',detail:JSON.stringify({status,jarak:fmtJ,acc,lat,lng,outletId:outlet.id}),waktu:new Date().toISOString()}).catch(()=>{});
+          try{
+            supabase.from('portal_absensi_log').insert({user_id:user.username,user_nama:user.nama,tipe:'gps_violation',detail:JSON.stringify({status,jarak:fmtJ,acc,lat,lng,outletId:outlet.id}),waktu:new Date().toISOString()});
+          }catch{}
           startWarning();
         } else {
           clearInterval(warnRef.current); setWarnCD(null);
@@ -11605,18 +11617,7 @@ function useGpsMonitor({ user, outlets, enabled, onViolation }) {
       ()=>{ setGpsStatus("off"); },
       {enableHighAccuracy:true,timeout:10000,maximumAge:30000}
     );
-  },[enabled,user,outlets]);
-
-  const startWarning = useCallback(()=>{
-    clearInterval(warnRef.current);
-    setWarnCD(WARN_DETIK);
-    warnRef.current = setInterval(()=>{
-      setWarnCD(p=>{
-        if(p<=1){ clearInterval(warnRef.current); if(onViolation) onViolation(); return 0; }
-        return p-1;
-      });
-    },1000);
-  },[onViolation]);
+  },[enabled,user,outlets,startWarning]);
 
   const dismissWarning = useCallback(()=>{
     clearInterval(warnRef.current); setWarnCD(null); cekSekarang();
@@ -11635,7 +11636,8 @@ function useGpsMonitor({ user, outlets, enabled, onViolation }) {
       });
     },1000);
     return()=>{ clearInterval(warnRef.current); clearInterval(nextRef.current); };
-  },[enabled,user?.id,outlets.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[enabled, user?.username, user?.outletId]);
 
   return { gpsStatus, gpsJarak, gpsAcc, gpsCoords, warnCD, nextCek, gpsLog, cekSekarang, dismissWarning };
 }
