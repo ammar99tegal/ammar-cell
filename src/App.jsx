@@ -533,11 +533,11 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
   const [resetPassTarget, setResetPassTarget] = useState(null); // {key, nama}
   const [resetPassVal,  setResetPassVal]  = useState("");
   const [resetPassOk,   setResetPassOk]   = useState(false);
-  const [oForm, setOForm] = useState({nama:"",alamat:"",lat:"",lng:"",radius:100});
+  const [oForm, setOForm] = useState({nama:"",alamat:"",lat:"",lng:"",radius:100,fiturGabungan:false});
   const [uForm, setUForm] = useState({username:"",pass:"",nama:"",outletId:"",outletIds:[],role:"karyawan"});
 
-  const openAddOutlet = ()=>{ setEditOutlet(null); setOForm({nama:"",alamat:"",lat:"",lng:"",radius:100}); setShowOutletForm(true); };
-  const openEditOutlet= o=>{ setEditOutlet(o); setOForm({nama:o.nama,alamat:o.alamat||"",lat:o.lat||"",lng:o.lng||"",radius:o.radius||100}); setShowOutletForm(true); };
+  const openAddOutlet = ()=>{ setEditOutlet(null); setOForm({nama:"",alamat:"",lat:"",lng:"",radius:100,fiturGabungan:false}); setShowOutletForm(true); };
+  const openEditOutlet= o=>{ setEditOutlet(o); setOForm({nama:o.nama,alamat:o.alamat||"",lat:o.lat||"",lng:o.lng||"",radius:o.radius||100,fiturGabungan:!!(o.fitur_gabungan??o.fiturGabungan)}); setShowOutletForm(true); };
   const saveOutlet = async ()=>{
     if (!oForm.nama.trim()) return notify("Isi nama outlet!","err");
     const outletData = {
@@ -546,6 +546,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
       lat: oForm.lat ? +oForm.lat : null,
       lng: oForm.lng ? +oForm.lng : null,
       radius: +oForm.radius || 100,
+      fitur_gabungan: !!oForm.fiturGabungan,
     };
     if (editOutlet) {
       try {
@@ -695,6 +696,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                     </div>
                     <span style={{background:o.aktif?"#e0faf5":"#f0f0f0",color:o.aktif?"#0d9488":"#aaa",fontWeight:800,fontSize:10,padding:"2px 9px",borderRadius:20}}>{o.aktif?"🟢 Aktif":"⚫ Nonaktif"}</span>
                   </div>
+                  {(o.fitur_gabungan??o.fiturGabungan)&&<div style={{display:"inline-block",background:"#eef2ff",color:"#4338ca",fontWeight:800,fontSize:9,padding:"2px 9px",borderRadius:20,marginBottom:8}}>🧾 Kasir+Bank Gabungan</div>}
                   <div style={{display:"flex",gap:8,marginBottom:12}}>
                     <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"7px 10px",textAlign:"center"}}>
                       <div style={{fontWeight:900,fontSize:16,color:"#0d9488"}}>{kasirList.length}</div>
@@ -802,6 +804,19 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
             </div>
             <div style={{marginTop:8,fontSize:9,color:"#aaa"}}>💡 Kosongkan jika tidak ingin batasi lokasi. Koordinat dari Google Maps (tap & tahan pada titik toko)</div>
           </div>
+
+          {/* Toggle fitur Kasir+Bank Gabungan */}
+          <div style={{background:"#eef2ff",borderRadius:10,padding:"12px",border:"2px solid #c7d2fe",marginBottom:8}}>
+            <button onClick={()=>setOForm(p=>({...p,fiturGabungan:!p.fiturGabungan}))}
+              style={{width:"100%",display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",padding:0}}>
+              <div style={{width:22,height:22,borderRadius:7,border:`2px solid ${oForm.fiturGabungan?"#4338ca":"#c7d2fe"}`,background:oForm.fiturGabungan?"#4338ca":"#fff",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,flexShrink:0,transition:"all .15s"}}>{oForm.fiturGabungan?"✓":""}</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:12,color:"#4338ca"}}>🧾 Aktifkan Kasir + Bank Gabungan</div>
+                <div style={{fontSize:10,color:"#6366f1",marginTop:1}}>Tampilkan menu "Kasir + Bank (1 Laci)" untuk karyawan outlet ini</div>
+              </div>
+            </button>
+          </div>
+
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <button onClick={()=>setShowOutletForm(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
             <button onClick={saveOutlet} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4330,7 +4345,99 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ==============================================================================
 // KASIR APP (per outlet)
 // ==============================================================================
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{}, portalMisi=[], portalMisiProgress={}, strukConfig={} }) {
+// ==============================================================================
+// GABUNGAN — Kasir + Bank dalam 1 laci (menu tambahan, khusus outlet tertentu)
+// Tidak mengubah KasirApp/BankPage sama sekali — hanya membungkus & menampilkan
+// ringkasan kas gabungan dari data yang sudah ada (transactions + bank trx hari ini)
+// ==============================================================================
+function GabunganPage(props) {
+  const { user, outlets, transactions=[], notify } = props;
+  const [tab,setTab] = useState("kasir"); // kasir | bank
+  const [bankTrxHariIni,setBankTrxHariIni] = useState([]);
+
+  const selectedOutlet = user.outletId || outlets[0]?.id || "";
+  const todayStr = today(); // "DD/MM/YYYY"
+
+  // Load transaksi bank hari ini untuk outlet ini (read-only, tidak ganggu BankPage)
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      try{
+        const all = await dbBank.getTransactions();
+        const list = (all||[]).filter(t=>t.outletId===selectedOutlet && (t.tgl===todayStr || (t.created_at||"").slice(0,10)===new Date().toISOString().slice(0,10)));
+        if(alive) setBankTrxHariIni(list);
+      }catch(e){ console.warn('gabungan bank load:',e); }
+    })();
+    const iv = setInterval(async()=>{
+      try{
+        const all = await dbBank.getTransactions();
+        const list = (all||[]).filter(t=>t.outletId===selectedOutlet && (t.tgl===todayStr || (t.created_at||"").slice(0,10)===new Date().toISOString().slice(0,10)));
+        if(alive) setBankTrxHariIni(list);
+      }catch{}
+    }, 15000);
+    return ()=>{ alive=false; clearInterval(iv); };
+  },[selectedOutlet]);
+
+  // Omset kasir hari ini (dari transactions yang sudah ada di App root, realtime)
+  const txHariIni = transactions.filter(t=>t.outletId===selectedOutlet && t.date===todayStr);
+  const omsetKasir = txHariIni.reduce((s,t)=>{
+    const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);
+    return s+t.total-rv;
+  },0);
+
+  // Kas dari bank hari ini = sum netNominal (sudah termasuk efek TARIK 2-baris)
+  const kasMasukBank = bankTrxHariIni.reduce((s,t)=>s+(t.netNominal||0),0);
+
+  const totalLaci = omsetKasir + kasMasukBank;
+  const fmtRpG = (n) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      {/* Header ringkasan gabungan */}
+      <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",padding:"12px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:160}}>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>🧾 Kasir + Bank — 1 Laci</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)"}}>{outlets.find(o=>o.id===selectedOutlet)?.nama||"Outlet"} · {user.nama}</div>
+        </div>
+        <div style={{display:"flex",gap:16,background:"rgba(255,255,255,.12)",borderRadius:12,padding:"8px 18px",flexWrap:"wrap"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Omset Kasir</div>
+            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>{fmtRpG(omsetKasir)}</div>
+          </div>
+          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:16}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Kas dari Bank</div>
+            <div style={{fontWeight:900,fontSize:14,color:kasMasukBank>=0?"#86efac":"#fca5a5"}}>{kasMasukBank>=0?"+":""}{fmtRpG(kasMasukBank)}</div>
+          </div>
+          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:16}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Total Laci Hari Ini</div>
+            <div style={{fontWeight:900,fontSize:16,color:"#fbbf24"}}>{fmtRpG(totalLaci)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab switcher */}
+      <div style={{display:"flex",gap:8,padding:"12px 18px 0"}}>
+        {[["kasir","🛒 Kasir"],["bank","🏦 Bank"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)}
+            style={{padding:"9px 22px",borderRadius:11,border:`2px solid ${tab===k?"#0d9488":"#e0f5f1"}`,background:tab===k?"#0d9488":"#fff",color:tab===k?"#fff":"#888",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <div style={{fontSize:10,color:"#aaa",padding:"6px 18px 0"}}>💡 Kasir & Bank di bawah ini sama persis dengan menu biasa — hanya total kas laci di atas yang menggabungkan keduanya.</div>
+
+      {/* Render Kasir / Bank asli tanpa diubah, tanpa header/onBack masing-masing */}
+      <div style={{display: tab==="kasir"?"block":"none"}}>
+        <KasirApp {...props} onBack={()=>{}} embedded/>
+      </div>
+      <div style={{display: tab==="bank"?"block":"none"}}>
+        <BankPage user={props.user} outlets={props.outlets} saldoApps={props.saldoBank} onBack={()=>{}} notify={props.notify} embedded/>
+      </div>
+    </div>
+  );
+}
+
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{}, portalMisi=[], portalMisiProgress={}, strukConfig={}, embedded=false }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
@@ -5458,7 +5565,7 @@ function BankMotivasi() {
 // ==============================================================================
 // BANK PAGE -- Pencatatan Bank (terintegrasi Supabase Realtime)
 // ==============================================================================
-function BankPage({ user, outlets, saldoApps, onBack, notify }) {
+function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false }) {
   const selectedOutlet = user.outletId || outlets[0]?.id || "";
   const outletNama     = outlets.find(o=>o.id===selectedOutlet)?.nama || "Ammar Cell";
 
@@ -13113,10 +13220,12 @@ function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
   const hasGps  = !!(activeOutlet?.lat&&activeOutlet?.lng);
   const isKasir = user.role==="kasir"||user.role==="staff"||(user.role==="karyawan"&&userOutletIds.length>0);
   const isBank  = user.role==="bank"||user.role==="staff";
+  const outletHasGabungan = !!(activeOutlet?.fitur_gabungan??activeOutlet?.fiturGabungan);
 
   const MENU = [
     isKasir&&{k:"kasir",icon:"🛒",label:"Kasir",      sub:"Buka transaksi penjualan",     grad:"linear-gradient(135deg,#0d9488,#14b8a6)",glow:"rgba(13,148,136,.35)",locked:!boleh},
     isBank &&{k:"bank", icon:"🏦",label:"Bank",        sub:"Pencatatan transaksi keuangan",grad:"linear-gradient(135deg,#2980b9,#3498db)",glow:"rgba(41,128,185,.35)",locked:!boleh},
+    (isKasir&&isBank&&outletHasGabungan)&&{k:"gabungan",icon:"🧾",label:"Kasir + Bank (1 Laci)",sub:"Transaksi gabungan satu laci",grad:"linear-gradient(135deg,#4338ca,#6366f1)",glow:"rgba(67,56,202,.35)",locked:!boleh},
     {k:"portal",icon:"👤",label:"Portal Saya",sub:"Absensi, izin, misi & gaji",grad:"linear-gradient(135deg,#059669,#0d9488)",glow:"rgba(5,150,105,.3)",locked:false,free:true},
   ].filter(Boolean);
 
@@ -14142,7 +14251,7 @@ export default function App() {
   const kasirGpsHook = useGpsMonitor({
     user,
     outlets,
-    enabled: !!(user && (user.role==="kasir"||user.role==="bank"||user.role==="staff"||(user.role==="karyawan"&&(user.outletId||(user.outletIds?.length)))) && (page==="kasir"||page==="bank")),
+    enabled: !!(user && (user.role==="kasir"||user.role==="bank"||user.role==="staff"||(user.role==="karyawan"&&(user.outletId||(user.outletIds?.length)))) && (page==="kasir"||page==="bank"||page==="gabungan")),
     onViolation: handleGpsViolation,
   });
 
@@ -14231,6 +14340,13 @@ export default function App() {
       {page==="bank"      && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="bank"/>}
         <BankPage user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify}/>
+      </>)}
+      {page==="gabungan"  && (<>
+        {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="gabungan"/>}
+        <div style={{position:"sticky",top:0,zIndex:60,background:"#fff",borderBottom:"2px solid #e0f5f1",padding:"8px 18px"}}>
+          <button onClick={()=>{setPage("pilih");setPilihScene(null);}} style={{background:"#f0faf8",border:"2px solid #e0f5f1",borderRadius:20,padding:"6px 16px",color:"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>← Kembali</button>
+        </div>
+        <GabunganPage user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} saldoBank={saldoBank} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} strukConfig={strukConfig}/>
       </>)}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
