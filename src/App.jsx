@@ -4358,24 +4358,23 @@ function GabunganPage(props) {
   const selectedOutlet = user.outletId || outlets[0]?.id || "";
   const todayStr = today(); // "DD/MM/YYYY"
 
-  // Load transaksi bank hari ini untuk outlet ini (read-only, tidak ganggu BankPage)
+  // Load transaksi bank hari ini untuk outlet ini (read-only, tidak ganggu BankPage) — realtime
+  const loadBankToday = async () => {
+    try{
+      const all = await dbBank.getTransactions();
+      const list = (all||[]).filter(t=>t.outletId===selectedOutlet && t.tgl===todayStr);
+      setBankTrxHariIni(list);
+    }catch(e){ console.warn('gabungan bank load:',e); }
+  };
   useEffect(()=>{
-    let alive=true;
-    (async()=>{
-      try{
-        const all = await dbBank.getTransactions();
-        const list = (all||[]).filter(t=>t.outletId===selectedOutlet && (t.tgl===todayStr || (t.created_at||"").slice(0,10)===new Date().toISOString().slice(0,10)));
-        if(alive) setBankTrxHariIni(list);
-      }catch(e){ console.warn('gabungan bank load:',e); }
-    })();
-    const iv = setInterval(async()=>{
-      try{
-        const all = await dbBank.getTransactions();
-        const list = (all||[]).filter(t=>t.outletId===selectedOutlet && (t.tgl===todayStr || (t.created_at||"").slice(0,10)===new Date().toISOString().slice(0,10)));
-        if(alive) setBankTrxHariIni(list);
-      }catch{}
-    }, 15000);
-    return ()=>{ alive=false; clearInterval(iv); };
+    loadBankToday();
+    const ch = supabase.channel(`gabungan-bank-${selectedOutlet}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
+        const row = payload.new||payload.old;
+        if(row?.outlet_id===selectedOutlet) loadBankToday();
+      })
+      .subscribe();
+    return ()=>supabase.removeChannel(ch);
   },[selectedOutlet]);
 
   // Omset kasir hari ini (dari transactions yang sudah ada di App root, realtime)
@@ -4783,7 +4782,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       setTx(prev=>[trx,...prev]); // tetap tampilkan di UI
       updateMisiProgress(trx);
       setCartPersist([]);setCashInput("");setShowPayment(false);
-      setLastTrx(trx); setShowStruk(true);
+      setLastTrx(trx);
       notify("📵 Offline -- Transaksi tersimpan lokal, dikirim saat online","warn");
       return;
     }
@@ -4826,7 +4825,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       return s;
     });
     setCartPersist([]);setCashInput("");setShowPayment(false);
-    setLastTrx(trx); setShowStruk(true);
+    setLastTrx(trx);
     notify("✓ Transaksi berhasil!","ok");
   };
 
