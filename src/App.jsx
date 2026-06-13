@@ -4495,7 +4495,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     notify(`+ ${product.name}`,"ok");
   };
   const addManual=()=>{
-    if(!manualForm.name||!manualForm.price) return notify("Isi nama & harga!","err");
+    if(!manualForm.name||!manualForm.price) return notify("Isi nama & harga jual!","err");
+    if(!manualForm.modal||+manualForm.modal<=0) return notify("Harga modal wajib diisi!","err");
     if(!shift) return notify("⚠ Buka shift dulu sebelum transaksi!","err");
     setCartPersist(prev=>[...prev,{id:`m-${uid()}`,cartId:uid(),isManual:true,stock:null,name:manualForm.name,modal:+manualForm.modal||0,price:+manualForm.price,qty:+manualForm.qty||1}]);
     setManualForm({name:"",modal:"",price:"",qty:1});setShowManual(false);
@@ -4976,7 +4977,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       {/* MODALS */}
       {showManual&&(
         <Modal onClose={()=>setShowManual(false)} title="➕ Input Manual">
-          {[{l:"Nama *",k:"name",t:"text",p:"Nama item..."},{l:"Harga Modal",k:"modal",t:"number",p:"0"},{l:"Harga Jual *",k:"price",t:"number",p:"0"},{l:"Qty",k:"qty",t:"number",p:"1"}].map(f=>(
+          {[{l:"Nama *",k:"name",t:"text",p:"Nama item..."},{l:"Harga Modal *",k:"modal",t:"number",p:"0"},{l:"Harga Jual *",k:"price",t:"number",p:"0"},{l:"Qty",k:"qty",t:"number",p:"1"}].map(f=>(
             <div key={f.k} style={{marginBottom:8}}>
               <label style={{...lbl}}>{f.l}</label>
               <input type={f.t} value={manualForm[f.k]} onChange={e=>setManualForm(p=>({...p,[f.k]:e.target.value}))} placeholder={f.p} style={inp}/>
