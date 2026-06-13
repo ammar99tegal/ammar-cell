@@ -4330,7 +4330,7 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ==============================================================================
 // KASIR APP (per outlet)
 // ==============================================================================
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{}, portalMisi=[], portalMisiProgress={} }) {
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{}, portalMisi=[], portalMisiProgress={}, strukConfig={} }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
@@ -4361,6 +4361,10 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const [barcode,     setBarcode]     = useState("");
   const [refundModal, setRefundModal] = useState(null);
   const [refundReason,setRefundReason]= useState("");
+  const [lastTrx,     setLastTrx]     = useState(null); // trx terakhir untuk dicetak
+  const [showStruk,   setShowStruk]   = useState(false);
+  const [btDevice,    setBtDevice]    = useState(null); // printer Bluetooth tersambung
+  const [btConnecting,setBtConnecting]= useState(false);
 
   // -- Periodic shift heartbeat: cek tiap 30 detik (bukan dari DELETE realtime) -
   useEffect(()=>{
@@ -4545,6 +4549,117 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     });
   };
 
+  // ── Printer Bluetooth (ESC/POS) ──────────────────────────────────────
+  const ESC = '\x1B', GS = '\x1D';
+  const escposEncode = (str) => {
+    const bytes = [];
+    for (let i=0;i<str.length;i++) {
+      const code = str.charCodeAt(i);
+      bytes.push(code>255?63:code);
+    }
+    return new Uint8Array(bytes);
+  };
+  const connectPrinter = async () => {
+    if(!navigator.bluetooth){ notify("Browser tidak mendukung Bluetooth. Gunakan Chrome Android.","err"); return; }
+    setBtConnecting(true);
+    try{
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb','0000ffe0-0000-1000-8000-00805f9b34fb','0000ff00-0000-1000-8000-00805f9b34fb']
+      });
+      const server = await device.gatt.connect();
+      setBtDevice({device,server});
+      notify(`✓ Printer "${device.name||'Bluetooth'}" tersambung`,"ok");
+      device.addEventListener('gattserverdisconnected',()=>{ setBtDevice(null); notify("Printer terputus","warn"); });
+    }catch(e){
+      if(e.name!=="NotFoundError") notify("Gagal sambung printer: "+e.message,"err");
+    }
+    setBtConnecting(false);
+  };
+  const disconnectPrinter = () => {
+    try{ btDevice?.device?.gatt?.disconnect(); }catch{}
+    setBtDevice(null);
+  };
+  const getPrintCharacteristic = async () => {
+    if(!btDevice?.server) throw new Error("Printer belum tersambung");
+    const knownServices = ['000018f0-0000-1000-8000-00805f9b34fb','0000ffe0-0000-1000-8000-00805f9b34fb','0000ff00-0000-1000-8000-00805f9b34fb'];
+    for(const svcUuid of knownServices){
+      try{
+        const service = await btDevice.server.getPrimaryService(svcUuid);
+        const chars = await service.getCharacteristics();
+        const writable = chars.find(c=>c.properties.write||c.properties.writeWithoutResponse);
+        if(writable) return writable;
+      }catch{}
+    }
+    const services = await btDevice.server.getPrimaryServices();
+    for(const service of services){
+      try{
+        const chars = await service.getCharacteristics();
+        const writable = chars.find(c=>c.properties.write||c.properties.writeWithoutResponse);
+        if(writable) return writable;
+      }catch{}
+    }
+    throw new Error("Karakteristik printer tidak ditemukan");
+  };
+  const sendToPrinter = async (bytes) => {
+    const char = await getPrintCharacteristic();
+    const CHUNK = 100;
+    for(let i=0;i<bytes.length;i+=CHUNK){
+      const chunk = bytes.slice(i,i+CHUNK);
+      try{ await char.writeValueWithoutResponse(chunk); }
+      catch{ await char.writeValue(chunk); }
+      await new Promise(r=>setTimeout(r,30));
+    }
+  };
+  const buildStrukBytes = (trx) => {
+    const W = 32;
+    const line = (ch="-") => ch.repeat(W)+"\n";
+    const row = (l,r) => { const space=Math.max(1,W-l.length-r.length); return l+" ".repeat(space)+r+"\n"; };
+    const outletNamaTrx = outlets.find(o=>o.id===trx.outletId)?.nama||"Outlet";
+    const cfg = strukConfig||{};
+
+    let s = "";
+    s += ESC+"@";
+    s += ESC+"a"+"\x01";
+    s += ESC+"!"+"\x18";
+    s += (cfg.namaToko||"AMMAR CELL")+"\n";
+    s += ESC+"!"+"\x00";
+    if(cfg.headerExtra) s += cfg.headerExtra+"\n";
+    if(cfg.showOutlet!==false) s += outletNamaTrx+"\n";
+    s += ESC+"a"+"\x00";
+    s += line("=");
+    s += `${trx.date} ${trx.time}\n`;
+    if(cfg.showKasir!==false) s += `Kasir : ${trx.kasir}\n`;
+    if(cfg.showNoTrx!==false) s += `No    : ${(trx.id||"").toString().slice(-8)}\n`;
+    s += line("-");
+    (trx.items||[]).filter(i=>!i.refunded).forEach(it=>{
+      s += `${it.name}\n`;
+      s += row(`  ${it.qty} x ${it.price.toLocaleString("id-ID")}`, (it.price*it.qty).toLocaleString("id-ID"));
+    });
+    s += line("-");
+    s += row("TOTAL", `Rp ${trx.total.toLocaleString("id-ID")}`);
+    s += row("Tunai", `Rp ${trx.cash.toLocaleString("id-ID")}`);
+    s += row("Kembali", `Rp ${trx.kembalian.toLocaleString("id-ID")}`);
+    s += line("=");
+    s += ESC+"a"+"\x01";
+    if(cfg.footer1) s += cfg.footer1+"\n";
+    if(cfg.footer2) s += cfg.footer2+"\n";
+    s += "\n\n\n";
+    s += GS+"V"+"\x00";
+    return escposEncode(s);
+  };
+  const printStruk = async (trx) => {
+    if(!trx) return notify("Tidak ada transaksi untuk dicetak","err");
+    if(!btDevice){ notify("⚠ Printer belum tersambung. Klik 'Hubungkan Printer' dulu.","err"); return; }
+    try{
+      const bytes = buildStrukBytes(trx);
+      await sendToPrinter(bytes);
+      notify("🖨️ Struk dikirim ke printer","ok");
+    }catch(e){
+      notify("Gagal cetak: "+e.message,"err");
+    }
+  };
+
   const pay=()=>{
     if(!cart.length) return notify("Keranjang kosong!","err");
     const cashFinal=cashNum>=total?cashNum:total;
@@ -4561,6 +4676,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       setTx(prev=>[trx,...prev]); // tetap tampilkan di UI
       updateMisiProgress(trx);
       setCartPersist([]);setCashInput("");setShowPayment(false);
+      setLastTrx(trx); setShowStruk(true);
       notify("📵 Offline -- Transaksi tersimpan lokal, dikirim saat online","warn");
       return;
     }
@@ -4603,6 +4719,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       return s;
     });
     setCartPersist([]);setCashInput("");setShowPayment(false);
+    setLastTrx(trx); setShowStruk(true);
     notify("✓ Transaksi berhasil!","ok");
   };
 
@@ -4855,6 +4972,11 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
               ))}
             </div>
             <div style={{padding:"10px 13px",borderTop:"2px solid #e0f5f1"}}>
+              <button onClick={btDevice?disconnectPrinter:connectPrinter} disabled={btConnecting}
+                style={{width:"100%",marginBottom:8,padding:"7px",borderRadius:9,border:`2px solid ${btDevice?"#16a34a":"#e0f5f1"}`,
+                  background:btDevice?"#f0fdf4":"#fff",color:btDevice?"#16a34a":"#888",fontWeight:700,fontSize:11,cursor:btConnecting?"wait":"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                {btConnecting?"⏳ Menyambungkan...":btDevice?`🖨️ Printer Tersambung (${btDevice.device?.name||"BT"}) — Putuskan`:"🔗 Hubungkan Printer Bluetooth"}
+              </button>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:9}}>
                 <span style={{fontWeight:700,color:"#666",fontSize:13}}>Total</span>
                 <span style={{fontWeight:900,fontSize:20,color:"#0d9488"}}>{fmtRp(total)}</span>
@@ -4924,6 +5046,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
                           <div style={{display:"flex",gap:7,alignItems:"center"}}>
                             <span style={{fontWeight:800,fontSize:12,color:"#0d9488"}}>#{t.id}</span>
                             <span style={{fontSize:11,color:"#aaa"}}>{t.time}</span>
+                            <button onClick={()=>{setLastTrx(t);setShowStruk(true);}} style={{background:"#f0faf8",border:"1px solid #b2ede6",borderRadius:6,color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 7px",cursor:"pointer",fontFamily:"inherit"}}>🖨️ Cetak</button>
                           </div>
                           <div style={{textAlign:"right"}}>
                             <div style={{fontWeight:900,fontSize:14}}>{fmtRp(t.total)}</div>
@@ -4972,6 +5095,44 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           setStocks={setStocks}
           prodOrder={prodOrder}
         />
+      )}
+
+      {/* MODAL STRUK SETELAH BAYAR */}
+      {showStruk&&lastTrx&&(
+        <Modal onClose={()=>setShowStruk(false)} title="✓ Transaksi Berhasil">
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",fontFamily:"monospace",fontSize:11,lineHeight:1.6,marginBottom:12,maxHeight:280,overflowY:"auto"}}>
+            <div style={{textAlign:"center",fontWeight:900}}>{strukConfig.namaToko||"AMMAR CELL"}</div>
+            {strukConfig.headerExtra&&<div style={{textAlign:"center"}}>{strukConfig.headerExtra}</div>}
+            {strukConfig.showOutlet!==false&&<div style={{textAlign:"center"}}>{outlets.find(o=>o.id===lastTrx.outletId)?.nama||"Outlet"}</div>}
+            <div>{"=".repeat(28)}</div>
+            <div>{lastTrx.date} {lastTrx.time}</div>
+            {strukConfig.showKasir!==false&&<div>Kasir: {lastTrx.kasir}</div>}
+            {strukConfig.showNoTrx!==false&&<div>No    : {(lastTrx.id||"").toString().slice(-8)}</div>}
+            <div>{"-".repeat(28)}</div>
+            {(lastTrx.items||[]).filter(i=>!i.refunded).map((it,idx)=>(
+              <div key={idx}>
+                <div>{it.name}</div>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span>  {it.qty} x {it.price.toLocaleString("id-ID")}</span><span>{(it.price*it.qty).toLocaleString("id-ID")}</span></div>
+              </div>
+            ))}
+            <div>{"-".repeat(28)}</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontWeight:900}}><span>TOTAL</span><span>Rp {lastTrx.total.toLocaleString("id-ID")}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between"}}><span>Tunai</span><span>Rp {lastTrx.cash.toLocaleString("id-ID")}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between"}}><span>Kembali</span><span>Rp {lastTrx.kembalian.toLocaleString("id-ID")}</span></div>
+            {(strukConfig.footer1||strukConfig.footer2)&&<div style={{textAlign:"center",marginTop:8}}>{"=".repeat(28)}</div>}
+            {strukConfig.footer1&&<div style={{textAlign:"center"}}>{strukConfig.footer1}</div>}
+            {strukConfig.footer2&&<div style={{textAlign:"center",fontSize:9,whiteSpace:"pre-line"}}>{strukConfig.footer2}</div>}
+          </div>
+          {!btDevice&&(
+            <div style={{fontSize:10,color:"#d97706",fontWeight:700,marginBottom:10,background:"#fffbeb",padding:"8px 10px",borderRadius:8}}>
+              ⚠ Printer Bluetooth belum tersambung. Hubungkan dulu lewat tombol di sisi kasir untuk mencetak struk.
+            </div>
+          )}
+          <div style={{display:"flex",gap:7}}>
+            <button onClick={()=>setShowStruk(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:9,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Tutup</button>
+            <button onClick={()=>printStruk(lastTrx)} disabled={!btDevice} style={{flex:2,background:btDevice?"linear-gradient(135deg,#0d9488,#14b8a6)":"#ccc",border:"none",borderRadius:9,padding:9,color:"#fff",fontWeight:800,fontSize:13,cursor:btDevice?"pointer":"not-allowed",fontFamily:"inherit"}}>🖨️ Cetak Struk</button>
+          </div>
+        </Modal>
       )}
 
       {/* MODALS */}
@@ -11487,7 +11648,7 @@ function StrategiBulananPage({ transactions=[], outlets=[], products=[], misi=[]
   );
 }
 
-function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, setAbsensiMap, izinMap, setIzinMap, onBack, notify, todos, setTodos, todoStatus, poinRate, setPoinRate, misiProgress, misiFoto, products=[] }) {
+function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, setAbsensiMap, izinMap, setIzinMap, onBack, notify, todos, setTodos, todoStatus, poinRate, setPoinRate, misiProgress, misiFoto, products=[], strukConfig={}, setStrukConfig=()=>{} }) {
   const [tab,setTab]         = useState("overview"); // overview|misi|izin|absensi|settings
   const [editNote,setEditNote]=useState(false);
   const [draftNote,setDraftNote]=useState(note);
@@ -11608,6 +11769,15 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   const pendingIzin = allIzin.filter(i=>i.status==="menunggu");
 
   useEffect(()=>{ setDraftPoinRate(poinRate||1000); },[poinRate]);
+
+  // ── Setting tampilan struk ──
+  const [draftStruk,setDraftStruk]=useState(strukConfig);
+  useEffect(()=>{ setDraftStruk(strukConfig); },[strukConfig]);
+  const saveStrukConfig = async () => {
+    setStrukConfig(draftStruk);
+    try{ await supabase.from('portal_settings').upsert({key:"struk_config",value:JSON.stringify(draftStruk)},{onConflict:"key"}); }catch(e){ console.warn('save struk_config:',e); }
+    notify("Tampilan struk disimpan ✓","ok");
+  };
 
   const savePoinRate = async () => {
     setPoinRate(draftPoinRate);
@@ -12279,7 +12449,69 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
           )}
         </div>
 
-        {/* Jadwal shift */}
+        {/* Tampilan Struk */}
+        <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:4}}>🧾 Tampilan Struk Kasir</div>
+          <div style={{fontSize:11,color:"#aaa",marginBottom:12}}>Atur informasi yang dicetak pada struk thermal Bluetooth</div>
+
+          <div style={{marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Nama Toko (header besar)</label>
+            <input value={draftStruk.namaToko||""} onChange={e=>setDraftStruk(p=>({...p,namaToko:e.target.value}))} placeholder="AMMAR CELL"
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",fontWeight:800,textAlign:"center"}}/>
+          </div>
+
+          <div style={{marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Info Tambahan (alamat/no telp - opsional)</label>
+            <input value={draftStruk.headerExtra||""} onChange={e=>setDraftStruk(p=>({...p,headerExtra:e.target.value}))} placeholder="Jl. Contoh No. 123, Depok"
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",textAlign:"center"}}/>
+          </div>
+
+          <div style={{marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:6}}>Tampilkan di Struk</label>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {[{k:"showOutlet",l:"Nama Outlet"},{k:"showKasir",l:"Nama Kasir"},{k:"showNoTrx",l:"No. Transaksi"}].map(opt=>(
+                <button key={opt.k} onClick={()=>setDraftStruk(p=>({...p,[opt.k]:p[opt.k]===false?true:false}))}
+                  style={{padding:"7px 12px",borderRadius:9,border:`2px solid ${draftStruk[opt.k]!==false?"#0d9488":"#e0f5f1"}`,background:draftStruk[opt.k]!==false?"#e0faf5":"#fff",color:draftStruk[opt.k]!==false?"#0d9488":"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                  {draftStruk[opt.k]!==false?"✓ ":"○ "}{opt.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{marginBottom:10}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Pesan Penutup (baris 1)</label>
+            <input value={draftStruk.footer1||""} onChange={e=>setDraftStruk(p=>({...p,footer1:e.target.value}))} placeholder="Terima kasih!"
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",textAlign:"center"}}/>
+          </div>
+          <div style={{marginBottom:12}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Pesan Penutup (baris 2, opsional)</label>
+            <textarea value={draftStruk.footer2||""} onChange={e=>setDraftStruk(p=>({...p,footer2:e.target.value}))} placeholder="Barang sudah dibeli tidak dapat ditukar/dikembalikan" rows={2}
+              style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit",textAlign:"center",resize:"none"}}/>
+          </div>
+
+          {/* Preview mini */}
+          <div style={{background:"#f8fafc",borderRadius:10,padding:12,fontFamily:"monospace",fontSize:10,lineHeight:1.6,marginBottom:12,border:"1px dashed #d1d5db"}}>
+            <div style={{textAlign:"center",fontWeight:900}}>{draftStruk.namaToko||"AMMAR CELL"}</div>
+            {draftStruk.headerExtra&&<div style={{textAlign:"center"}}>{draftStruk.headerExtra}</div>}
+            {draftStruk.showOutlet!==false&&<div style={{textAlign:"center"}}>{outlets[0]?.nama||"Outlet"}</div>}
+            <div>{"=".repeat(28)}</div>
+            <div>13/06/2026 14:32</div>
+            {draftStruk.showKasir!==false&&<div>Kasir: Via Nurhayati</div>}
+            {draftStruk.showNoTrx!==false&&<div>No    : 17186234</div>}
+            <div>{"-".repeat(28)}</div>
+            <div>SP Indosat 3GB</div>
+            <div style={{display:"flex",justifyContent:"space-between"}}><span>  2 x 50.000</span><span>100.000</span></div>
+            <div>{"-".repeat(28)}</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontWeight:900}}><span>TOTAL</span><span>Rp 100.000</span></div>
+            {(draftStruk.footer1||draftStruk.footer2)&&<div style={{textAlign:"center",marginTop:6}}>{"=".repeat(28)}</div>}
+            {draftStruk.footer1&&<div style={{textAlign:"center"}}>{draftStruk.footer1}</div>}
+            {draftStruk.footer2&&<div style={{textAlign:"center",fontSize:9,whiteSpace:"pre-line"}}>{draftStruk.footer2}</div>}
+          </div>
+
+          <button onClick={saveStrukConfig} style={{width:"100%",padding:"10px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Tampilan Struk</button>
+        </div>
+
+
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"16px",marginBottom:14}}>
           <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:4}}>⏰ Jadwal Shift Karyawan</div>
           <div style={{fontSize:11,color:"#aaa",marginBottom:12}}>Atur jam kerja untuk setiap shift</div>
@@ -13158,6 +13390,11 @@ export default function App() {
   const [portalPoinRate, setPortalPoinRate] = useState(1000); // 1 poin = Rp ...
   const [portalMisiProgress, setPortalMisiProgress] = useState({}); // {misiId: {username: {periodeKey: {progress,selesai}}}}
   const [portalMisiFoto, setPortalMisiFoto] = useState([]); // [{id,misiId,username,foto_before,foto_after,...}]
+  const [strukConfig, setStrukConfig] = useState({
+    namaToko:"AMMAR CELL", showOutlet:true, showKasir:true, showNoTrx:true,
+    footer1:"Terima kasih!", footer2:"Barang sudah dibeli\ntidak dapat ditukar/dikembalikan",
+    headerExtra:"", // misal alamat/no telp
+  });
 
   // Simpan user ke localStorage setiap kali berubah
   const setUser = (u) => {
@@ -13501,6 +13738,10 @@ export default function App() {
           if(poinRateRows?.[0]?.value) setPortalPoinRate(+poinRateRows[0].value);
         } catch(e){ console.warn('poin_rate load:',e); }
         try {
+          const { data: strukRows } = await supabase.from('portal_settings').select('*').eq('key','struk_config').limit(1);
+          if(strukRows?.[0]?.value) setStrukConfig(prev=>({...prev,...JSON.parse(strukRows[0].value)}));
+        } catch(e){ console.warn('struk_config load:',e); }
+        try {
           const { data: progRows } = await supabase.from('portal_misi_progress').select('*');
           if(progRows?.length){
             const m={};
@@ -13779,6 +14020,7 @@ export default function App() {
         if(row?.key==="poin_rate"&&row?.value) setPortalPoinRate(+row.value);
         if(row?.key==="note"&&row?.value) setPortalNote(row.value);
         if(row?.key==="shift"&&row?.value) { try{ setPortalShift(JSON.parse(row.value)); }catch{} }
+        if(row?.key==="struk_config"&&row?.value) { try{ setStrukConfig(prev=>({...prev,...JSON.parse(row.value)})); }catch{} }
       })
       .subscribe();
     return ()=>supabase.removeChannel(ch);
@@ -13981,10 +14223,10 @@ export default function App() {
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
       {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto}/>}
       {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
-      {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products}/>}
+      {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products} strukConfig={strukConfig} setStrukConfig={setStrukConfig}/>}
       {page==="kasir"     && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
-        <KasirApp user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress}/>
+        <KasirApp user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} strukConfig={strukConfig}/>
       </>)}
       {page==="bank"      && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="bank"/>}
