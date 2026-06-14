@@ -13463,9 +13463,19 @@ export default function App() {
     };
   },[]);
   const isPortraitNow = viewport.h > viewport.w;
-  // "phone-class" = dimensi terkecil (sisi pendek, konstan saat rotasi) < 768px
-  const isPhoneSize  = Math.min(viewport.w, viewport.h) < 768;
-  const showPortraitWarn = isPortraitNow && isPhoneSize;
+  // Dimensi terkecil (sisi pendek, konstan saat rotasi) — dasar klasifikasi device
+  const shortSide = Math.min(viewport.w, viewport.h);
+
+  // -- Deteksi tipe device: smartphone / tablet / desktop ---------------------
+  // Touch capability = sinyal device bisa dirotasi fisik (HP/tablet).
+  // Desktop/laptop (non-touch) tidak pernah dipaksa rotasi karena tidak bisa diputar.
+  const [isTouchDevice] = useState(()=>{
+    if(typeof window==="undefined") return false;
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0;
+  });
+  const isTabletDevice = isTouchDevice && shortSide >= 600; // ~7" ke atas
+  const isPhoneDevice  = isTouchDevice && shortSide < 600;
+  const deviceLabel = isTabletDevice?"Tablet":isPhoneDevice?"HP":"Device";
 
   const [page,        setPage]        = useState(()=>{
     const u = savedUser;
@@ -14277,6 +14287,15 @@ export default function App() {
   const isMonitor = user?.role==="monitor";
   const isCashflowOnly = user?.role==="cashflow";
 
+  // -- Aturan orientasi per halaman (hanya berlaku di device sentuh: HP/tablet) --
+  // Kasir / Bank / Kasir+Bank Gabungan → WAJIB landscape
+  // Portal Saya, Cashflow (akun cashflow-only) → WAJIB portrait
+  // Halaman lain (login, pilih, menu admin, dll) → bebas, ikuti posisi device
+  const needsLandscape = isTouchDevice && (page==="kasir"||page==="bank"||page==="gabungan");
+  const needsPortrait  = isTouchDevice && (page==="portal" || (page==="cashflow" && isCashflowOnly));
+  const showLandscapeWarn = needsLandscape && isPortraitNow;
+  const showPortraitWarn  = needsPortrait  && !isPortraitNow;
+
   // GPS monitoring hook untuk kasir/bank
   const kasirGpsHook = useGpsMonitor({
     user,
@@ -14320,6 +14339,7 @@ export default function App() {
       <LoginPage users={users} onLogin={u=>{
         setUser(u);
         if(u.role==="monitor") { setPage("monitor"); return; }
+        if(u.role==="cashflow") { setPage("cashflow"); return; }
         if(u.role==="admin")   { setPage("menu");    return; }
         if(u.role==="kasir"||u.role==="bank"||u.role==="staff") { setPage("pilih"); return; }
         if(u.role==="karyawan") {
@@ -14344,16 +14364,28 @@ export default function App() {
       <Toast toast={toast}/>
       <ConnStatusBar status={connStatus} lastPing={lastPing} offlineQueue={offlineQueue}/>
 
-      {/* Portrait warning — DISEMBUNYIKAN untuk halaman pilih & portal (memang portrait) */}
-      {page!=="pilih"&&page!=="portal"&&showPortraitWarn&&(
+      {/* Orientation warning — Kasir/Bank/Gabungan wajib landscape, Portal/Cashflow wajib portrait */}
+      {showLandscapeWarn&&(
         <div className="portrait-warn" style={{display:"flex"}}>
           <div style={{fontSize:48,marginBottom:16}}>🔄</div>
-          <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar HP Kamu</div>
+          <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar {deviceLabel} Kamu</div>
           <div style={{fontSize:14,opacity:.85,lineHeight:1.6}}>
-            Aplikasi kasir lebih nyaman digunakan dalam mode <b>Landscape</b> (horizontal)
+            Halaman ini lebih nyaman digunakan dalam mode <b>Landscape</b> (horizontal)
           </div>
           <div style={{marginTop:20,background:"rgba(255,255,255,.15)",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:700}}>
-            Putar HP 90° untuk melanjutkan
+            Putar {deviceLabel} 90° untuk melanjutkan
+          </div>
+        </div>
+      )}
+      {showPortraitWarn&&(
+        <div className="portrait-warn" style={{display:"flex"}}>
+          <div style={{fontSize:48,marginBottom:16}}>🔄</div>
+          <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar {deviceLabel} Kamu</div>
+          <div style={{fontSize:14,opacity:.85,lineHeight:1.6}}>
+            Halaman ini lebih nyaman digunakan dalam mode <b>Portrait</b> (vertikal)
+          </div>
+          <div style={{marginTop:20,background:"rgba(255,255,255,.15)",borderRadius:12,padding:"10px 20px",fontSize:13,fontWeight:700}}>
+            Putar {deviceLabel} 90° untuk melanjutkan
           </div>
         </div>
       )}
