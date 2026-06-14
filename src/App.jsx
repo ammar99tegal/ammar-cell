@@ -4427,7 +4427,7 @@ function GabunganPage(props) {
         <KasirApp {...props} onBack={()=>{}} embedded/>
       </div>
       <div style={{display: tab==="bank"?"block":"none"}}>
-        <BankPage user={props.user} outlets={props.outlets} saldoApps={props.saldoBank} onBack={()=>{}} notify={props.notify} embedded/>
+        <BankPage user={props.user} outlets={props.outlets} saldoApps={props.saldoBank} onBack={()=>{}} notify={props.notify} embedded portalMisi={props.portalMisi} portalMisiProgress={props.portalMisiProgress} products={props.products}/>
       </div>
     </div>
   );
@@ -4592,6 +4592,15 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     (p.name.toLowerCase().includes(search.toLowerCase())||p.barcode?.includes(search))
   );
 
+  // Misi auto_produk yang aktif & punya produk match di outlet ini -- untuk quick-log chip
+  const misiAutoProdukActive = (portalMisi||[]).filter(m=>m.tipe==="auto_produk"&&m.produk_id).map(m=>{
+    const prod = activeProducts.find(p=>String(p.id)===String(m.produk_id)||p.name===m.produk_id);
+    if(!prod) return null;
+    const periodeKey = getPeriodeKey(m.periode||"harian");
+    const rec = portalMisiProgress[m.id]?.[user.username||user.id]?.[periodeKey];
+    return {...m, prod, progress:rec?.progress||0, selesai:rec?.selesai||false};
+  }).filter(Boolean);
+
   const addToCart = product=>{
     if(!shift) return notify("⚠ Buka shift dulu sebelum transaksi!","err");
     setCartPersist(prev=>{
@@ -4650,6 +4659,22 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         },{onConflict:'misi_id,username,periode_key'});
       }catch(e){ console.warn('misi progress upsert:',e); }
     });
+  };
+
+  // ── Misi Auto Produk: quick-log button (kasir) ──
+  // Klik = catat 1 "penjualan" produk misi (price:0, tidak pengaruhi total/kas/stok)
+  // tapi tetap masuk riwayat transaksi (audit) & update progress misi otomatis
+  const quickLogMisi = async (m, prodName) => {
+    if(!shift) return notify("⚠ Buka shift dulu sebelum mencatat misi!","err");
+    const trx = {
+      id:uid(), time:now(), date:today(), shiftId:shift?.id, shiftNama:shift?.nama, kasir:user.nama, outletId:selectedOutlet,
+      items:[{id:m.produk_id, cartId:uid(), name:prodName||m.judul||"Misi", price:0, qty:1, modal:0, isMisiLog:true, refunded:false, refundReason:""}],
+      total:0, cash:0, kembalian:0,
+    };
+    setTx(prev=>[trx,...prev]);
+    updateMisiProgress(trx);
+    try{ await db.addTransaction(trx); }catch(e){ console.warn('quickLogMisi save:',e); }
+    notify(`✓ ${prodName||m.judul} dicatat untuk misi`,"ok");
   };
 
   // ── Printer Bluetooth (ESC/POS) ──────────────────────────────────────
@@ -5026,6 +5051,18 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
               </div>
               <button onClick={()=>setShowManual(true)} style={{background:"#0d9488",border:"none",borderRadius:9,padding:"7px 12px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>＋ Manual</button>
             </div>
+            {misiAutoProdukActive.length>0&&(
+              <div style={{display:"flex",gap:6,marginBottom:7,flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:10,fontWeight:700,color:"#8e44ad"}}>🎯 Misi:</span>
+                {misiAutoProdukActive.map(m=>(
+                  <button key={m.id} onClick={()=>quickLogMisi(m,m.prod.name)} disabled={m.selesai}
+                    title={`Catat 1x "${m.prod.name}" untuk misi "${m.judul}" (${m.progress}/${m.target})`}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:20,border:`2px solid ${m.selesai?"#bbf7d0":"#e0d4f7"}`,background:m.selesai?"#f0fdf4":"#f5eeff",color:m.selesai?"#16a34a":"#8e44ad",fontWeight:700,fontSize:10,cursor:m.selesai?"default":"pointer",fontFamily:"inherit"}}>
+                    {m.selesai?"✅":"➕"} {m.prod.name} <span style={{opacity:.7}}>({m.progress}/{m.target})</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{display:"flex",gap:5,marginBottom:7,flexWrap:"wrap"}}>
               {CATEGORIES.map(c=>(
                 <button key={c} onClick={()=>setActiveCat(c)} style={{padding:"3px 10px",borderRadius:20,border:"2px solid",borderColor:activeCat===c?"#0d9488":"#b2ede6",background:activeCat===c?"#0d9488":"#fff",color:activeCat===c?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{c}</button>
@@ -5561,7 +5598,7 @@ function BankMotivasi() {
 // ==============================================================================
 // BANK PAGE -- Pencatatan Bank (terintegrasi Supabase Realtime)
 // ==============================================================================
-function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false }) {
+function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, portalMisi=[], portalMisiProgress={}, products=[] }) {
   const selectedOutlet = user.outletId || outlets[0]?.id || "";
   const outletNama     = outlets.find(o=>o.id===selectedOutlet)?.nama || "Ammar Cell";
 
@@ -5959,6 +5996,39 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false }) 
     }
   };
 
+  // Misi auto_produk yang aktif & punya produk match -- untuk quick-log chip di Bank
+  const misiAutoProdukActiveBank = (portalMisi||[]).filter(m=>m.tipe==="auto_produk"&&m.produk_id).map(m=>{
+    const prod = products.find(p=>String(p.id)===String(m.produk_id)||p.name===m.produk_id);
+    if(!prod) return null;
+    const periodeKey = getPeriodeKey(m.periode||"harian");
+    const rec = portalMisiProgress[m.id]?.[user.username||user.id]?.[periodeKey];
+    return {...m, prod, progress:rec?.progress||0, selesai:rec?.selesai||false};
+  }).filter(Boolean);
+
+  // Klik = catat 1x progress misi + transaksi bank netNominal:0 (tidak pengaruhi total masuk/keluar)
+  // tapi tetap masuk riwayat bank (audit) & terintegrasi ke portal karyawan
+  const quickLogMisiBank = async (m) => {
+    if(!shift) return notify("⚠ Buka shift dulu sebelum mencatat misi!","err");
+    const username = user.username||user.id;
+    const periodeKey = getPeriodeKey(m.periode||"harian");
+    const existing = portalMisiProgress[m.id]?.[username]?.[periodeKey]?.progress||0;
+    const newProgress = existing+1;
+    const selesai = newProgress>=(m.target||1);
+    try{
+      await supabase.from('portal_misi_progress').upsert({
+        misi_id:m.id, username, periode_key:periodeKey,
+        progress:newProgress, selesai, updated_at:new Date().toISOString()
+      },{onConflict:'misi_id,username,periode_key'});
+    }catch(e){ console.warn('misi progress upsert (bank):',e); }
+    try{
+      await dbBank.addTransaction({
+        id:uid(), waktu:now(), tgl:today(), outletId:selectedOutlet, shiftId:shift?.id,
+        nama:`[Misi] ${m.prod.name}`, jenis:"masuk", feeType:"include", fee:0, nominal:0, netNominal:0,
+      });
+    }catch(e){ console.warn('quickLogMisiBank save:',e); }
+    notify(`✓ ${m.prod.name} dicatat untuk misi`,"ok");
+  };
+
   const saveTrx = async (trx) => {
     const makeRow = (data) => ({
       id:uid(), waktu:now(), tgl:today(),
@@ -6078,6 +6148,19 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false }) 
             <div style={{fontSize:11,color:"#aaa",marginTop:8}}>{shiftTrxList.filter(t=>t.netNominal<0).length} transaksi ⬆</div>
           </div>
         </div>
+
+        {misiAutoProdukActiveBank.length>0&&(
+          <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:10,fontWeight:700,color:"#8e44ad"}}>🎯 Misi:</span>
+            {misiAutoProdukActiveBank.map(m=>(
+              <button key={m.id} onClick={()=>quickLogMisiBank(m)} disabled={m.selesai}
+                title={`Catat 1x "${m.prod.name}" untuk misi "${m.judul}" (${m.progress}/${m.target})`}
+                style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:20,border:`2px solid ${m.selesai?"#bbf7d0":"#e0d4f7"}`,background:m.selesai?"#f0fdf4":"#f5eeff",color:m.selesai?"#16a34a":"#8e44ad",fontWeight:700,fontSize:11,cursor:m.selesai?"default":"pointer",fontFamily:"inherit"}}>
+                {m.selesai?"✅":"➕"} {m.prod.name} <span style={{opacity:.7}}>({m.progress}/{m.target})</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Tombol aksi */}
         <div style={{display:"flex",justifyContent:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
@@ -10706,7 +10789,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
 // ==============================================================================
 // PORTAL KARYAWAN
 // ==============================================================================
-function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, onKembali, notify, todos=[], todoStatus={}, poinRate=1000, misiProgress={}, misiFoto=[], setMisiFoto=()=>{} }) {
+function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, onKembali, notify, todos=[], todoStatus={}, poinRate=1000, misiProgress={}, misiFoto=[], setMisiFoto=()=>{}, users={} }) {
   const [tab,setTab]           = useState("beranda");
   const [clock,setClock]       = useState(new Date().toLocaleTimeString("id-ID"));
   const [absenMasuk,setAbsenM] = useState(()=>{ const t=today(); return (absensiMap[user.username]||[]).find(a=>a.tgl===t&&a.masuk)?absensiMap[user.username].find(a=>a.tgl===t):null; });
@@ -10850,6 +10933,27 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   const gajiEst     = (user.gajiPokok||2800000)+bonus;
   const hadirRows   = myAbsensi.filter(a=>a.masuk&&a.masuk!=="--");
 
+  // ── Peringkat Poin: ranking total poin semua karyawan untuk periode masing-masing misi ──
+  const allKaryawanUsernames = Object.entries(users||{})
+    .filter(([k,u])=>["karyawan","kasir","bank","staff"].includes(u.role))
+    .map(([k])=>k);
+  const computeTotalPoin = (uname) => misi.reduce((s,m)=>{
+    const periodeKey = getPeriodeKey(m.periode||"harian");
+    const rec = misiProgress[m.id]?.[uname]?.[periodeKey];
+    return s + (rec?.selesai ? (m.poin||0) : 0);
+  },0);
+  const leaderboard = (allKaryawanUsernames.includes(username)?allKaryawanUsernames:[...allKaryawanUsernames,username])
+    .map(uname=>({ username:uname, nama:users?.[uname]?.nama||uname, poin:computeTotalPoin(uname) }))
+    .sort((a,b)=>b.poin-a.poin);
+  const myRank = leaderboard.findIndex(l=>l.username===username)+1;
+  const totalKaryawanRank = leaderboard.length;
+
+  // ── Rekap Tugas Wajib berdasarkan konfirmasi admin ──
+  const tugasDikonfirmasiCount = Object.values(todoStatus[username]||{}).reduce((s,byTgl)=>
+    s + Object.values(byTgl||{}).filter(rec=>rec?.status==="dikonfirmasi").length, 0);
+  const tugasMenungguCount = Object.values(todoStatus[username]||{}).reduce((s,byTgl)=>
+    s + Object.values(byTgl||{}).filter(rec=>rec?.status==="menunggu").length, 0);
+
   // Kalkulasi to-do wajib hari ini
   const tglHariIni = isoDate();
   const todosHariIni = todos.filter(t=>{
@@ -10857,7 +10961,8 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
     if(t.periode==="mingguan") return getPeriodeKey("mingguan")===getPeriodeKey("mingguan",new Date());
     return true; // bulanan selalu tampil
   });
-  const isTodoDone = (todoId) => !!(todoStatus[username]?.[todoId]?.[tglHariIni]);
+  const isTodoDone = (todoId) => !!(todoStatus[username]?.[todoId]?.[tglHariIni]?.done);
+  const getTodoStatus = (todoId) => todoStatus[username]?.[todoId]?.[tglHariIni]?.status; // 'menunggu'|'dikonfirmasi'|undefined
   const todoDoneCount = todosHariIni.filter(t=>isTodoDone(t.id)).length;
 
   // Hitung countdown reset bulanan (asumsi tanggal 1 = gajian/reset)
@@ -10868,12 +10973,15 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   })();
   const daysToReset = Math.ceil((nextResetDate - new Date())/86400000);
 
-  // Toggle status to-do harian
+  // Toggle status tugas harian -- saat dicentang, status="menunggu" (kirim ke admin untuk konfirmasi)
   const toggleTodo = async (todoId) => {
     const newDone = !isTodoDone(todoId);
     try{
       await supabase.from('portal_todo_status').upsert({
-        todo_id:todoId, username, tgl:tglHariIni, done:newDone, done_at:newDone?new Date().toISOString():null
+        todo_id:todoId, username, tgl:tglHariIni, done:newDone,
+        status: newDone?'menunggu':null,
+        done_at:newDone?new Date().toISOString():null,
+        confirmed_at:null, confirmed_by:null,
       },{onConflict:'todo_id,username,tgl'});
     }catch(e){ console.warn('toggle todo:',e); }
   };
@@ -11035,17 +11143,21 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
         {todosHariIni.length>0&&(
           <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontWeight:800,fontSize:12,color:"#8e44ad"}}>✅ To-Do Wajib Hari Ini</div>
+              <div style={{fontWeight:800,fontSize:12,color:"#8e44ad"}}>✅ Tugas Wajib Hari Ini</div>
               <span style={{fontSize:10,background:"#f5eeff",color:"#8e44ad",fontWeight:700,padding:"2px 10px",borderRadius:20}}>{todoDoneCount}/{todosHariIni.length}</span>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {todosHariIni.map(t=>{
                 const done = isTodoDone(t.id);
+                const st = getTodoStatus(t.id);
                 return (
                   <button key={t.id} onClick={()=>toggleTodo(t.id)}
                     style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:11,border:`2px solid ${done?"#8e44ad":"#e0d4f7"}`,background:done?"#f5eeff":"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
                     <div style={{width:22,height:22,borderRadius:7,border:`2px solid ${done?"#8e44ad":"#e0d4f7"}`,background:done?"#8e44ad":"#fff",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,flexShrink:0,transition:"all .2s"}}>{done?"✓":""}</div>
                     <div style={{flex:1,fontSize:12,fontWeight:600,color:done?"#8e44ad":"#1a2e2a",textDecoration:done?"line-through":"none"}}>{t.judul}</div>
+                    {done&&(st==="dikonfirmasi"
+                      ?<span style={{fontSize:8,fontWeight:800,background:"#dcfce7",color:"#16a34a",padding:"2px 7px",borderRadius:20,flexShrink:0}}>✅ Dikonfirmasi</span>
+                      :<span style={{fontSize:8,fontWeight:800,background:"#fef3c7",color:"#d97706",padding:"2px 7px",borderRadius:20,flexShrink:0}}>⏳ Menunggu</span>)}
                   </button>
                 );
               })}
@@ -11112,6 +11224,37 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
       {tab==="kinerja"&&(
       <div className="pk-card">
         <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a",marginBottom:14}}>📊 Kinerja Saya</div>
+
+        {/* Peringkat Poin */}
+        <div style={{background:"linear-gradient(135deg,#8e44ad,#a855f7)",borderRadius:16,padding:"16px",marginBottom:12,color:"#fff",display:"flex",alignItems:"center",gap:14}}>
+          <div style={{fontSize:32}}>🏆</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,opacity:.75,fontWeight:600}}>Peringkat Poin Bulan Ini</div>
+            <div style={{fontWeight:900,fontSize:20}}>
+              {totalKaryawanRank>0?`#${myRank} dari ${totalKaryawanRank} karyawan`:"Belum ada data"}
+            </div>
+          </div>
+          <div style={{textAlign:"center",background:"rgba(255,255,255,.15)",borderRadius:12,padding:"8px 14px",border:"1px solid rgba(255,255,255,.2)"}}>
+            <div style={{fontWeight:900,fontSize:18,color:"#fcd34d"}}>{totalPoin}</div>
+            <div style={{fontSize:8,opacity:.8}}>Poin</div>
+          </div>
+        </div>
+
+        {/* Rekap Tugas Wajib (berdasarkan konfirmasi admin) */}
+        <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
+          <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:10}}>✅ Rekap Tugas Wajib</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:"#dcfce7",borderRadius:10,padding:"9px 8px",textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:18,color:"#16a34a"}}>{tugasDikonfirmasiCount}</div>
+              <div style={{fontSize:8,fontWeight:700,color:"#16a34a",opacity:.8,marginTop:2}}>✅ Dikonfirmasi Admin</div>
+            </div>
+            <div style={{background:"#fef3c7",borderRadius:10,padding:"9px 8px",textAlign:"center"}}>
+              <div style={{fontWeight:900,fontSize:18,color:"#d97706"}}>{tugasMenungguCount}</div>
+              <div style={{fontSize:8,fontWeight:700,color:"#d97706",opacity:.8,marginTop:2}}>⏳ Menunggu Konfirmasi</div>
+            </div>
+          </div>
+          <div style={{marginTop:8,fontSize:9,color:"#aaa",textAlign:"center"}}>Rekap ini dihitung dari tugas yang sudah dikonfirmasi oleh admin</div>
+        </div>
         {/* Jam kerja */}
         <div style={{background:"#fff",borderRadius:16,padding:"14px",marginBottom:12,border:"2px solid #e0f5f1"}}>
           <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a",marginBottom:4}}>⏱ Rekap Jam Kerja</div>
@@ -11199,7 +11342,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
         return (
         <div className="pk-card">
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-            <div><div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Misi & To-Do</div><div style={{fontSize:11,color:"#aaa"}}>Selesaikan untuk bonus & poin</div></div>
+            <div><div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Misi & Tugas</div><div style={{fontSize:11,color:"#aaa"}}>Selesaikan untuk bonus & poin</div></div>
             <div style={{textAlign:"right",background:"linear-gradient(135deg,#f59e0b,#fbbf24)",borderRadius:12,padding:"8px 12px"}}><div style={{fontWeight:900,fontSize:18,color:"#fff"}}>{totalPoin}</div><div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>Total Poin</div></div>
           </div>
 
@@ -11215,17 +11358,21 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
           {todosHariIni.length>0&&(
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <div style={{fontWeight:800,fontSize:12,color:"#8e44ad"}}>✅ To-Do Wajib Hari Ini</div>
+                <div style={{fontWeight:800,fontSize:12,color:"#8e44ad"}}>✅ Tugas Wajib Hari Ini</div>
                 <span style={{fontSize:10,background:"#f5eeff",color:"#8e44ad",fontWeight:700,padding:"2px 10px",borderRadius:20}}>{todoDoneCount}/{todosHariIni.length}</span>
               </div>
               <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
                 {todosHariIni.map((t,i)=>{
                   const done = isTodoDone(t.id);
+                  const st = getTodoStatus(t.id);
                   return (
                     <button key={t.id} onClick={()=>toggleTodo(t.id)}
                       style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderTop:i>0?"1px solid #f0faf8":"none",border:"none",background:done?"#f5eeff":"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
                       <div style={{width:24,height:24,borderRadius:8,border:`2px solid ${done?"#8e44ad":"#e0d4f7"}`,background:done?"#8e44ad":"#fff",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,flexShrink:0,transition:"all .2s"}}>{done?"✓":""}</div>
                       <div style={{flex:1,fontSize:12,fontWeight:600,color:done?"#8e44ad":"#1a2e2a",textDecoration:done?"line-through":"none"}}>{t.judul}</div>
+                      {done&&(st==="dikonfirmasi"
+                        ?<span style={{fontSize:8,fontWeight:800,background:"#dcfce7",color:"#16a34a",padding:"2px 7px",borderRadius:20,flexShrink:0}}>✅ Dikonfirmasi</span>
+                        :<span style={{fontSize:8,fontWeight:800,background:"#fef3c7",color:"#d97706",padding:"2px 7px",borderRadius:20,flexShrink:0}}>⏳ Menunggu</span>)}
                       <span style={{fontSize:9,fontWeight:700,color:PERIODE_INFO[t.periode||"harian"].warna,flexShrink:0}}>{PERIODE_INFO[t.periode||"harian"].icon}</span>
                     </button>
                   );
@@ -11753,7 +11900,7 @@ function StrategiBulananPage({ transactions=[], outlets=[], products=[], misi=[]
   );
 }
 
-function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, setAbsensiMap, izinMap, setIzinMap, onBack, notify, todos, setTodos, todoStatus, poinRate, setPoinRate, misiProgress, misiFoto, products=[], strukConfig={}, setStrukConfig=()=>{} }) {
+function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, setShift, absensiMap, setAbsensiMap, izinMap, setIzinMap, onBack, notify, todos, setTodos, todoStatus, poinRate, setPoinRate, misiProgress, misiFoto, products=[], strukConfig={}, setStrukConfig=()=>{}, currentUser=null }) {
   const [tab,setTab]         = useState("overview"); // overview|misi|izin|absensi|settings
   const [editNote,setEditNote]=useState(false);
   const [draftNote,setDraftNote]=useState(note);
@@ -11837,7 +11984,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
         let todoSelesaiN = 0;
         todos.forEach(t=>{
           const statusMap = todoStatus[k.username]?.[t.id]||{};
-          todoSelesaiN += Object.values(statusMap).filter(Boolean).length;
+          todoSelesaiN += Object.values(statusMap).filter(rec=>rec?.status==="dikonfirmasi").length;
         });
 
         await supabase.from('portal_history').upsert({
@@ -11873,6 +12020,27 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
   const allIzin = Object.entries(izinMap||{}).flatMap(([uid,list])=>list.map(i=>({...i,userId:uid,userName:i.userName||users?.[uid]?.nama||uid})));
   const pendingIzin = allIzin.filter(i=>i.status==="menunggu");
 
+  // ── Konfirmasi Tugas Wajib: kumpulkan semua entri status="menunggu" dari semua karyawan ──
+  const pendingTugas = [];
+  Object.entries(todoStatus||{}).forEach(([username,byTodo])=>{
+    Object.entries(byTodo||{}).forEach(([todoId,byTgl])=>{
+      Object.entries(byTgl||{}).forEach(([tgl,rec])=>{
+        if(rec?.done && rec?.status==="menunggu"){
+          const todo = (todos||[]).find(t=>t.id===todoId);
+          pendingTugas.push({username, userNama:users?.[username]?.nama||username, todoId, todoJudul:todo?.judul||todoId, tgl});
+        }
+      });
+    });
+  });
+  const confirmTugas = async (username,todoId,tgl) => {
+    try{
+      await supabase.from('portal_todo_status').update({
+        status:'dikonfirmasi', confirmed_at:new Date().toISOString(), confirmed_by:currentUser?.nama||currentUser?.username||'admin'
+      }).eq('username',username).eq('todo_id',todoId).eq('tgl',tgl);
+      notify("Tugas dikonfirmasi ✓","ok");
+    }catch(e){ console.warn('confirmTugas:',e); notify("Gagal konfirmasi","err"); }
+  };
+
   useEffect(()=>{ setDraftPoinRate(poinRate||1000); },[poinRate]);
 
   // ── Setting tampilan struk ──
@@ -11892,7 +12060,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
 
   // ── To-Do Wajib handlers ──
   const saveTodo = async () => {
-    if(!todoForm.judul.trim()) return notify("Isi judul to-do!","err");
+    if(!todoForm.judul.trim()) return notify("Isi judul tugas!","err");
     if(editTodoId){
       setTodos(prev=>prev.map(t=>t.id===editTodoId?{...t,...todoForm}:t));
       try{ await supabase.from('portal_todos').update({judul:todoForm.judul,periode:todoForm.periode}).eq('id',editTodoId); }catch(e){ console.warn('todo update:',e); }
@@ -11905,15 +12073,15 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
         if(data?.[0]) setTodos(prev=>prev.map(t=>t.id===tempId?data[0]:t));
       }catch(e){ console.warn('todo insert:',e); }
     }
-    notify("To-Do disimpan ✓","ok");
+    notify("Tugas disimpan ✓","ok");
     setShowTodoForm(false); setEditTodoId(null); setTodoForm({judul:"",periode:"harian"});
   };
 
   const hapusTodo = async (id) => {
-    if(!window.confirm("Hapus to-do ini?")) return;
+    if(!window.confirm("Hapus tugas ini?")) return;
     setTodos(prev=>prev.filter(t=>t.id!==id));
     try{ await supabase.from('portal_todos').delete().eq('id',id); }catch(e){ console.warn('todo delete:',e); }
-    notify("To-Do dihapus","ok");
+    notify("Tugas dihapus","ok");
   };
 
   // ── Misi Foto approval ──
@@ -12122,7 +12290,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
         return (
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Kelola Misi & To-Do</div>
+            <div style={{fontWeight:800,fontSize:15,color:"#1a2e2a"}}>🎯 Kelola Misi & Tugas</div>
             <button onClick={()=>{setShowMisiForm(true);setEditMisiId(null);setMisiForm({icon:"🎯",judul:"",deskripsi:"",poin:100,target:1,satuan:"hari",periode:"harian",tipe:"manual_checklist",produk_id:""});}}
               style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:"8px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+ Tambah Misi</button>
           </div>
@@ -12167,10 +12335,32 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
             )}
           </div>
 
-          {/* ═══ TO-DO WAJIB (DI ATAS, TANPA POIN) ═══ */}
+          {/* ═══ KONFIRMASI TUGAS WAJIB ═══ */}
+          {pendingTugas.length>0&&(
+            <div style={{marginBottom:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontWeight:800,fontSize:12,color:"#d97706",display:"flex",alignItems:"center",gap:6}}>🔔 Konfirmasi Tugas Wajib</div>
+                <span style={{fontSize:10,background:"#fef3c7",color:"#d97706",fontWeight:700,padding:"2px 10px",borderRadius:20}}>{pendingTugas.length} menunggu</span>
+              </div>
+              <div style={{background:"#fff",borderRadius:14,border:"2px solid #fef3c7",overflow:"hidden"}}>
+                {pendingTugas.map((p,i)=>(
+                  <div key={`${p.username}-${p.todoId}-${p.tgl}`} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderTop:i>0?"1px solid #fffbeb":"none"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#1a2e2a"}}>{p.todoJudul}</div>
+                      <div style={{fontSize:10,color:"#aaa"}}>{p.userNama} · {p.tgl}</div>
+                    </div>
+                    <button onClick={()=>confirmTugas(p.username,p.todoId,p.tgl)}
+                      style={{background:"#dcfce7",border:"none",borderRadius:8,padding:"6px 14px",color:"#16a34a",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✓ Konfirmasi</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ TUGAS WAJIB (DI ATAS, TANPA POIN) ═══ */}
           <div style={{marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontWeight:800,fontSize:12,color:"#8e44ad",display:"flex",alignItems:"center",gap:6}}>✅ To-Do Wajib (Tanpa Poin)</div>
+              <div style={{fontWeight:800,fontSize:12,color:"#8e44ad",display:"flex",alignItems:"center",gap:6}}>✅ Tugas Wajib (Tanpa Poin)</div>
               <button onClick={()=>{setShowTodoForm(!showTodoForm);setEditTodoId(null);setTodoForm({judul:"",periode:"harian"});}}
                 style={{background:"#f5eeff",border:"none",borderRadius:8,padding:"5px 12px",color:"#8e44ad",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{showTodoForm?"✕ Tutup":"➕ Tambah"}</button>
             </div>
@@ -12178,7 +12368,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
             {showTodoForm&&(
               <div style={{background:"#fff",borderRadius:14,border:"2px solid #8e44ad",padding:"14px",marginBottom:10}}>
                 <div style={{marginBottom:10}}>
-                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Judul To-Do *</label>
+                  <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4}}>Judul Tugas *</label>
                   <input value={todoForm.judul} onChange={e=>setTodoForm(p=>({...p,judul:e.target.value}))} placeholder="Contoh: Cek & isi ulang stok kantong plastik"
                     style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
                 </div>
@@ -12196,13 +12386,13 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>{setShowTodoForm(false);setEditTodoId(null);}} style={{flex:1,padding:"9px",borderRadius:9,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
-                  <button onClick={saveTodo} style={{flex:2,padding:"9px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#8e44ad,#a855f7)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan To-Do</button>
+                  <button onClick={saveTodo} style={{flex:2,padding:"9px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#8e44ad,#a855f7)",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Tugas</button>
                 </div>
               </div>
             )}
 
             {todos.length===0?(
-              <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:20,textAlign:"center",color:"#aaa",fontSize:12}}>Belum ada to-do wajib</div>
+              <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:20,textAlign:"center",color:"#aaa",fontSize:12}}>Belum ada tugas wajib</div>
             ):(
               <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
                 {todos.map((td,i)=>(
@@ -12515,7 +12705,7 @@ function AdminPortalPage({ outlets, users, misi, setMisi, note, setNote, shift, 
                         {l:"Total Poin",v:h.total_poin,c:"#d97706",bg:"#fffbeb"},
                         {l:"Bonus",v:`Rp${Math.round(h.bonus_rp/1000)}K`,c:"#16a34a",bg:"#f0fdf4"},
                         {l:"Hadir",v:h.hadir,c:"#2980b9",bg:"#e8f4fd"},
-                        {l:"To-Do",v:`${h.todo_selesai}/${h.total_todo}`,c:"#8e44ad",bg:"#f5eeff"},
+                        {l:"Tugas",v:`${h.todo_selesai}/${h.total_todo}`,c:"#8e44ad",bg:"#f5eeff"},
                       ].map(s=>(
                         <div key={s.l} style={{background:s.bg,borderRadius:9,padding:"8px",textAlign:"center"}}>
                           <div style={{fontWeight:900,fontSize:14,color:s.c}}>{s.v}</div>
@@ -13876,7 +14066,7 @@ export default function App() {
             todoStatusRows.forEach(r=>{
               if(!m[r.username]) m[r.username]={};
               if(!m[r.username][r.todo_id]) m[r.username][r.todo_id]={};
-              m[r.username][r.todo_id][r.tgl]=r.done;
+              m[r.username][r.todo_id][r.tgl]={done:r.done, status:r.status||'menunggu', confirmed_at:r.confirmed_at};
             });
             setPortalTodoStatus(m);
           }
@@ -14128,7 +14318,7 @@ export default function App() {
             data.forEach(r=>{
               if(!m[r.username]) m[r.username]={};
               if(!m[r.username][r.todo_id]) m[r.username][r.todo_id]={};
-              m[r.username][r.todo_id][r.tgl]=r.done;
+              m[r.username][r.todo_id][r.tgl]={done:r.done, status:r.status||'menunggu', confirmed_at:r.confirmed_at};
             });
             setPortalTodoStatus(m);
           }
@@ -14392,16 +14582,16 @@ export default function App() {
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
-      {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto}/>}
+      {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto} users={users}/>}
       {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
-      {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products} strukConfig={strukConfig} setStrukConfig={setStrukConfig}/>}
+      {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products} strukConfig={strukConfig} setStrukConfig={setStrukConfig} currentUser={user}/>}
       {page==="kasir"     && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
         <KasirApp user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} strukConfig={strukConfig}/>
       </>)}
       {page==="bank"      && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="bank"/>}
-        <BankPage user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify}/>
+        <BankPage user={user} outlets={outlets} saldoApps={saldoBank} onBack={()=>{setPage("pilih");setPilihScene(null);}} notify={notify} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} products={products}/>
       </>)}
       {page==="gabungan"  && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="gabungan"/>}
