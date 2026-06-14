@@ -731,14 +731,14 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
                       <td style={{padding:"10px 13px",fontWeight:700}}>{u.nama}</td>
                       <td style={{padding:"10px 13px"}}><span style={{
-                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":u.role==="staff"?"#f0fff4":"#fffbeb",
-                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":u.role==="staff"?"#16a34a":"#d97706",
+                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":u.role==="staff"?"#f0fff4":u.role==="cashflow"?"#e8f8f0":"#fffbeb",
+                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":u.role==="staff"?"#16a34a":u.role==="cashflow"?"#27ae60":"#d97706",
                         fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>
-                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":u.role==="staff"?"💼 Kasir+Bank":"👤 Portal"}
+                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":u.role==="staff"?"💼 Kasir+Bank":u.role==="cashflow"?"📋 Cashflow":"👤 Portal"}
                       </span></td>
                       <td style={{padding:"10px 13px"}}>
-                        {u.role==="admin"?(
-                          <span style={{color:"#aaa",fontSize:11}}>Semua outlet</span>
+                        {u.role==="admin"||u.role==="cashflow"?(
+                          <span style={{color:"#aaa",fontSize:11}}>{u.role==="cashflow"?"Jurnal global":"Semua outlet"}</span>
                         ):(u.outletIds||[]).length>0?(
                           <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
                             {(u.outletIds||[]).map(id=>(
@@ -839,6 +839,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                 {k:"karyawan",icon:"👤",l:"Portal",      sub:"Only",      bg:"#fffbeb",c:"#d97706"},
                 {k:"admin",   icon:"👑",l:"Admin",       sub:"Semua",     bg:"#f5eeff",c:"#8e44ad"},
                 {k:"monitor", icon:"👁",l:"Monitor",     sub:"Live only", bg:"#fef3c7",c:"#b45309"},
+                {k:"cashflow",icon:"📋",l:"Cashflow",    sub:"Jurnal only",bg:"#e8f8f0",c:"#27ae60"},
               ].map(r=>(
                 <button key={r.k} onClick={()=>setUForm(p=>({...p,role:r.k}))}
                   style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${uForm.role===r.k?r.c:"#b2ede6"}`,background:uForm.role===r.k?r.bg:"#fff",color:uForm.role===r.k?r.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all .15s"}}>
@@ -855,11 +856,12 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
               {uForm.role==="karyawan"&&<>👤 <b>Portal Only</b> — Hanya portal (absensi, izin, misi). Tidak ada akses kasir/bank</>}
               {uForm.role==="admin"  &&<>👑 <b>Admin</b> — Akses semua fitur dari mana saja</>}
               {uForm.role==="monitor"&&<>👁 <b>Monitor</b> — Hanya halaman monitor live</>}
+              {uForm.role==="cashflow"&&<>📋 <b>Cashflow</b> — Langsung masuk ke Jurnal Cashflow saja, untuk input transaksi keuangan cepat</>}
             </div>
           </div>
 
-          {/* Outlet checklist -- semua role kecuali admin */}
-          {uForm.role!=="admin"?(
+          {/* Outlet checklist -- semua role kecuali admin & cashflow (cashflow tidak per-outlet) */}
+          {uForm.role!=="admin"&&uForm.role!=="cashflow"?(
             <div style={{marginBottom:14}}>
               <label style={{...lbl}}>
                 Outlet Tugasan
@@ -899,8 +901,8 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
               )}
             </div>
           ):(
-            <div style={{background:"#f5eeff",border:"1px solid #8e44ad33",borderRadius:10,padding:"10px 13px",marginBottom:14,fontSize:12,color:"#8e44ad",fontWeight:600}}>
-              👑 Admin punya akses ke semua outlet otomatis.
+            <div style={{background:uForm.role==="cashflow"?"#e8f8f0":"#f5eeff",border:`1px solid ${uForm.role==="cashflow"?"#27ae6033":"#8e44ad33"}`,borderRadius:10,padding:"10px 13px",marginBottom:14,fontSize:12,color:uForm.role==="cashflow"?"#27ae60":"#8e44ad",fontWeight:600}}>
+              {uForm.role==="cashflow"?"📋 Cashflow tidak terikat outlet tertentu — akses langsung ke Jurnal.":"👑 Admin punya akses ke semua outlet otomatis."}
             </div>
           )}
 
@@ -8112,8 +8114,8 @@ const CF_KAT_NAMES_OUTLETS_DEFAULT = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 
 // -- CF Tab Components (restored) ---------------------------------------------
 
-function CashflowPage({ transactions, outlets, onBack, notify }) {
-  const [cfTab,       setCfTab]       = useState("kalkulator");
+function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalkulator", isCashflowOnly=false }) {
+  const [cfTab,       setCfTab]       = useState(initialTab);
   const [cfLog,       setCfLog]       = useState([]);
   const [cfMobileTab, setCfMobileTab] = useState("catat");
   const [winWidth,    setWinWidth]    = useState(typeof window!=="undefined"?window.innerWidth:1200);
@@ -8239,7 +8241,8 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
         {/* Mobile Header */}
         <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
           <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>
+            {onBack&&<button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>}
+            {isCashflowOnly&&<button onClick={()=>{try{localStorage.removeItem('ammar_user');}catch{}window.location.reload();}} style={{background:"rgba(255,100,100,.25)",border:"1px solid rgba(255,100,100,.4)",borderRadius:20,padding:"5px 11px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Logout</button>}
             <div style={{fontSize:16}}>💼</div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:900,fontSize:13,color:"#fff"}}>Laporan Keuangan</div>
@@ -8288,7 +8291,8 @@ function CashflowPage({ transactions, outlets, onBack, notify }) {
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{background:"linear-gradient(135deg,#064e3b,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 20px rgba(13,148,136,.35)"}}>
         <div style={{padding:"0 20px",minHeight:50,display:"flex",alignItems:"center",gap:10}}>
-          <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>
+          {onBack&&<button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>← Menu</button>}
+          {isCashflowOnly&&<button onClick={()=>{try{localStorage.removeItem('ammar_user');}catch{}window.location.reload();}} style={{background:"rgba(255,100,100,.25)",border:"1px solid rgba(255,100,100,.4)",borderRadius:20,padding:"5px 13px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Logout</button>}
           <div style={{fontSize:18}}>💼</div>
           <div>
             <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>Laporan Keuangan</div>
@@ -13467,6 +13471,7 @@ export default function App() {
     const u = savedUser;
     if(!u) return "menu";
     if(u.role==="monitor")  return "monitor";
+    if(u.role==="cashflow") return "cashflow";
     if(u.role==="admin")    return "menu";
     if(u.role==="kasir"||u.role==="bank"||u.role==="staff") return "pilih";
     // karyawan lama dengan outlet → pilih dulu
@@ -14270,6 +14275,7 @@ export default function App() {
 
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
+  const isCashflowOnly = user?.role==="cashflow";
 
   // GPS monitoring hook untuk kasir/bank
   const kasirGpsHook = useGpsMonitor({
@@ -14373,7 +14379,7 @@ export default function App() {
         <GabunganPage user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} saldoBank={saldoBank} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} strukConfig={strukConfig}/>
       </>)}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
-      {page==="cashflow"  && isAdmin && <CashflowPage  transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
+      {page==="cashflow"  && (isAdmin||isCashflowOnly) && <CashflowPage  transactions={transactions} outlets={outlets} onBack={isCashflowOnly?null:()=>setPage("menu")} notify={notify} initialTab={isCashflowOnly?"jurnal":"kalkulator"} isCashflowOnly={isCashflowOnly}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
       {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
@@ -14385,6 +14391,16 @@ export default function App() {
       {page==="overall"   && isAdmin && <DashboardOverallPage transactions={transactions} outlets={outlets} stocks={stocks} bankTrx={allBankTrx} onBack={()=>setPage("menu")}/>}
       {page==="laporan"   && isAdmin && <LaporanPage   transactions={transactions} outlets={outlets} onBack={()=>setPage("menu")}/>}
 
+      {page!=="cashflow"&&isCashflowOnly&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:48,marginBottom:12}}>🔒</div>
+            <div style={{fontWeight:900,fontSize:18,color:"#27ae60"}}>Akses Terbatas</div>
+            <div style={{color:"#888",fontSize:13,marginTop:6}}>Akun ini hanya bisa mengakses Jurnal Cashflow</div>
+            <button onClick={()=>setPage("cashflow")} style={{background:"#27ae60",border:"none",borderRadius:10,padding:"10px 24px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:16}}>Kembali ke Jurnal</button>
+          </div>
+        </div>
+      )}
       {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","kasir","bank"].includes(page)&&isMonitor&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
           <div style={{textAlign:"center"}}>
@@ -14395,7 +14411,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","monitor"].includes(page)&&!isAdmin&&!isMonitor&&(
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","monitor"].includes(page)&&!isAdmin&&!isMonitor&&!isCashflowOnly&&(
         <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0faf8",flexDirection:"column",gap:12,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:48}}>🔒</div>
           <div style={{fontWeight:900,fontSize:18,color:"#ff4757"}}>Akses Ditolak</div>
