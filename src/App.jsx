@@ -185,18 +185,13 @@ const css = `
     .kasir-cart   { width: 100%; }
   }
 
-  /* Portrait warning overlay */
+  /* Portrait warning overlay — visibility dikontrol via JS (inline style),
+     CSS hanya mengatur posisi/tampilan saat ditampilkan */
   .portrait-warn {
-    display: none;
-  }
-  @media (max-width: 767px) and (orientation: portrait) {
-    .portrait-warn {
-      display: flex;
-      position: fixed; inset: 0; z-index: 9998;
-      background: linear-gradient(135deg,#0a7a70,#0d9488);
-      flex-direction: column; align-items: center; justify-content: center;
-      color: white; text-align: center; padding: 24px;
-    }
+    position: fixed; inset: 0; z-index: 9998;
+    background: linear-gradient(135deg,#0a7a70,#0d9488);
+    flex-direction: column; align-items: center; justify-content: center;
+    color: white; text-align: center; padding: 24px;
   }
 `;
 
@@ -13438,6 +13433,36 @@ export default function App() {
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
 
   const [user,        setUserState]   = useState(savedUser);
+
+  // -- Deteksi orientasi via JS (bukan CSS orientation media query) ----------
+  // Beberapa tablet/PWA terinstall melaporkan CSS `orientation` media feature
+  // secara tidak konsisten (tetap "portrait" walau fisik sudah landscape).
+  // innerWidth vs innerHeight selalu akurat terhadap viewport aktual.
+  const [viewport, setViewport] = useState(()=>({
+    w: typeof window!=="undefined"?window.innerWidth:390,
+    h: typeof window!=="undefined"?window.innerHeight:844,
+  }));
+  useEffect(()=>{
+    const update = ()=>setViewport({w:window.innerWidth,h:window.innerHeight});
+    update();
+    window.addEventListener('resize',update);
+    window.addEventListener('orientationchange',update);
+    // beberapa device butuh delay sebelum innerWidth/innerHeight terupdate setelah rotasi
+    const onRotate = ()=>{ update(); setTimeout(update,150); setTimeout(update,400); };
+    window.addEventListener('orientationchange',onRotate);
+    if(window.screen?.orientation) window.screen.orientation.addEventListener?.('change',onRotate);
+    return ()=>{
+      window.removeEventListener('resize',update);
+      window.removeEventListener('orientationchange',update);
+      window.removeEventListener('orientationchange',onRotate);
+      if(window.screen?.orientation) window.screen.orientation.removeEventListener?.('change',onRotate);
+    };
+  },[]);
+  const isPortraitNow = viewport.h > viewport.w;
+  // "phone-class" = dimensi terkecil (sisi pendek, konstan saat rotasi) < 768px
+  const isPhoneSize  = Math.min(viewport.w, viewport.h) < 768;
+  const showPortraitWarn = isPortraitNow && isPhoneSize;
+
   const [page,        setPage]        = useState(()=>{
     const u = savedUser;
     if(!u) return "menu";
@@ -14314,8 +14339,8 @@ export default function App() {
       <ConnStatusBar status={connStatus} lastPing={lastPing} offlineQueue={offlineQueue}/>
 
       {/* Portrait warning — DISEMBUNYIKAN untuk halaman pilih & portal (memang portrait) */}
-      {page!=="pilih"&&page!=="portal"&&(
-        <div className="portrait-warn">
+      {page!=="pilih"&&page!=="portal"&&showPortraitWarn&&(
+        <div className="portrait-warn" style={{display:"flex"}}>
           <div style={{fontSize:48,marginBottom:16}}>🔄</div>
           <div style={{fontWeight:900,fontSize:20,marginBottom:8}}>Putar HP Kamu</div>
           <div style={{fontSize:14,opacity:.85,lineHeight:1.6}}>
