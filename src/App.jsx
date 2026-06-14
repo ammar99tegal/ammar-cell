@@ -8817,7 +8817,13 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
     setEditId(null); setEditForm({});
   };
 
-  const filtered=log.filter(e=>(fltr==="semua"||e.jenis===fltr)&&(!srch||e.nama.toLowerCase().includes(srch.toLowerCase()))).sort((a,b)=>b.tgl.localeCompare(a.tgl));
+  // tgl format "D/M/YYYY" (non zero-padded) -- localeCompare salah urut (9 > 14 secara string)
+  const parseTglCF = (tgl) => {
+    const p = (tgl||"").split('/');
+    if(p.length!==3) return 0;
+    return new Date(+p[2], (+p[1]||1)-1, +p[0]||1).getTime();
+  };
+  const filtered=log.filter(e=>(fltr==="semua"||e.jenis===fltr)&&(!srch||e.nama.toLowerCase().includes(srch.toLowerCase()))).sort((a,b)=>parseTglCF(b.tgl)-parseTglCF(a.tgl));
   const tM=filtered.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
   const tK=filtered.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
   const byDate={};
