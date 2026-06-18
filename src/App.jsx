@@ -1160,8 +1160,9 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   const [sortProd,    setSortProd]    = useState("default");
   const dragProdIdx  = useRef(null);
   const [draggingProd, setDraggingProd] = useState(null);
-  const [dragOverProd, setDragOverProd] = useState(null); // index target drop
+  const [dragOverProd, setDragOverProd] = useState(null);
   const saveOrderTimer = useRef(null);
+  const touchDragData = useRef({active:false, fromIdx:null, startY:0, lastY:0});
 
   // Load urutan produk dari Supabase + realtime
   useEffect(()=>{
@@ -1510,6 +1511,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
                 const isOver = dragOverProd===i && draggingProd!==null && draggingProd!==i;
                 return (
                 <tr key={p.id}
+                  data-pidx={i}
                   draggable
                   onDragStart={(e)=>{
                     dragProdIdx.current=i;
@@ -1534,18 +1536,26 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
                     if(dragProdIdx.current===null||dragProdIdx.current===i) {
                       setDragOverProd(null); return;
                     }
-                    const next=[...fp];
-                    const [moved]=next.splice(dragProdIdx.current,1);
-                    // Determine insert position: above or below based on mouse Y
-                    const rect=e.currentTarget.getBoundingClientRect();
-                    const midY=rect.top+rect.height/2;
-                    const insertAt = e.clientY < midY ? i : i+1;
-                    // Adjust insertAt for removed element
-                    const adjInsert = dragProdIdx.current < insertAt ? insertAt-1 : insertAt;
-                    next.splice(adjInsert,0,moved);
-                    dragProdIdx.current=adjInsert;
+                    // fp hanya produk yang terfilter -- ambil index asli dari orderedProducts
+                    const fromProd = fp[dragProdIdx.current];
+                    const toProd   = fp[i];
+                    if(!fromProd||!toProd){ setDragOverProd(null); return; }
+
+                    // Kerjakan di orderedProducts (semua produk, termasuk yang tersembunyi filter)
+                    const fullNext = [...orderedProducts];
+                    const fromIdx  = fullNext.findIndex(p=>String(p.id)===String(fromProd.id));
+                    const toIdx    = fullNext.findIndex(p=>String(p.id)===String(toProd.id));
+                    if(fromIdx<0||toIdx<0){ setDragOverProd(null); return; }
+
+                    const [moved] = fullNext.splice(fromIdx,1);
+                    const rect    = e.currentTarget.getBoundingClientRect();
+                    const insertAt= e.clientY < rect.top+rect.height/2 ? toIdx : toIdx+1;
+                    const adjInsert = fromIdx < insertAt ? insertAt-1 : insertAt;
+                    fullNext.splice(adjInsert,0,moved);
+
+                    dragProdIdx.current=fp.findIndex(p=>String(p.id)===String(moved.id));
                     setSortProd("default");
-                    saveProdOrder(next.map(x=>String(x.id)));
+                    saveProdOrder(fullNext.map(x=>String(x.id)));
                     setDragOverProd(null);
                   }}
                   onDragEnd={()=>{ dragProdIdx.current=null; setDraggingProd(null); setDragOverProd(null); }}
@@ -1562,7 +1572,46 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
                   onMouseEnter={e=>{ if(draggingProd===null) e.currentTarget.style.background="#f0fdfb"; }}
                   onMouseLeave={e=>{ if(draggingProd===null) e.currentTarget.style.background=i%2===0?"#fff":"#fafffe"; }}>
                   <td style={{padding:"9px 12px",color:"#ccc",fontWeight:600}}>{i+1}</td>
-                  <td style={{padding:"9px 6px",color:isDragging?"#0d9488":"#b2ede6",fontSize:18,cursor:isDragging?"grabbing":"grab",userSelect:"none",textAlign:"center",transition:"color .15s"}} title="Drag untuk atur urutan">⠿</td>
+                  <td style={{padding:"9px 6px",color:isDragging?"#0d9488":"#b2ede6",fontSize:18,cursor:isDragging?"grabbing":"grab",userSelect:"none",textAlign:"center",transition:"color .15s"}} title="Drag untuk atur urutan"
+                    onTouchStart={(e)=>{
+                      touchDragData.current={active:true, fromIdx:i, startY:e.touches[0].clientY, lastY:e.touches[0].clientY};
+                      dragProdIdx.current=i; setDraggingProd(i);
+                    }}
+                    onTouchMove={(e)=>{
+                      if(!touchDragData.current.active) return;
+                      e.preventDefault();
+                      touchDragData.current.lastY=e.touches[0].clientY;
+                      // Cari row di bawah jari
+                      const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+                      const tr = el?.closest('tr[data-pidx]');
+                      if(tr) {
+                        const idx = parseInt(tr.dataset.pidx);
+                        if(!isNaN(idx) && idx!==touchDragData.current.fromIdx) setDragOverProd(idx);
+                      }
+                    }}
+                    onTouchEnd={(e)=>{
+                      if(!touchDragData.current.active){return;}
+                      touchDragData.current.active=false;
+                      const toIdx = dragOverProd;
+                      if(toIdx!==null && toIdx!==i){
+                        const fromProd = fp[i];
+                        const toProd   = fp[toIdx];
+                        if(fromProd&&toProd){
+                          const fullNext=[...orderedProducts];
+                          const fromFull=fullNext.findIndex(p=>String(p.id)===String(fromProd.id));
+                          const toFull  =fullNext.findIndex(p=>String(p.id)===String(toProd.id));
+                          if(fromFull>=0&&toFull>=0){
+                            const [mv]=fullNext.splice(fromFull,1);
+                            const adj=fromFull<toFull?toFull-1:toFull;
+                            fullNext.splice(adj,0,mv);
+                            setSortProd("default");
+                            saveProdOrder(fullNext.map(x=>String(x.id)));
+                          }
+                        }
+                      }
+                      dragProdIdx.current=null; setDraggingProd(null); setDragOverProd(null);
+                    }}
+                  >⠿</td>
                   <td style={{padding:"9px 12px",fontWeight:800}}>{p.name}</td>
                   <td style={{padding:"9px 12px",color:"#888",fontFamily:"monospace",fontSize:11}}>{p.barcode||"--"}</td>
                   <td style={{padding:"9px 12px"}}><span style={{background:"#e0faf5",color:"#0d9488",fontWeight:700,fontSize:10,padding:"2px 8px",borderRadius:6}}>{p.category}</span></td>
@@ -2174,16 +2223,27 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
                         onDrop={(e)=>{
                           e.preventDefault();
                           if(dragStokAdminIdx.current===null||dragStokAdminIdx.current===i){setDragOverStokAdmin(null);return;}
-                          const ord=filteredProds.map(x=>String(x.id));
-                          const [mv]=ord.splice(dragStokAdminIdx.current,1);
+                          // Ambil produk asli dari filteredProds (yang difilter search saja)
+                          const fromProd = filteredProds[dragStokAdminIdx.current];
+                          const toProd   = filteredProds[i];
+                          if(!fromProd||!toProd){setDragOverStokAdmin(null);return;}
+                          // Kerjakan di baseList (semua produk terurut, tanpa filter search)
+                          const baseList = baseOrder?.length
+                            ? [...baseOrder.map(id=>products.find(p=>String(p.id)===String(id))).filter(Boolean),
+                               ...products.filter(p=>!baseOrder.map(String).includes(String(p.id)))]
+                            : [...products];
+                          const fromIdx = baseList.findIndex(p=>String(p.id)===String(fromProd.id));
+                          const toIdx   = baseList.findIndex(p=>String(p.id)===String(toProd.id));
+                          if(fromIdx<0||toIdx<0){setDragOverStokAdmin(null);return;}
+                          const [mv]=baseList.splice(fromIdx,1);
                           const rect=e.currentTarget.getBoundingClientRect();
-                          const ins = e.clientY<rect.top+rect.height/2 ? i : i+1;
-                          const adj = dragStokAdminIdx.current<ins ? ins-1 : ins;
-                          ord.splice(adj,0,mv);
+                          const ins = e.clientY<rect.top+rect.height/2 ? toIdx : toIdx+1;
+                          const adj = fromIdx<ins ? ins-1 : ins;
+                          baseList.splice(adj,0,mv);
+                          const ord = baseList.map(x=>String(x.id));
                           dragStokAdminIdx.current=adj;
                           setStokAdminOrder(ord);
                           setDragOverStokAdmin(null);
-                          // Sync ke prodOrder global (admin)
                           if(typeof setProdOrderRoot==="function") setProdOrderRoot(ord);
                           dbStokOrder.saveOrder(selectedOutlet, ord).catch(()=>{});
                           dbProductOrder.saveOrder(ord).catch(()=>{});
