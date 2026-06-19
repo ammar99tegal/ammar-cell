@@ -744,10 +744,10 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                       <td style={{padding:"10px 13px",fontWeight:800,color:"#0d9488",fontFamily:"monospace"}}>{key}</td>
                       <td style={{padding:"10px 13px",fontWeight:700}}>{u.nama}</td>
                       <td style={{padding:"10px 13px"}}><span style={{
-                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":u.role==="staff"?"#f0fff4":u.role==="cashflow"?"#e8f8f0":"#fffbeb",
-                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":u.role==="staff"?"#16a34a":u.role==="cashflow"?"#27ae60":"#d97706",
+                        background:u.role==="admin"?"#f5eeff":u.role==="monitor"?"#fef3c7":u.role==="kasir"?"#e0faf5":u.role==="bank"?"#e8f4fd":u.role==="staff"?"#f0fff4":u.role==="cashflow"?"#e8f8f0":u.role==="qc"?"#e0faf5":"#fffbeb",
+                        color:u.role==="admin"?"#8e44ad":u.role==="monitor"?"#d97706":u.role==="kasir"?"#0d9488":u.role==="bank"?"#2980b9":u.role==="staff"?"#16a34a":u.role==="cashflow"?"#27ae60":u.role==="qc"?"#0d9488":"#d97706",
                         fontWeight:800,fontSize:10,padding:"2px 8px",borderRadius:6}}>
-                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":u.role==="staff"?"💼 Kasir+Bank":u.role==="cashflow"?"📋 Cashflow":"👤 Portal"}
+                        {u.role==="admin"?"👑 Admin":u.role==="monitor"?"👁 Monitor":u.role==="kasir"?"🛒 Kasir":u.role==="bank"?"🏦 Bank":u.role==="staff"?"💼 Kasir+Bank":u.role==="cashflow"?"📋 Cashflow":u.role==="qc"?"🔍 QC Stok":"👤 Portal"}
                       </span></td>
                       <td style={{padding:"10px 13px"}}>
                         {u.role==="admin"||u.role==="cashflow"?(
@@ -853,6 +853,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
                 {k:"admin",   icon:"👑",l:"Admin",       sub:"Semua",     bg:"#f5eeff",c:"#8e44ad"},
                 {k:"monitor", icon:"👁",l:"Monitor",     sub:"Live only", bg:"#fef3c7",c:"#b45309"},
                 {k:"cashflow",icon:"📋",l:"Cashflow",    sub:"Jurnal only",bg:"#e8f8f0",c:"#27ae60"},
+                {k:"qc",      icon:"🔍",l:"QC Stok",     sub:"Scan only", bg:"#e0faf5",c:"#0d9488"},
               ].map(r=>(
                 <button key={r.k} onClick={()=>setUForm(p=>({...p,role:r.k}))}
                   style={{padding:"10px 6px",borderRadius:10,border:`2px solid ${uForm.role===r.k?r.c:"#b2ede6"}`,background:uForm.role===r.k?r.bg:"#fff",color:uForm.role===r.k?r.c:"#aaa",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all .15s"}}>
@@ -870,6 +871,7 @@ function OutletPage({ outlets, setOutlets, users, setUsers, stocks, setStocks, p
               {uForm.role==="admin"  &&<>👑 <b>Admin</b> — Akses semua fitur dari mana saja</>}
               {uForm.role==="monitor"&&<>👁 <b>Monitor</b> — Hanya halaman monitor live</>}
               {uForm.role==="cashflow"&&<>📋 <b>Cashflow</b> — Langsung masuk ke Jurnal Cashflow saja, untuk input transaksi keuangan cepat</>}
+              {uForm.role==="qc"&&<>🔍 <b>QC Stok</b> — Langsung masuk ke scan QC saja, untuk cek stok fisik vs sistem per outlet</>}
             </div>
           </div>
 
@@ -4837,6 +4839,162 @@ function QCAdminPage({ products, stocks, outlets, onBack, notify }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ==============================================================================
+// QC STAFF PAGE — halaman standalone untuk role "qc" (Scan Only)
+// Login role qc -> langsung ke sini, terkunci, tidak ada akses lain
+// ==============================================================================
+function QCStaffPage({ user, outlets, products, stocks, notify }) {
+  const [qcBarcode, setQcBarcode] = useState("");
+  const [qcScanned, setQcScanned] = useState(null);
+  const [qcStokFisik, setQcStokFisik] = useState("");
+  const [qcCheckedItems, setQcCheckedItems] = useState([]);
+  const [qcSaving, setQcSaving] = useState(false);
+  const username = user.username||user.id;
+  const qcOutletId = user.outletId || outlets[0]?.id || "";
+  const qcOutletNama = outlets.find(o=>o.id===qcOutletId)?.nama || "Outlet";
+
+  const handleQcScan = (e) => {
+    if(e.key!=="Enter"&&e.type!=="click") return;
+    const code = qcBarcode.trim();
+    if(!code) return;
+    const prod = products.find(p=>p.barcode===code);
+    if(!prod){ notify("Produk tidak ditemukan!","err"); setQcBarcode(""); return; }
+    const stokSistem = stocks[qcOutletId]?.[prod.id] || 0;
+    setQcScanned({...prod, stokSistem});
+    setQcStokFisik("");
+    setQcBarcode("");
+  };
+  const simpanQcItem = () => {
+    if(!qcScanned || qcStokFisik==="") return;
+    const fisik = +qcStokFisik;
+    setQcCheckedItems(prev=>[...prev, {
+      productId: qcScanned.id, name: qcScanned.name, qcKategori: qcScanned.qcKategori||qcScanned.qc_kategori||"",
+      stokSistem: qcScanned.stokSistem, stokFisik: fisik, selisih: fisik-qcScanned.stokSistem, modal: qcScanned.modal||0,
+    }]);
+    setQcScanned(null);
+  };
+  const selesaikanQc = async () => {
+    if(qcCheckedItems.length===0) return notify("Belum ada item yang dicek","err");
+    setQcSaving(true);
+    try{
+      const sessionId = "qc"+uid();
+      const totalSelisih = qcCheckedItems.filter(i=>i.selisih!==0).length;
+      await supabase.from('qc_sessions').insert({
+        id: sessionId, outlet_id: qcOutletId, outlet_nama: qcOutletNama,
+        staff_username: username, staff_nama: user.nama,
+        total_item: qcCheckedItems.length, total_selisih: totalSelisih, status:'selesai',
+      });
+      await Promise.all(qcCheckedItems.map(it=>
+        supabase.from('qc_checks').insert({
+          id:'qci'+uid(), session_id: sessionId, outlet_id: qcOutletId,
+          product_id: it.productId, product_name: it.name, qc_kategori: it.qcKategori,
+          stok_sistem: it.stokSistem, stok_fisik: it.stokFisik, selisih: it.selisih, modal: it.modal,
+          checked_by: username, checked_by_nama: user.nama,
+        })
+      ));
+      notify("✓ Penugasan QC selesai dikirim ke admin","ok");
+      setQcCheckedItems([]);
+    }catch(e){ console.warn('selesaikanQc:',e); notify("Gagal menyimpan QC","err"); }
+    setQcSaving(false);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#0a3a35,#0d9488,#0a7a70)",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>🔍 QC Stok — {qcOutletNama}</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.7)",marginTop:2}}>{user.nama} · Scan barcode untuk cek stok fisik vs sistem</div>
+        </div>
+        <button onClick={()=>{try{localStorage.removeItem('ammar_user');}catch{}window.location.reload();}}
+          style={{background:"rgba(255,100,100,.25)",border:"1px solid rgba(255,100,100,.4)",borderRadius:20,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Logout</button>
+      </div>
+
+      <div style={{maxWidth:480,margin:"0 auto",padding:18}}>
+        {!qcScanned&&(
+          <div style={{display:"flex",gap:7,marginBottom:14}}>
+            <input value={qcBarcode} onChange={e=>setQcBarcode(e.target.value)} onKeyDown={handleQcScan} autoFocus placeholder="Scan / ketik barcode..."
+              style={{flex:1,padding:"12px 14px",borderRadius:11,border:"2px solid #b2ede6",fontSize:14,outline:"none",fontFamily:"inherit"}}/>
+            <button onClick={handleQcScan} style={{background:"#0d9488",border:"none",borderRadius:11,padding:"0 18px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cari</button>
+          </div>
+        )}
+
+        {qcScanned&&(
+          <div className="fade" style={{background:"#fff",borderRadius:16,border:"2px solid #0d9488",padding:18,marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+              <div>
+                <div style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{qcScanned.name}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:2}}>Barcode: {qcScanned.barcode}</div>
+                {(qcScanned.qcKategori||qcScanned.qc_kategori)&&<div style={{fontSize:10,color:"#aaa"}}>Kategori: {qcCatInfo(qcScanned.qcKategori||qcScanned.qc_kategori).l}</div>}
+              </div>
+              <button onClick={()=>setQcScanned(null)} style={{background:"#f0f0f0",border:"none",borderRadius:8,width:26,height:26,color:"#999",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+              <div style={{background:"#f0faf8",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:10,color:"#888",fontWeight:700}}>Stok Sistem</div>
+                <div style={{fontWeight:900,fontSize:22,color:"#0d9488"}}>{qcScanned.stokSistem}</div>
+                <div style={{fontSize:9,color:"#aaa"}}>Modal: {fmtRp(qcScanned.modal||0)}</div>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:"#888",fontWeight:700,display:"block",marginBottom:5,textAlign:"center"}}>Stok Fisik</label>
+                <input type="number" value={qcStokFisik} onChange={e=>setQcStokFisik(e.target.value)} placeholder="0" autoFocus
+                  style={{width:"100%",padding:"10px",borderRadius:10,border:"2px solid #b2ede6",fontSize:20,fontWeight:900,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+
+            {qcStokFisik!==""&&(
+              <div className="fade" style={{marginBottom:14,padding:"8px 12px",borderRadius:9,textAlign:"center",fontSize:12,fontWeight:800,
+                background:(+qcStokFisik-qcScanned.stokSistem)===0?"#f0fdf4":"#fef3c7",
+                color:(+qcStokFisik-qcScanned.stokSistem)===0?"#16a34a":"#d97706"}}>
+                {(+qcStokFisik-qcScanned.stokSistem)===0 ? "✅ Stok cocok, tidak ada selisih" :
+                  `⚠ Selisih ${(+qcStokFisik-qcScanned.stokSistem)>0?"+":""}${+qcStokFisik-qcScanned.stokSistem} pcs dari sistem`}
+              </div>
+            )}
+
+            <button onClick={simpanQcItem} disabled={qcStokFisik===""}
+              style={{width:"100%",padding:12,borderRadius:11,border:"none",background:qcStokFisik===""?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:qcStokFisik===""?"not-allowed":"pointer",fontFamily:"inherit"}}>
+              💾 Simpan & Lanjut Scan Berikutnya
+            </button>
+          </div>
+        )}
+
+        {qcCheckedItems.length>0&&(
+          <div className="fade">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a"}}>Item Sudah Dicek ({qcCheckedItems.length})</div>
+              {qcCheckedItems.filter(i=>i.selisih!==0).length>0&&<span style={{fontSize:10,fontWeight:800,color:"#d97706",background:"#fef3c7",padding:"2px 8px",borderRadius:20}}>{qcCheckedItems.filter(i=>i.selisih!==0).length} selisih</span>}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+              {qcCheckedItems.map((it,i)=>(
+                <div key={i} style={{background:"#fff",borderRadius:10,border:"1px solid #e0f5f1",padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700}}>{it.name}</div>
+                    <div style={{fontSize:10,color:"#aaa"}}>Sistem: {it.stokSistem} → Fisik: {it.stokFisik}</div>
+                  </div>
+                  <span style={{fontWeight:800,fontSize:12,color:it.selisih===0?"#16a34a":"#d97706"}}>
+                    {it.selisih===0?"✓ Cocok":(it.selisih>0?`+${it.selisih}`:it.selisih)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button onClick={selesaikanQc} disabled={qcSaving}
+              style={{width:"100%",padding:13,borderRadius:11,border:"none",background:qcSaving?"#ccc":"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",fontWeight:900,fontSize:14,cursor:qcSaving?"wait":"pointer",fontFamily:"inherit"}}>
+              {qcSaving?"⏳ Menyimpan...":"✓ Selesai Penugasan QC"}
+            </button>
+          </div>
+        )}
+
+        {qcCheckedItems.length===0&&!qcScanned&&(
+          <div style={{textAlign:"center",padding:"40px 0",color:"#bbb",fontSize:12}}>
+            <div style={{fontSize:36,marginBottom:8}}>📦</div>
+            Scan barcode produk untuk mulai QC
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -11335,60 +11493,6 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
   // Kalkulasi misi (per-user, per-periode dari portalMisiProgress)
   const username = user.username||user.id;
 
-  // ── QC Stok & Modal ──
-  const [qcBarcode, setQcBarcode] = useState("");
-  const [qcScanned, setQcScanned] = useState(null);
-  const [qcStokFisik, setQcStokFisik] = useState("");
-  const [qcCheckedItems, setQcCheckedItems] = useState([]);
-  const [qcSaving, setQcSaving] = useState(false);
-  const qcOutletId = user.outletId || outlets[0]?.id || "";
-  const qcOutletNama = outlets.find(o=>o.id===qcOutletId)?.nama || "Outlet";
-
-  const handleQcScan = (e) => {
-    if(e.key!=="Enter"&&e.type!=="click") return;
-    const code = qcBarcode.trim();
-    if(!code) return;
-    const prod = products.find(p=>p.barcode===code);
-    if(!prod){ notify("Produk tidak ditemukan!","err"); setQcBarcode(""); return; }
-    const stokSistem = stocks[qcOutletId]?.[prod.id] || 0;
-    setQcScanned({...prod, stokSistem});
-    setQcStokFisik("");
-    setQcBarcode("");
-  };
-  const simpanQcItem = () => {
-    if(!qcScanned || qcStokFisik==="") return;
-    const fisik = +qcStokFisik;
-    setQcCheckedItems(prev=>[...prev, {
-      productId: qcScanned.id, name: qcScanned.name, qcKategori: qcScanned.qcKategori||qcScanned.qc_kategori||"",
-      stokSistem: qcScanned.stokSistem, stokFisik: fisik, selisih: fisik-qcScanned.stokSistem, modal: qcScanned.modal||0,
-    }]);
-    setQcScanned(null);
-  };
-  const selesaikanQc = async () => {
-    if(qcCheckedItems.length===0) return notify("Belum ada item yang dicek","err");
-    setQcSaving(true);
-    try{
-      const sessionId = "qc"+uid();
-      const totalSelisih = qcCheckedItems.filter(i=>i.selisih!==0).length;
-      await supabase.from('qc_sessions').insert({
-        id: sessionId, outlet_id: qcOutletId, outlet_nama: qcOutletNama,
-        staff_username: username, staff_nama: user.nama,
-        total_item: qcCheckedItems.length, total_selisih: totalSelisih, status:'selesai',
-      });
-      await Promise.all(qcCheckedItems.map(it=>
-        supabase.from('qc_checks').insert({
-          id:'qci'+uid(), session_id: sessionId, outlet_id: qcOutletId,
-          product_id: it.productId, product_name: it.name, qc_kategori: it.qcKategori,
-          stok_sistem: it.stokSistem, stok_fisik: it.stokFisik, selisih: it.selisih, modal: it.modal,
-          checked_by: username, checked_by_nama: user.nama,
-        })
-      ));
-      notify("✓ Penugasan QC selesai dikirim ke admin","ok");
-      setQcCheckedItems([]);
-    }catch(e){ console.warn('selesaikanQc:',e); notify("Gagal menyimpan QC","err"); }
-    setQcSaving(false);
-  };
-
   const getMisiProgress = (m) => {
     const periodeKey = getPeriodeKey(m.periode||"harian");
     const rec = misiProgress[m.id]?.[username]?.[periodeKey];
@@ -11483,7 +11587,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
 
   const openSheet=()=>{setShowSheet(true);setSheetMode("pilih");setSelJenis(null);setFormAjuan({tgl:"",jam:"",ket:""});setSubmitOk(false);};
   const JENIS=[{k:"Izin",icon:"📝",color:"#d97706",bg:"#fffbeb",desc:"Keperluan pribadi"},{k:"Sakit",icon:"🤒",color:"#dc2626",bg:"#fff5f5",desc:"Tidak masuk sakit"},{k:"Lembur",icon:"🌙",color:"#7c3aed",bg:"#f5f3ff",desc:"Kerja di luar jam"}];
-  const TABS_P=[{k:"beranda",icon:"🏠",label:"Beranda"},{k:"kinerja",icon:"📊",label:"Kinerja"},{k:"absensi",icon:"📅",label:"Absensi"},{k:"misi",icon:"🎯",label:"Misi"},{k:"qc",icon:"🔍",label:"QC"},{k:"profil",icon:"👤",label:"Profil"}];
+  const TABS_P=[{k:"beranda",icon:"🏠",label:"Beranda"},{k:"kinerja",icon:"📊",label:"Kinerja"},{k:"absensi",icon:"📅",label:"Absensi"},{k:"misi",icon:"🎯",label:"Misi"},{k:"profil",icon:"👤",label:"Profil"}];
   const todayStr=new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
   const outletNama=outlets.find(o=>o.id===user.outletId)?.nama||"Outlet";
 
@@ -11963,97 +12067,6 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
             {fotoStep!=="done"&&<button onClick={()=>{stopFotoKam();setMisiFotoTarget(null);setFotoStep("before");setFotoData({});}} style={{width:"100%",padding:"10px",marginTop:8,borderRadius:10,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>}
           </div>
         </div>
-      )}
-
-      {/* ═══ QC STOK & MODAL ═══ */}
-      {tab==="qc"&&(
-      <div className="pk-card">
-        <div style={{background:"linear-gradient(135deg,#0a3a35,#0d9488)",borderRadius:16,padding:"16px 18px",color:"#fff",marginBottom:14}}>
-          <div style={{fontWeight:900,fontSize:15}}>🔍 QC Stok — {qcOutletNama}</div>
-          <div style={{fontSize:11,opacity:.75,marginTop:2}}>Scan barcode untuk cek stok fisik vs sistem</div>
-        </div>
-
-        {!qcScanned&&(
-          <div style={{display:"flex",gap:7,marginBottom:14}}>
-            <input value={qcBarcode} onChange={e=>setQcBarcode(e.target.value)} onKeyDown={handleQcScan} autoFocus placeholder="Scan / ketik barcode..."
-              style={{flex:1,padding:"12px 14px",borderRadius:11,border:"2px solid #b2ede6",fontSize:14,outline:"none",fontFamily:"inherit"}}/>
-            <button onClick={handleQcScan} style={{background:"#0d9488",border:"none",borderRadius:11,padding:"0 18px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cari</button>
-          </div>
-        )}
-
-        {qcScanned&&(
-          <div className="fade" style={{background:"#fff",borderRadius:16,border:"2px solid #0d9488",padding:18,marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
-              <div>
-                <div style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{qcScanned.name}</div>
-                <div style={{fontSize:10,color:"#aaa",marginTop:2}}>Barcode: {qcScanned.barcode}</div>
-                {(qcScanned.qcKategori||qcScanned.qc_kategori)&&<div style={{fontSize:10,color:"#aaa"}}>Kategori: {qcCatInfo(qcScanned.qcKategori||qcScanned.qc_kategori).l}</div>}
-              </div>
-              <button onClick={()=>setQcScanned(null)} style={{background:"#f0f0f0",border:"none",borderRadius:8,width:26,height:26,color:"#999",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-            </div>
-
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-              <div style={{background:"#f0faf8",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-                <div style={{fontSize:10,color:"#888",fontWeight:700}}>Stok Sistem</div>
-                <div style={{fontWeight:900,fontSize:22,color:"#0d9488"}}>{qcScanned.stokSistem}</div>
-                <div style={{fontSize:9,color:"#aaa"}}>Modal: {fmtRp(qcScanned.modal||0)}</div>
-              </div>
-              <div>
-                <label style={{fontSize:10,color:"#888",fontWeight:700,display:"block",marginBottom:5,textAlign:"center"}}>Stok Fisik</label>
-                <input type="number" value={qcStokFisik} onChange={e=>setQcStokFisik(e.target.value)} placeholder="0" autoFocus
-                  style={{width:"100%",padding:"10px",borderRadius:10,border:"2px solid #b2ede6",fontSize:20,fontWeight:900,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
-              </div>
-            </div>
-
-            {qcStokFisik!==""&&(
-              <div className="fade" style={{marginBottom:14,padding:"8px 12px",borderRadius:9,textAlign:"center",fontSize:12,fontWeight:800,
-                background:(+qcStokFisik-qcScanned.stokSistem)===0?"#f0fdf4":"#fef3c7",
-                color:(+qcStokFisik-qcScanned.stokSistem)===0?"#16a34a":"#d97706"}}>
-                {(+qcStokFisik-qcScanned.stokSistem)===0 ? "✅ Stok cocok, tidak ada selisih" :
-                  `⚠ Selisih ${(+qcStokFisik-qcScanned.stokSistem)>0?"+":""}${+qcStokFisik-qcScanned.stokSistem} pcs dari sistem`}
-              </div>
-            )}
-
-            <button onClick={simpanQcItem} disabled={qcStokFisik===""}
-              style={{width:"100%",padding:12,borderRadius:11,border:"none",background:qcStokFisik===""?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:qcStokFisik===""?"not-allowed":"pointer",fontFamily:"inherit"}}>
-              💾 Simpan & Lanjut Scan Berikutnya
-            </button>
-          </div>
-        )}
-
-        {qcCheckedItems.length>0&&(
-          <div className="fade">
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a"}}>Item Sudah Dicek ({qcCheckedItems.length})</div>
-              {qcCheckedItems.filter(i=>i.selisih!==0).length>0&&<span style={{fontSize:10,fontWeight:800,color:"#d97706",background:"#fef3c7",padding:"2px 8px",borderRadius:20}}>{qcCheckedItems.filter(i=>i.selisih!==0).length} selisih</span>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
-              {qcCheckedItems.map((it,i)=>(
-                <div key={i} style={{background:"#fff",borderRadius:10,border:"1px solid #e0f5f1",padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <div style={{fontSize:12,fontWeight:700}}>{it.name}</div>
-                    <div style={{fontSize:10,color:"#aaa"}}>Sistem: {it.stokSistem} → Fisik: {it.stokFisik}</div>
-                  </div>
-                  <span style={{fontWeight:800,fontSize:12,color:it.selisih===0?"#16a34a":"#d97706"}}>
-                    {it.selisih===0?"✓ Cocok":(it.selisih>0?`+${it.selisih}`:it.selisih)}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <button onClick={selesaikanQc} disabled={qcSaving}
-              style={{width:"100%",padding:13,borderRadius:11,border:"none",background:qcSaving?"#ccc":"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",fontWeight:900,fontSize:14,cursor:qcSaving?"wait":"pointer",fontFamily:"inherit"}}>
-              {qcSaving?"⏳ Menyimpan...":"✓ Selesai Penugasan QC"}
-            </button>
-          </div>
-        )}
-
-        {qcCheckedItems.length===0&&!qcScanned&&(
-          <div style={{textAlign:"center",padding:"30px 0",color:"#bbb",fontSize:12}}>
-            <div style={{fontSize:32,marginBottom:8}}>📦</div>
-            Scan barcode produk untuk mulai QC
-          </div>
-        )}
-      </div>
       )}
 
       {/* ═══ PROFIL ═══ */}
@@ -14232,6 +14245,7 @@ export default function App() {
     if(!u) return "menu";
     if(u.role==="monitor")  return "monitor";
     if(u.role==="cashflow") return "cashflow";
+    if(u.role==="qc")       return "qc-staff";
     if(u.role==="admin")    return "menu";
     if(u.role==="kasir"||u.role==="bank"||u.role==="staff") return "pilih";
     // karyawan lama dengan outlet → pilih dulu
@@ -15036,6 +15050,7 @@ export default function App() {
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
   const isCashflowOnly = user?.role==="cashflow";
+  const isQcOnly = user?.role==="qc";
 
   // -- Aturan orientasi per halaman (hanya berlaku di device sentuh: HP/tablet) --
   // Kasir / Bank / Kasir+Bank Gabungan → WAJIB landscape
@@ -15090,6 +15105,7 @@ export default function App() {
         setUser(u);
         if(u.role==="monitor") { setPage("monitor"); return; }
         if(u.role==="cashflow") { setPage("cashflow"); return; }
+        if(u.role==="qc")      { setPage("qc-staff"); return; }
         if(u.role==="admin")   { setPage("menu");    return; }
         if(u.role==="kasir"||u.role==="bank"||u.role==="staff") { setPage("pilih"); return; }
         if(u.role==="karyawan") {
@@ -15163,6 +15179,7 @@ export default function App() {
       </>)}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && (isAdmin||isCashflowOnly) && <CashflowPage  transactions={transactions} outlets={outlets} onBack={isCashflowOnly?null:()=>setPage("menu")} notify={notify} initialTab={isCashflowOnly?"jurnal":"kalkulator"} isCashflowOnly={isCashflowOnly}/>}
+      {page==="qc-staff"  && isQcOnly && <QCStaffPage user={user} outlets={outlets} products={products} stocks={stocks} notify={notify}/>}
       {page==="produk"    && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>{reloadData();setPage("menu");}} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
       {page==="stok"      && isAdmin && <ProdukPage    products={products} setProducts={setProducts} stocks={stocks} setStocks={setStocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify} prodOrderRoot={prodOrder} setProdOrderRoot={setProdOrderRoot} aktifProdsRoot={aktifProdsRoot} setAktifProdsRoot={setAktifProdsRoot}/>}
       {page==="outlet"    && isAdmin && <OutletPage    outlets={outlets} setOutlets={setOutlets} users={users} setUsers={setUsers} stocks={stocks} setStocks={setStocks} products={products} onBack={()=>{reloadData();setPage("menu");}} notify={notify}/>}
@@ -15184,6 +15201,16 @@ export default function App() {
           </div>
         </div>
       )}
+      {page!=="qc-staff"&&isQcOnly&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:48,marginBottom:12}}>🔒</div>
+            <div style={{fontWeight:900,fontSize:18,color:"#0d9488"}}>Akses Terbatas</div>
+            <div style={{color:"#888",fontSize:13,marginTop:6}}>Akun ini hanya bisa mengakses QC Stok</div>
+            <button onClick={()=>setPage("qc-staff")} style={{background:"#0d9488",border:"none",borderRadius:10,padding:"10px 24px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginTop:16}}>Kembali ke QC</button>
+          </div>
+        </div>
+      )}
       {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","kasir","bank"].includes(page)&&isMonitor&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
           <div style={{textAlign:"center"}}>
@@ -15194,7 +15221,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","monitor"].includes(page)&&!isAdmin&&!isMonitor&&!isCashflowOnly&&(
+      {["produk","outlet","stok","dashboard","overall","laporan","saldo","saldobank","cashflow","monitor"].includes(page)&&!isAdmin&&!isMonitor&&!isCashflowOnly&&!isQcOnly&&(
         <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0faf8",flexDirection:"column",gap:12,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:48}}>🔒</div>
           <div style={{fontWeight:900,fontSize:18,color:"#ff4757"}}>Akses Ditolak</div>
