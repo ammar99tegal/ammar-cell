@@ -3720,6 +3720,77 @@ function LaporanPage({ transactions, outlets, onBack }) {
           {/* == TAB KASIR == */}
           {detailTab==="kasir"&&(<>
 
+          {/* ═══ REKAP TUTUP KASIR — gaya struk ═══ */}
+          {isClosed&&saldo&&(()=>{
+            const modalAwal = (saldo?.totalSaldoApps||Object.values(saldo?.saldoApps||{}).reduce((s,v)=>s+(+v||0),0)) + (saldo?.cashKembalian||0);
+            const kasAkhir  = (saldo?.kasNyataSystem ?? (modalAwal + gOmset));
+            const selisih   = saldo?.selisih ?? 0;
+            const selisihColor = selisih===0?"#2ecc71":selisih>0?"#f39c12":"#ff4757";
+            return (
+            <div style={{
+              background:"linear-gradient(160deg,#0a3a35,#0d9488 55%,#0a7a70)",
+              borderRadius:18, padding:"22px 24px", marginBottom:18,
+              boxShadow:"0 10px 30px rgba(13,148,136,.28)", color:"#fff", position:"relative", overflow:"hidden",
+            }}>
+              {/* dekor lingkaran */}
+              <div style={{position:"absolute",top:-40,right:-40,width:140,height:140,borderRadius:"50%",background:"rgba(255,255,255,.06)"}}/>
+              <div style={{position:"absolute",bottom:-50,left:-30,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
+
+              <div style={{position:"relative"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{fontSize:20}}>🌙</span>
+                  <span style={{fontWeight:900,fontSize:15,letterSpacing:.3}}>
+                    {saldo?.waktuTutup ? `JAM ${saldo.waktuTutup} — TUTUP KASIR` : "TUTUP KASIR"}
+                  </span>
+                </div>
+                <div style={{fontSize:11,opacity:.75,marginBottom:14}}>{group.outletNama} · {group.label}</div>
+
+                <div style={{borderTop:"1.5px dashed rgba(255,255,255,.3)",margin:"0 0 14px"}}/>
+
+                <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                  {[
+                    {l:"Total transaksi hari ini", v:`${group.items.length}`, plain:true},
+                    {l:"Total omzet",               v:fmtRp(gOmset)},
+                    {l:"Total item terjual",        v:`${gItems}`, plain:true},
+                  ].map(r=>(
+                    <div key={r.l} style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                      <span style={{opacity:.85}}>{r.l}</span>
+                      <span style={{fontWeight:800}}>{r.v}</span>
+                    </div>
+                  ))}
+
+                  <div style={{borderTop:"1px solid rgba(255,255,255,.15)",margin:"4px 0"}}/>
+
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                    <span style={{opacity:.85}}>Modal kas awal <span style={{opacity:.6,fontSize:10}}>(kembalian + saldo aplikasi)</span></span>
+                    <span style={{fontWeight:800}}>{fmtRp(modalAwal)}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                    <span style={{opacity:.85}}>Kas akhir di laci <span style={{opacity:.6,fontSize:10}}>(modal + omzet)</span></span>
+                    <span style={{fontWeight:800}}>{fmtRp(kasAkhir)}</span>
+                  </div>
+                </div>
+
+                <div style={{borderTop:"1.5px dashed rgba(255,255,255,.3)",margin:"14px 0"}}/>
+
+                <div style={{
+                  display:"flex",justifyContent:"space-between",alignItems:"center",
+                  background:"rgba(255,255,255,.12)", borderRadius:12, padding:"11px 16px",
+                  border:`1.5px solid ${selisih===0?"rgba(46,204,113,.5)":"rgba(255,255,255,.25)"}`,
+                }}>
+                  <div>
+                    <div style={{fontSize:11,opacity:.8,fontWeight:700}}>Selisih</div>
+                    <div style={{fontSize:9,opacity:.6}}>uang laci nyata vs uang sistem</div>
+                  </div>
+                  <span style={{fontWeight:900,fontSize:20,color:selisihColor===  "#2ecc71"?"#86efac":selisihColor==="#f39c12"?"#fde68a":"#fca5a5"}}>
+                    {selisih===0?"Rp 0 ✅":selisih>0?`+${fmtRp(selisih)}`:`-${fmtRp(Math.abs(selisih))}`}
+                  </span>
+                </div>
+              </div>
+            </div>
+            );
+          })()}
+
           {/* Ringkasan shift */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
             {[
