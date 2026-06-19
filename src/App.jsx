@@ -3421,11 +3421,17 @@ function LaporanPage({ transactions, outlets, onBack }) {
         // (tidak bergantung pada prop transactions yang mungkin stale)
         let freshTx = [];
         try {
-          const {data:txData} = await supabase
+          // Ambil transaksi sesuai rentang tanggal yang dipilih (bukan limit tetap)
+          // agar shift lama tidak hilang transaksinya saat data sudah banyak (>2000 baris)
+          const fromISO = laporanDateFrom ? new Date(laporanDateFrom+'T00:00:00').toISOString() : null;
+          const toISO   = laporanDateTo   ? new Date(laporanDateTo+'T23:59:59').toISOString()   : null;
+          let txQuery = supabase
             .from('transactions')
-            .select('id,shift_id,outlet_id,total,date,kasir,items')
-            .order('created_at',{ascending:false})
-            .limit(2000);
+            .select('id,shift_id,outlet_id,total,date,kasir,items,created_at')
+            .order('created_at',{ascending:false});
+          if(fromISO) txQuery = txQuery.gte('created_at', fromISO);
+          if(toISO)   txQuery = txQuery.lte('created_at', toISO);
+          const {data:txData} = await txQuery.limit(5000);
           // Backup transaksi ke localStorage untuk riwayat offline
           if(txData?.length>0) try{localStorage.setItem('laporan_tx_backup',JSON.stringify(txData.slice(0,100)));}catch{}
           freshTx = (txData||[]).map(t=>({
@@ -3582,7 +3588,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_shift_logs'},()=>{ loadLogs(); })
       .subscribe();
     return ()=>{ clearInterval(iv); supabase.removeChannel(ch); };
-  },[refreshTrigger]);const getShiftSaldo = (shiftId) => {
+  },[refreshTrigger, laporanDateFrom, laporanDateTo]);const getShiftSaldo = (shiftId) => {
     // Prioritas 1: Supabase shift_logs by shift ID
     if(shiftLogs[shiftId]) return shiftLogs[shiftId];
 
