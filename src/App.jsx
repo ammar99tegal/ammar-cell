@@ -44,6 +44,18 @@ const now   = () => new Date().toLocaleString("id-ID");
 const uid   = () => Math.random().toString(36).substr(2,8).toUpperCase();
 const today = () => new Date().toLocaleDateString("id-ID");
 
+// Kategori QC Stok & Modal — dipakai untuk grouping modal di dashboard QC
+const QC_CATEGORIES = [
+  { k:"voucher",   l:"Stok Voucher",          icon:"🎫", c:"#0d9488", bg:"#e0faf5" },
+  { k:"perdana",   l:"Stok Kartu Perdana",     icon:"📶", c:"#2980b9", bg:"#e8f4fd" },
+  { k:"galon",     l:"Stok Galon",             icon:"💧", c:"#0891b2", bg:"#ecfeff" },
+  { k:"aksesoris", l:"Stok Aksesoris",         icon:"🔌", c:"#8e44ad", bg:"#f5eeff" },
+  { k:"minuman",   l:"Stok Minuman",           icon:"🥤", c:"#e67e22", bg:"#fff3e0" },
+  { k:"bahan",     l:"Stok Bahan Minuman",     icon:"🧃", c:"#d97706", bg:"#fffbeb" },
+  { k:"saldo",     l:"Stok Saldo",             icon:"💳", c:"#16a34a", bg:"#f0fdf4" },
+];
+const qcCatInfo = (k) => QC_CATEGORIES.find(c=>c.k===k) || { k:"", l:"Belum Dikategorikan", icon:"📦", c:"#999", bg:"#f5f5f5" };
+
 // ── Helper: periode key untuk grouping misi/todo (harian/mingguan/bulanan) ──
 const isoDate = (d=new Date()) => d.toISOString().slice(0,10); // "2026-06-12"
 const getPeriodeKey = (periode, d=new Date()) => {
@@ -439,6 +451,7 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
     {id:"overall",  icon:Ic.Laporan(),  label:"Dashboard Overall",  desc:"Semua lini bisnis & analisis", color:"#8e44ad", bg:"#f5eeff", roles:["admin"]},
     {id:"laporan",  icon:Ic.Laporan(),  label:"Laporan",            desc:"Riwayat, per outlet & shift",  color:"#c0392b", bg:"#fff0f0", roles:["admin"]},
     {id:"strategi", icon:"🧠",      label:"Strategi Bulanan",   desc:"Insight & misi otomatis dari penjualan", color:"#4338ca", bg:"#eef2ff", roles:["admin"]},
+    {id:"qc",       icon:"🔍",      label:"QC Stok & Modal",    desc:"Pemantauan modal & cek fisik berkala",  color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
     {id:"portal-admin", icon:"👷",      label:"Portal Karyawan",    desc:"Kelola misi, absensi & izin",  color:"#0d9488", bg:"#e0faf5", roles:["admin"]},
   ];
   const accessible = menus.filter(m=>m.roles.includes(user.role));
@@ -1141,7 +1154,7 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
   useEffect(()=>{ if(aktifProdsRoot&&Object.keys(aktifProdsRoot).length>0) setAktifProds(aktifProdsRoot); },[aktifProdsRoot]);
   const [showModal,   setShowModal]   = useState(false);
   const [editTarget,  setEditTarget]  = useState(null);
-  const [form,        setForm]        = useState({name:"",barcode:"",category:"",price:"",modal:""});
+  const [form,        setForm]        = useState({name:"",barcode:"",category:"",price:"",modal:"",qcKategori:""});
   const [search,      setSearch]      = useState("");
   const [catFilter,   setCatFilter]   = useState("Semua");
   const [confirmDel,  setConfirmDel]  = useState(null);
@@ -1214,22 +1227,22 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
     return 0;
   });
 
-  const openAdd  = ()=>{ setEditTarget(null); setForm({name:"",barcode:"",category:"",price:"",modal:""}); setShowModal(true); };
-  const openEdit = p=>{ setEditTarget(p); setForm({name:p.name,barcode:p.barcode||"",category:p.category,price:String(p.price),modal:String(p.modal)}); setShowModal(true); };
+  const openAdd  = ()=>{ setEditTarget(null); setForm({name:"",barcode:"",category:"",price:"",modal:"",qcKategori:""}); setShowModal(true); };
+  const openEdit = p=>{ setEditTarget(p); setForm({name:p.name,barcode:p.barcode||"",category:p.category,price:String(p.price),modal:String(p.modal),qcKategori:p.qcKategori||p.qc_kategori||""}); setShowModal(true); };
 
   const save = async ()=>{
     if(!form.name.trim())    return notify("Isi nama produk!","err");
     if(!form.price)          return notify("Isi harga jual!","err");
     if(!form.category.trim())return notify("Isi kategori!","err");
     if(editTarget){
-      const updated={name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0};
-      try{ await db.updateProduct(editTarget.id,updated); setProducts(prev=>prev.map(p=>p.id===editTarget.id?{...p,...updated}:p)); notify("Produk diperbarui ✓","ok"); }
+      const updated={name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0,qc_kategori:form.qcKategori||null};
+      try{ await db.updateProduct(editTarget.id,updated); setProducts(prev=>prev.map(p=>p.id===editTarget.id?{...p,...updated,qcKategori:form.qcKategori}:p)); notify("Produk diperbarui ✓","ok"); }
       catch{ notify("Gagal simpan!","err"); return; }
     } else {
-      const newProd={name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0};
+      const newProd={name:form.name.trim(),barcode:form.barcode.trim(),category:form.category.trim(),price:+form.price,modal:+form.modal||0,qc_kategori:form.qcKategori||null};
       try{
         const saved=await db.addProduct(newProd);
-        setProducts(prev=>[...prev,saved]);
+        setProducts(prev=>[...prev,{...saved,qcKategori:form.qcKategori}]);
         setStocks(prev=>{ const s={...prev}; Object.keys(s).forEach(oid=>{s[oid]={...s[oid],[saved.id]:0};}); return s; });
         notify("Produk ditambahkan ✓","ok");
       } catch{ notify("Gagal tambah!","err"); return; }
@@ -1656,6 +1669,21 @@ function ProdukPage({ products, setProducts, stocks, setStocks, outlets, onBack,
               <span style={{fontWeight:900,color:"#0d9488"}}>{fmtRp(+form.price-+form.modal)} <span style={{fontSize:10,color:"#888"}}>({Math.round(((+form.price-+form.modal)/+form.modal)*100)}%)</span></span>
             </div>
           )}
+          <div style={{marginBottom:10}}>
+            <label style={{...lbl}}>Kategori QC <span style={{fontWeight:400,color:"#aaa"}}>(untuk Pemantauan Modal)</span></label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              <button onClick={()=>setForm(p=>({...p,qcKategori:""}))}
+                style={{padding:"5px 11px",borderRadius:20,border:`2px solid ${!form.qcKategori?"#999":"#e5e5e5"}`,background:!form.qcKategori?"#f0f0f0":"#fff",color:!form.qcKategori?"#666":"#aaa",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                Tidak dikategorikan
+              </button>
+              {QC_CATEGORIES.map(c=>(
+                <button key={c.k} onClick={()=>setForm(p=>({...p,qcKategori:c.k}))}
+                  style={{display:"flex",alignItems:"center",gap:4,padding:"5px 11px",borderRadius:20,border:`2px solid ${form.qcKategori===c.k?c.c:"#e5e5e5"}`,background:form.qcKategori===c.k?c.bg:"#fff",color:form.qcKategori===c.k?c.c:"#aaa",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {c.icon} {c.l.replace("Stok ","")}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{display:"flex",gap:8,marginTop:4}}>
             <button onClick={()=>setShowModal(false)} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:11,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
             <button onClick={save} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:11,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{editTarget?"💾 Simpan":"✓ Tambah"}</button>
@@ -4606,6 +4634,209 @@ function GabunganPage(props) {
       <div style={{display: tab==="bank"?"block":"none"}}>
         <BankPage user={props.user} outlets={props.outlets} saldoApps={props.saldoBank} onBack={()=>{}} notify={props.notify} embedded portalMisi={props.portalMisi} portalMisiProgress={props.portalMisiProgress} products={props.products}/>
       </div>
+    </div>
+  );
+}
+
+// ==============================================================================
+// QC STOK & MODAL — Pemantauan modal per kategori + log riwayat cek QC karyawan
+// ==============================================================================
+function QCAdminPage({ products, stocks, outlets, onBack, notify }) {
+  const [tab, setTab] = useState("modal"); // modal | log
+  const [expandedCat, setExpandedCat] = useState(null);
+  const [qcSessions, setQcSessions] = useState([]);
+  const [qcChecksMap, setQcChecksMap] = useState({}); // sessionId -> [checks]
+  const [loading, setLoading] = useState(true);
+  const [expandedSession, setExpandedSession] = useState(null);
+
+  useEffect(()=>{
+    let alive = true;
+    (async()=>{
+      try{
+        const {data: sessions} = await supabase.from('qc_sessions').select('*').order('created_at',{ascending:false}).limit(100);
+        if(alive) setQcSessions(sessions||[]);
+        const {data: checks} = await supabase.from('qc_checks').select('*').order('created_at',{ascending:false}).limit(2000);
+        if(alive){
+          const m={};
+          (checks||[]).forEach(c=>{ if(!m[c.session_id]) m[c.session_id]=[]; m[c.session_id].push(c); });
+          setQcChecksMap(m);
+        }
+      }catch(e){ console.warn('QC load:',e); }
+      if(alive) setLoading(false);
+    })();
+    const ch = supabase.channel('qc-rt')
+      .on('postgres_changes',{event:'*',schema:'public',table:'qc_sessions'},async()=>{
+        const {data} = await supabase.from('qc_sessions').select('*').order('created_at',{ascending:false}).limit(100);
+        if(alive) setQcSessions(data||[]);
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'qc_checks'},async()=>{
+        const {data} = await supabase.from('qc_checks').select('*').order('created_at',{ascending:false}).limit(2000);
+        if(alive){
+          const m={};
+          (data||[]).forEach(c=>{ if(!m[c.session_id]) m[c.session_id]=[]; m[c.session_id].push(c); });
+          setQcChecksMap(m);
+        }
+      })
+      .subscribe();
+    return ()=>{ alive=false; supabase.removeChannel(ch); };
+  },[]);
+
+  // Hitung modal per kategori QC, berdasarkan stok TERKINI x modal produk (bukan dari hasil scan)
+  const dataPerKategori = QC_CATEGORIES.map(cat=>{
+    const prodsInCat = products.filter(p=>(p.qcKategori||p.qc_kategori)===cat.k);
+    let total=0, modal=0;
+    const outletBreakdown = outlets.map(o=>{
+      let qty=0, m=0;
+      prodsInCat.forEach(p=>{
+        const stok = stocks[o.id]?.[p.id]||0;
+        qty += stok;
+        m += stok*(p.modal||0);
+      });
+      total+=qty; modal+=m;
+      return { nama:o.nama, qty, modal:m };
+    }).filter(o=>o.qty>0||o.modal>0);
+    return { ...cat, total, modal, outlets: outletBreakdown, prodCount: prodsInCat.length };
+  });
+  const totalModalSemua = dataPerKategori.reduce((s,c)=>s+c.modal,0);
+  const totalItemSemua  = dataPerKategori.reduce((s,c)=>s+c.total,0);
+  const produkTanpaKategori = products.filter(p=>!(p.qcKategori||p.qc_kategori)).length;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{background:"linear-gradient(135deg,#0a3a35,#0d9488,#0a7a70)",padding:"14px 20px",display:"flex",alignItems:"center",gap:12}}>
+        <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>← Menu</button>
+        <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>🔍 QC Stok & Modal</div>
+      </div>
+
+      <div style={{margin:"16px 20px",background:"linear-gradient(135deg,#0a3a35,#0d9488,#0a7a70)",borderRadius:18,padding:"20px 24px",color:"#fff"}}>
+        <div style={{fontSize:11,opacity:.75,marginBottom:16}}>Pemantauan modal per kategori & cek berkala stok fisik vs sistem, semua outlet</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div style={{background:"rgba(255,255,255,.12)",borderRadius:12,padding:"12px 16px"}}>
+            <div style={{fontSize:10,opacity:.75}}>Total Modal Tersimpan</div>
+            <div style={{fontWeight:900,fontSize:22}}>{fmtRp(totalModalSemua)}</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,.12)",borderRadius:12,padding:"12px 16px"}}>
+            <div style={{fontSize:10,opacity:.75}}>Total Item Tercatat</div>
+            <div style={{fontWeight:900,fontSize:22}}>{totalItemSemua.toLocaleString("id-ID")} pcs</div>
+          </div>
+        </div>
+      </div>
+
+      {produkTanpaKategori>0&&(
+        <div style={{margin:"0 20px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"9px 14px",fontSize:11,color:"#d97706",fontWeight:600}}>
+          ⚠ {produkTanpaKategori} produk belum diberi Kategori QC — atur di Manajemen Produk agar masuk hitungan modal di sini.
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:8,padding:"0 20px 14px"}}>
+        {[["modal","💰 Modal per Kategori"],["log","📋 Log QC Karyawan"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)}
+            style={{padding:"8px 16px",borderRadius:10,border:`2px solid ${tab===k?"#0d9488":"#e0f5f1"}`,background:tab===k?"#e0faf5":"#fff",color:tab===k?"#0d9488":"#888",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {tab==="modal" && (
+        <div style={{padding:"0 20px 30px",display:"flex",flexDirection:"column",gap:10}}>
+          {dataPerKategori.map(cat=>{
+            const isOpen = expandedCat===cat.k;
+            return (
+              <div key={cat.k} style={{background:"#fff",borderRadius:14,border:`2px solid ${isOpen?cat.c:"#e0f5f1"}`,overflow:"hidden"}}>
+                <button onClick={()=>setExpandedCat(isOpen?null:cat.k)}
+                  style={{width:"100%",display:"flex",alignItems:"center",gap:14,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                  <div style={{width:42,height:42,borderRadius:12,background:cat.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{cat.icon}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{cat.l}</div>
+                    <div style={{fontSize:11,color:"#aaa"}}>{cat.total.toLocaleString("id-ID")} pcs di {cat.outlets.length} outlet · {cat.prodCount} produk</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontWeight:900,fontSize:15,color:cat.c}}>{fmtRp(cat.modal)}</div>
+                  </div>
+                  <span style={{color:"#bbb",fontSize:14,transform:isOpen?"rotate(180deg)":"none",transition:"transform .2s",flexShrink:0}}>▾</span>
+                </button>
+                {isOpen && (
+                  <div style={{borderTop:`1px solid ${cat.bg}`,padding:"10px 16px 14px"}}>
+                    {cat.outlets.length===0?(
+                      <div style={{fontSize:11,color:"#bbb",textAlign:"center",padding:8}}>Belum ada stok di kategori ini</div>
+                    ):(<>
+                      <div style={{fontSize:10,fontWeight:700,color:"#aaa",marginBottom:8,textTransform:"uppercase",letterSpacing:.3}}>Rincian per outlet</div>
+                      {cat.outlets.map((o,i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<cat.outlets.length-1?"1px solid #f5f5f5":"none"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{width:6,height:6,borderRadius:"50%",background:cat.c}}/>
+                            <span style={{fontSize:12,fontWeight:600,color:"#444"}}>{o.nama}</span>
+                          </div>
+                          <div style={{textAlign:"right"}}>
+                            <span style={{fontSize:11,color:"#999",marginRight:10}}>{o.qty} pcs</span>
+                            <span style={{fontSize:12,fontWeight:800,color:"#1a2e2a"}}>{fmtRp(o.modal)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </>)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab==="log" && (
+        <div style={{padding:"0 20px 30px",display:"flex",flexDirection:"column",gap:10}}>
+          {loading?(
+            <div style={{textAlign:"center",padding:30,color:"#bbb",fontSize:12}}>Memuat riwayat QC...</div>
+          ):qcSessions.length===0?(
+            <div style={{textAlign:"center",padding:30,color:"#bbb",fontSize:12,background:"#fff",borderRadius:14,border:"2px solid #e0f5f1"}}>Belum ada riwayat QC dari karyawan</div>
+          ):qcSessions.map(s=>{
+            const checks = qcChecksMap[s.id]||[];
+            const isOpen = expandedSession===s.id;
+            return (
+              <div key={s.id} style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+                <div style={{padding:"14px 16px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{s.staff_nama||s.staff_username}</div>
+                      <div style={{fontSize:11,color:"#aaa"}}>{s.outlet_nama} · {new Date(s.created_at).toLocaleString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                    </div>
+                    <span style={{background:"#dcfce7",color:"#16a34a",fontWeight:800,fontSize:10,padding:"3px 10px",borderRadius:20}}>✓ Selesai</span>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{s.total_item}</div>
+                      <div style={{fontSize:9,color:"#888"}}>Item Dicek</div>
+                    </div>
+                    <div style={{flex:1,background:s.total_selisih>0?"#fef3c7":"#f0fdf4",borderRadius:9,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:15,color:s.total_selisih>0?"#d97706":"#16a34a"}}>{s.total_selisih}</div>
+                      <div style={{fontSize:9,color:"#888"}}>Item Selisih</div>
+                    </div>
+                  </div>
+                  <button onClick={()=>setExpandedSession(isOpen?null:s.id)} style={{width:"100%",marginTop:10,padding:"7px",borderRadius:8,border:"1px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                    {isOpen?"Tutup Rincian ▴":"Lihat Detail Rincian ▾"}
+                  </button>
+                </div>
+                {isOpen&&(
+                  <div style={{borderTop:"1px solid #f0faf8",padding:"10px 16px 14px",background:"#fafffe"}}>
+                    {checks.length===0?(
+                      <div style={{fontSize:11,color:"#bbb",textAlign:"center",padding:8}}>Tidak ada rincian item</div>
+                    ):checks.map((c,i)=>(
+                      <div key={c.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<checks.length-1?"1px solid #f0faf8":"none"}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:"#1a2e2a"}}>{c.product_name}</div>
+                          <div style={{fontSize:10,color:"#aaa"}}>Sistem: {c.stok_sistem} → Fisik: {c.stok_fisik} · Modal: {fmtRp(c.modal||0)}</div>
+                        </div>
+                        <span style={{fontWeight:800,fontSize:12,color:c.selisih===0?"#16a34a":"#d97706"}}>
+                          {c.selisih===0?"✓ Cocok":(c.selisih>0?`+${c.selisih}`:c.selisih)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -10972,7 +11203,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
 // ==============================================================================
 // PORTAL KARYAWAN
 // ==============================================================================
-function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, onKembali, notify, todos=[], todoStatus={}, poinRate=1000, misiProgress={}, misiFoto=[], setMisiFoto=()=>{}, users={} }) {
+function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absensiMap, izinMap, setAbsensiMap, setIzinMap, onLogout, onKembali, notify, todos=[], todoStatus={}, poinRate=1000, misiProgress={}, misiFoto=[], setMisiFoto=()=>{}, users={}, products=[], stocks={} }) {
   const [tab,setTab]           = useState("beranda");
   const [clock,setClock]       = useState(new Date().toLocaleTimeString("id-ID"));
   const [absenMasuk,setAbsenM] = useState(()=>{ const t=today(); return (absensiMap[user.username]||[]).find(a=>a.tgl===t&&a.masuk)?absensiMap[user.username].find(a=>a.tgl===t):null; });
@@ -11103,6 +11334,61 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
 
   // Kalkulasi misi (per-user, per-periode dari portalMisiProgress)
   const username = user.username||user.id;
+
+  // ── QC Stok & Modal ──
+  const [qcBarcode, setQcBarcode] = useState("");
+  const [qcScanned, setQcScanned] = useState(null);
+  const [qcStokFisik, setQcStokFisik] = useState("");
+  const [qcCheckedItems, setQcCheckedItems] = useState([]);
+  const [qcSaving, setQcSaving] = useState(false);
+  const qcOutletId = user.outletId || outlets[0]?.id || "";
+  const qcOutletNama = outlets.find(o=>o.id===qcOutletId)?.nama || "Outlet";
+
+  const handleQcScan = (e) => {
+    if(e.key!=="Enter"&&e.type!=="click") return;
+    const code = qcBarcode.trim();
+    if(!code) return;
+    const prod = products.find(p=>p.barcode===code);
+    if(!prod){ notify("Produk tidak ditemukan!","err"); setQcBarcode(""); return; }
+    const stokSistem = stocks[qcOutletId]?.[prod.id] || 0;
+    setQcScanned({...prod, stokSistem});
+    setQcStokFisik("");
+    setQcBarcode("");
+  };
+  const simpanQcItem = () => {
+    if(!qcScanned || qcStokFisik==="") return;
+    const fisik = +qcStokFisik;
+    setQcCheckedItems(prev=>[...prev, {
+      productId: qcScanned.id, name: qcScanned.name, qcKategori: qcScanned.qcKategori||qcScanned.qc_kategori||"",
+      stokSistem: qcScanned.stokSistem, stokFisik: fisik, selisih: fisik-qcScanned.stokSistem, modal: qcScanned.modal||0,
+    }]);
+    setQcScanned(null);
+  };
+  const selesaikanQc = async () => {
+    if(qcCheckedItems.length===0) return notify("Belum ada item yang dicek","err");
+    setQcSaving(true);
+    try{
+      const sessionId = "qc"+uid();
+      const totalSelisih = qcCheckedItems.filter(i=>i.selisih!==0).length;
+      await supabase.from('qc_sessions').insert({
+        id: sessionId, outlet_id: qcOutletId, outlet_nama: qcOutletNama,
+        staff_username: username, staff_nama: user.nama,
+        total_item: qcCheckedItems.length, total_selisih: totalSelisih, status:'selesai',
+      });
+      await Promise.all(qcCheckedItems.map(it=>
+        supabase.from('qc_checks').insert({
+          id:'qci'+uid(), session_id: sessionId, outlet_id: qcOutletId,
+          product_id: it.productId, product_name: it.name, qc_kategori: it.qcKategori,
+          stok_sistem: it.stokSistem, stok_fisik: it.stokFisik, selisih: it.selisih, modal: it.modal,
+          checked_by: username, checked_by_nama: user.nama,
+        })
+      ));
+      notify("✓ Penugasan QC selesai dikirim ke admin","ok");
+      setQcCheckedItems([]);
+    }catch(e){ console.warn('selesaikanQc:',e); notify("Gagal menyimpan QC","err"); }
+    setQcSaving(false);
+  };
+
   const getMisiProgress = (m) => {
     const periodeKey = getPeriodeKey(m.periode||"harian");
     const rec = misiProgress[m.id]?.[username]?.[periodeKey];
@@ -11197,7 +11483,7 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
 
   const openSheet=()=>{setShowSheet(true);setSheetMode("pilih");setSelJenis(null);setFormAjuan({tgl:"",jam:"",ket:""});setSubmitOk(false);};
   const JENIS=[{k:"Izin",icon:"📝",color:"#d97706",bg:"#fffbeb",desc:"Keperluan pribadi"},{k:"Sakit",icon:"🤒",color:"#dc2626",bg:"#fff5f5",desc:"Tidak masuk sakit"},{k:"Lembur",icon:"🌙",color:"#7c3aed",bg:"#f5f3ff",desc:"Kerja di luar jam"}];
-  const TABS_P=[{k:"beranda",icon:"🏠",label:"Beranda"},{k:"kinerja",icon:"📊",label:"Kinerja"},{k:"absensi",icon:"📅",label:"Absensi"},{k:"misi",icon:"🎯",label:"Misi"},{k:"profil",icon:"👤",label:"Profil"}];
+  const TABS_P=[{k:"beranda",icon:"🏠",label:"Beranda"},{k:"kinerja",icon:"📊",label:"Kinerja"},{k:"absensi",icon:"📅",label:"Absensi"},{k:"misi",icon:"🎯",label:"Misi"},{k:"qc",icon:"🔍",label:"QC"},{k:"profil",icon:"👤",label:"Profil"}];
   const todayStr=new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
   const outletNama=outlets.find(o=>o.id===user.outletId)?.nama||"Outlet";
 
@@ -11677,6 +11963,97 @@ function PortalKaryawan({ user, outlets, transactions, misi, note, shift, absens
             {fotoStep!=="done"&&<button onClick={()=>{stopFotoKam();setMisiFotoTarget(null);setFotoStep("before");setFotoData({});}} style={{width:"100%",padding:"10px",marginTop:8,borderRadius:10,border:"2px solid #e0f5f1",background:"#fff",color:"#666",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Batal</button>}
           </div>
         </div>
+      )}
+
+      {/* ═══ QC STOK & MODAL ═══ */}
+      {tab==="qc"&&(
+      <div className="pk-card">
+        <div style={{background:"linear-gradient(135deg,#0a3a35,#0d9488)",borderRadius:16,padding:"16px 18px",color:"#fff",marginBottom:14}}>
+          <div style={{fontWeight:900,fontSize:15}}>🔍 QC Stok — {qcOutletNama}</div>
+          <div style={{fontSize:11,opacity:.75,marginTop:2}}>Scan barcode untuk cek stok fisik vs sistem</div>
+        </div>
+
+        {!qcScanned&&(
+          <div style={{display:"flex",gap:7,marginBottom:14}}>
+            <input value={qcBarcode} onChange={e=>setQcBarcode(e.target.value)} onKeyDown={handleQcScan} autoFocus placeholder="Scan / ketik barcode..."
+              style={{flex:1,padding:"12px 14px",borderRadius:11,border:"2px solid #b2ede6",fontSize:14,outline:"none",fontFamily:"inherit"}}/>
+            <button onClick={handleQcScan} style={{background:"#0d9488",border:"none",borderRadius:11,padding:"0 18px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cari</button>
+          </div>
+        )}
+
+        {qcScanned&&(
+          <div className="fade" style={{background:"#fff",borderRadius:16,border:"2px solid #0d9488",padding:18,marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+              <div>
+                <div style={{fontWeight:900,fontSize:15,color:"#1a2e2a"}}>{qcScanned.name}</div>
+                <div style={{fontSize:10,color:"#aaa",marginTop:2}}>Barcode: {qcScanned.barcode}</div>
+                {(qcScanned.qcKategori||qcScanned.qc_kategori)&&<div style={{fontSize:10,color:"#aaa"}}>Kategori: {qcCatInfo(qcScanned.qcKategori||qcScanned.qc_kategori).l}</div>}
+              </div>
+              <button onClick={()=>setQcScanned(null)} style={{background:"#f0f0f0",border:"none",borderRadius:8,width:26,height:26,color:"#999",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+              <div style={{background:"#f0faf8",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:10,color:"#888",fontWeight:700}}>Stok Sistem</div>
+                <div style={{fontWeight:900,fontSize:22,color:"#0d9488"}}>{qcScanned.stokSistem}</div>
+                <div style={{fontSize:9,color:"#aaa"}}>Modal: {fmtRp(qcScanned.modal||0)}</div>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:"#888",fontWeight:700,display:"block",marginBottom:5,textAlign:"center"}}>Stok Fisik</label>
+                <input type="number" value={qcStokFisik} onChange={e=>setQcStokFisik(e.target.value)} placeholder="0" autoFocus
+                  style={{width:"100%",padding:"10px",borderRadius:10,border:"2px solid #b2ede6",fontSize:20,fontWeight:900,textAlign:"center",outline:"none",fontFamily:"inherit"}}/>
+              </div>
+            </div>
+
+            {qcStokFisik!==""&&(
+              <div className="fade" style={{marginBottom:14,padding:"8px 12px",borderRadius:9,textAlign:"center",fontSize:12,fontWeight:800,
+                background:(+qcStokFisik-qcScanned.stokSistem)===0?"#f0fdf4":"#fef3c7",
+                color:(+qcStokFisik-qcScanned.stokSistem)===0?"#16a34a":"#d97706"}}>
+                {(+qcStokFisik-qcScanned.stokSistem)===0 ? "✅ Stok cocok, tidak ada selisih" :
+                  `⚠ Selisih ${(+qcStokFisik-qcScanned.stokSistem)>0?"+":""}${+qcStokFisik-qcScanned.stokSistem} pcs dari sistem`}
+              </div>
+            )}
+
+            <button onClick={simpanQcItem} disabled={qcStokFisik===""}
+              style={{width:"100%",padding:12,borderRadius:11,border:"none",background:qcStokFisik===""?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:qcStokFisik===""?"not-allowed":"pointer",fontFamily:"inherit"}}>
+              💾 Simpan & Lanjut Scan Berikutnya
+            </button>
+          </div>
+        )}
+
+        {qcCheckedItems.length>0&&(
+          <div className="fade">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontWeight:800,fontSize:12,color:"#1a2e2a"}}>Item Sudah Dicek ({qcCheckedItems.length})</div>
+              {qcCheckedItems.filter(i=>i.selisih!==0).length>0&&<span style={{fontSize:10,fontWeight:800,color:"#d97706",background:"#fef3c7",padding:"2px 8px",borderRadius:20}}>{qcCheckedItems.filter(i=>i.selisih!==0).length} selisih</span>}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+              {qcCheckedItems.map((it,i)=>(
+                <div key={i} style={{background:"#fff",borderRadius:10,border:"1px solid #e0f5f1",padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:700}}>{it.name}</div>
+                    <div style={{fontSize:10,color:"#aaa"}}>Sistem: {it.stokSistem} → Fisik: {it.stokFisik}</div>
+                  </div>
+                  <span style={{fontWeight:800,fontSize:12,color:it.selisih===0?"#16a34a":"#d97706"}}>
+                    {it.selisih===0?"✓ Cocok":(it.selisih>0?`+${it.selisih}`:it.selisih)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button onClick={selesaikanQc} disabled={qcSaving}
+              style={{width:"100%",padding:13,borderRadius:11,border:"none",background:qcSaving?"#ccc":"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",fontWeight:900,fontSize:14,cursor:qcSaving?"wait":"pointer",fontFamily:"inherit"}}>
+              {qcSaving?"⏳ Menyimpan...":"✓ Selesai Penugasan QC"}
+            </button>
+          </div>
+        )}
+
+        {qcCheckedItems.length===0&&!qcScanned&&(
+          <div style={{textAlign:"center",padding:"30px 0",color:"#bbb",fontSize:12}}>
+            <div style={{fontSize:32,marginBottom:8}}>📦</div>
+            Scan barcode produk untuk mulai QC
+          </div>
+        )}
+      </div>
       )}
 
       {/* ═══ PROFIL ═══ */}
@@ -14765,8 +15142,9 @@ export default function App() {
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
-      {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto} users={users}/>}
+      {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto} users={users} products={products} stocks={stocks}/>}
       {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
+      {page==="qc" && isAdmin && <QCAdminPage products={products} stocks={stocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
       {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products} strukConfig={strukConfig} setStrukConfig={setStrukConfig} currentUser={user}/>}
       {page==="kasir"     && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
