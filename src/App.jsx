@@ -3377,11 +3377,18 @@ function LaporanPage({ transactions, outlets, onBack }) {
     groups[key].items.push(t);
   });
   if(typeof window!=="undefined"){
+    const logKeys = Object.keys(shiftLogs).filter(k=>k.length<=32);
+    const sample = txSource.slice(0,5);
     window.__debugLaporan = {
       totalFreshTx: txSource.length,
       totalFiltered: filtered.length,
-      shiftLogKeys: Object.keys(shiftLogs).filter(k=>k.length<=32),
-      sampleTx: txSource.slice(0,5).map(t=>({id:t.id,shiftId:t.shiftId,outletId:t.outletId,date:t.date})),
+      shiftLogKeys: logKeys,
+      sampleTx: sample.map(t=>({id:t.id,shiftId:t.shiftId,outletId:t.outletId,date:t.date})),
+      matchCheck: sample.map(t=>({
+        shiftId:t.shiftId,
+        adaDiShiftLogs: logKeys.includes(t.shiftId),
+        shiftLogValue: shiftLogs[t.shiftId]||null,
+      })),
     };
     console.log('[DEBUG Laporan Shift]', window.__debugLaporan);
   }
