@@ -3457,9 +3457,26 @@ function LaporanPage({ transactions, outlets, onBack }) {
           let logQuery = supabase.from('shift_logs').select('*').order('created_at',{ascending:false});
           if(fromISO) logQuery = logQuery.gte('created_at', fromISO);
           if(toISO)   logQuery = logQuery.lte('created_at', toISO);
-          const {data:logData} = await logQuery.limit(3000);
+          const {data:logData, error:logErrObj} = await logQuery.limit(3000);
+          if(logErrObj) throw logErrObj;
           logs = logData||[];
-        } catch(logErr){ logs = await dbShift.getShiftLogs().catch(()=>[]); }
+          console.log('[DEBUG shift_logs query] berhasil, total:', logs.length);
+        } catch(logErr){
+          console.warn('[DEBUG shift_logs query] GAGAL, fallback ke limit 200:', logErr?.message||logErr);
+          logs = await dbShift.getShiftLogs().catch(()=>[]);
+        }
+        if(typeof window!=="undefined"){
+          const intanSiang = logs.find(l=>l.nama==="INTAN SIANG");
+          const intanTx = (freshTx||[]).filter(t=>t.kasir==="INTAN SIANG" || t.shiftId===intanSiang?.id);
+          console.log('[DEBUG INTAN SIANG]', {
+            totalLogs: logs.length,
+            logIdSample: logs.slice(0,3).map(l=>l.id),
+            intanSiangLog: intanSiang,
+            totalFreshTxAll: (freshTx||[]).length,
+            intanSiangTxFound: intanTx.length,
+            intanSiangTxSample: intanTx.slice(0,3),
+          });
+        }
         const m={};
         logs.forEach(l=>{
           const so = l.saldo_open || {};
