@@ -3369,29 +3369,25 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
   const groups = {};
   filtered.forEach(t=>{
-    const key=t.shiftId||"no-shift";
-    const logEntry=shiftLogs[t.shiftId];
+    // shift_logs ID generation tidak selalu sama dengan shiftId transaksi (root cause bug lama)
+    // Fallback: cocokkan ke shift_logs via composite key outletId+tanggal jika ID langsung tidak match
+    const normD = (d) => {
+      const s=String(d||''); const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+      return s.slice(0,10);
+    };
+    const directLog = shiftLogs[t.shiftId];
+    const compositeKey = t.outletId+'_'+normD(t.date);
+    const compositeLog = shiftLogs[compositeKey];
+    const logEntry = directLog || compositeLog;
+    // Pakai key shift_logs yang valid kalau ketemu (biar transaksi nyambung ke shift card yang benar),
+    // fallback ke shiftId asli transaksi kalau sama sekali tidak ketemu di shift_logs manapun
+    const key = directLog ? t.shiftId : (compositeLog ? compositeKey : (t.shiftId||"no-shift"));
     const label=logEntry?.namaShift||t.shiftNama||t.kasir||"Tanpa Shift";
     const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||t.outletId||"--";
     if(!groups[key]) groups[key]={key,label,outletNama,outletId:t.outletId,items:[]};
     groups[key].items.push(t);
   });
-  if(typeof window!=="undefined"){
-    const logKeys = Object.keys(shiftLogs).filter(k=>k.length<=32);
-    const sample = txSource.slice(0,5);
-    window.__debugLaporan = {
-      totalFreshTx: txSource.length,
-      totalFiltered: filtered.length,
-      shiftLogKeys: logKeys,
-      sampleTx: sample.map(t=>({id:t.id,shiftId:t.shiftId,outletId:t.outletId,date:t.date})),
-      matchCheck: sample.map(t=>({
-        shiftId:t.shiftId,
-        adaDiShiftLogs: logKeys.includes(t.shiftId),
-        shiftLogValue: shiftLogs[t.shiftId]||null,
-      })),
-    };
-    console.log('[DEBUG Laporan Shift]', window.__debugLaporan);
-  }
   // KRITIS: Tambahkan shift dari shift_logs yang belum ada di txSource
   // Menangani: shift baru ditutup tapi transactions belum reload
   Object.entries(shiftLogs).forEach(([k,v])=>{
