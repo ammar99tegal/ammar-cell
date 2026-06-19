@@ -3369,20 +3369,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
 
   const groups = {};
   filtered.forEach(t=>{
-    // shift_logs ID generation tidak selalu sama dengan shiftId transaksi (root cause bug lama)
-    // Fallback: cocokkan ke shift_logs via composite key outletId+tanggal jika ID langsung tidak match
-    const normD = (d) => {
-      const s=String(d||''); const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-      return s.slice(0,10);
-    };
-    const directLog = shiftLogs[t.shiftId];
-    const compositeKey = t.outletId+'_'+normD(t.date);
-    const compositeLog = shiftLogs[compositeKey];
-    const logEntry = directLog || compositeLog;
-    // Pakai key shift_logs yang valid kalau ketemu (biar transaksi nyambung ke shift card yang benar),
-    // fallback ke shiftId asli transaksi kalau sama sekali tidak ketemu di shift_logs manapun
-    const key = directLog ? t.shiftId : (compositeLog ? compositeKey : (t.shiftId||"no-shift"));
+    const key=t.shiftId||"no-shift";
+    const logEntry=shiftLogs[t.shiftId];
     const label=logEntry?.namaShift||t.shiftNama||t.kasir||"Tanpa Shift";
     const outletNama=outlets.find(o=>o.id===t.outletId)?.nama||t.outletId||"--";
     if(!groups[key]) groups[key]={key,label,outletNama,outletId:t.outletId,items:[]};
@@ -3459,7 +3447,19 @@ function LaporanPage({ transactions, outlets, onBack }) {
         setFreshTransactions(freshTx);
 
         // Load closed shifts dari shift_logs
-        const logs = await dbShift.getShiftLogs();
+        // CATATAN: dbShift.getShiftLogs() default limit 200 -- terlalu kecil saat data sudah banyak,
+        // menyebabkan shift lama hilang dari laporan walau transaksinya ada (shiftId match tapi log-nya sendiri tidak ke-load).
+        // Query langsung dengan limit lebih besar + filter rentang tanggal yang dipilih.
+        let logs = [];
+        try {
+          const fromISO = laporanDateFrom ? new Date(laporanDateFrom+'T00:00:00').toISOString() : null;
+          const toISO   = laporanDateTo   ? new Date(laporanDateTo+'T23:59:59').toISOString()   : null;
+          let logQuery = supabase.from('shift_logs').select('*').order('created_at',{ascending:false});
+          if(fromISO) logQuery = logQuery.gte('created_at', fromISO);
+          if(toISO)   logQuery = logQuery.lte('created_at', toISO);
+          const {data:logData} = await logQuery.limit(3000);
+          logs = logData||[];
+        } catch(logErr){ logs = await dbShift.getShiftLogs().catch(()=>[]); }
         const m={};
         logs.forEach(l=>{
           const so = l.saldo_open || {};
