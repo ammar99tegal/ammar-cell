@@ -3376,6 +3376,15 @@ function LaporanPage({ transactions, outlets, onBack }) {
     if(!groups[key]) groups[key]={key,label,outletNama,outletId:t.outletId,items:[]};
     groups[key].items.push(t);
   });
+  if(typeof window!=="undefined"){
+    window.__debugLaporan = {
+      totalFreshTx: txSource.length,
+      totalFiltered: filtered.length,
+      shiftLogKeys: Object.keys(shiftLogs).filter(k=>k.length<=32),
+      sampleTx: txSource.slice(0,5).map(t=>({id:t.id,shiftId:t.shiftId,outletId:t.outletId,date:t.date})),
+    };
+    console.log('[DEBUG Laporan Shift]', window.__debugLaporan);
+  }
   // KRITIS: Tambahkan shift dari shift_logs yang belum ada di txSource
   // Menangani: shift baru ditutup tapi transactions belum reload
   Object.entries(shiftLogs).forEach(([k,v])=>{
@@ -3456,6 +3465,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
           m[l.id]={
             type:"closed",
             namaShift:      l.nama,
+            outletId:       l.outlet_id,
             waktuBuka:      l.start_time,
             waktuTutup:     l.end_time,
             saldoApps:      so.saldoApps || so.saldo_apps || {},
@@ -3491,6 +3501,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
           m[s.id] = {
             type:"open",
             namaShift:      s.nama,
+            outletId:       s.outlet_id,
             waktuBuka:      s.start_time,
             waktuTutup:     null,
             saldoApps:      sd.saldoApps || {},
