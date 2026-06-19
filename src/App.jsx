@@ -3422,19 +3422,29 @@ function LaporanPage({ transactions, outlets, onBack }) {
         let freshTx = [];
         try {
           // Ambil transaksi sesuai rentang tanggal yang dipilih (bukan limit tetap)
-          // agar shift lama tidak hilang transaksinya saat data sudah banyak (>2000 baris)
+          // agar shift lama tidak hilang transaksinya saat data sudah banyak.
+          // CATATAN PENTING: Supabase REST API punya hard-cap 1000 baris per request
+          // walau .limit() diset lebih besar -- harus pagination pakai .range() untuk tembus itu.
           const fromISO = laporanDateFrom ? new Date(laporanDateFrom+'T00:00:00').toISOString() : null;
           const toISO   = laporanDateTo   ? new Date(laporanDateTo+'T23:59:59').toISOString()   : null;
-          let txQuery = supabase
-            .from('transactions')
-            .select('id,shift_id,outlet_id,total,date,kasir,items,created_at')
-            .order('created_at',{ascending:false});
-          if(fromISO) txQuery = txQuery.gte('created_at', fromISO);
-          if(toISO)   txQuery = txQuery.lte('created_at', toISO);
-          const {data:txData} = await txQuery.limit(5000);
+          const PAGE = 1000;
+          let allTxData = [];
+          for(let page=0; page<20; page++){ // maks 20 halaman = 20.000 baris, cukup aman
+            let txQuery = supabase
+              .from('transactions')
+              .select('id,shift_id,outlet_id,total,date,kasir,items,created_at')
+              .order('created_at',{ascending:false})
+              .range(page*PAGE, page*PAGE+PAGE-1);
+            if(fromISO) txQuery = txQuery.gte('created_at', fromISO);
+            if(toISO)   txQuery = txQuery.lte('created_at', toISO);
+            const {data:txPage} = await txQuery;
+            if(!txPage || txPage.length===0) break;
+            allTxData = allTxData.concat(txPage);
+            if(txPage.length<PAGE) break; // halaman terakhir
+          }
           // Backup transaksi ke localStorage untuk riwayat offline
-          if(txData?.length>0) try{localStorage.setItem('laporan_tx_backup',JSON.stringify(txData.slice(0,100)));}catch{}
-          freshTx = (txData||[]).map(t=>({
+          if(allTxData.length>0) try{localStorage.setItem('laporan_tx_backup',JSON.stringify(allTxData.slice(0,100)));}catch{}
+          freshTx = allTxData.map(t=>({
             id:     t.id,
             shiftId:t.shift_id,
             outletId:t.outlet_id,
@@ -3468,11 +3478,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
         if(typeof window!=="undefined"){
           const intanSiang = logs.find(l=>l.nama==="INTAN SIANG");
           const intanTx = (freshTx||[]).filter(t=>t.kasir==="INTAN SIANG" || t.shiftId===intanSiang?.id);
-          console.log('[DEBUG INTAN SIANG]', {
+          console.log('[DEBUG INTAN SIANG v2-paginated]', {
             totalLogs: logs.length,
-            logIdSample: logs.slice(0,3).map(l=>l.id),
-            intanSiangLog: intanSiang,
             totalFreshTxAll: (freshTx||[]).length,
+            intanSiangLogId: intanSiang?.id,
             intanSiangTxFound: intanTx.length,
             intanSiangTxSample: intanTx.slice(0,3),
           });
