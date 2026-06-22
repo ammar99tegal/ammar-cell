@@ -4692,7 +4692,7 @@ const EMPTY_NERACA = Object.fromEntries(
   Object.values(NERACA_SECTIONS).flatMap(s=>s.fields.map(f=>[f.k, ""]))
 );
 
-function NeracaPage({ onBack, notify, user, stocks, products }) {
+function NeracaPage({ onBack, notify, user, stocks, products, saldoApps={}, saldoBank={} }) {
   const [neraca, setNeraca] = useState(EMPTY_NERACA);
   const [catatan, setCatatan] = useState("");
   const [tglNeraca, setTglNeraca] = useState(today());
@@ -4703,12 +4703,22 @@ function NeracaPage({ onBack, notify, user, stocks, products }) {
   const [viewHistory, setViewHistory] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
 
-  // Auto-isi saldo aplikasi & stok dari sistem
-  const autoSaldoApps = 0; // akan diisi dari prop nanti
+  // Auto-hitung dari data sistem
   const autoStok = products.reduce((total, p) => {
     const totalStok = Object.values(stocks).reduce((s, outletStok) => s + (outletStok[p.id]||0), 0);
     return total + (totalStok * (p.modal||0));
   }, 0);
+  const autoSaldoApps = Object.values(saldoApps).reduce((s,v)=>s+(+v||0),0);
+  const autoSaldoBank = Object.values(saldoBank).reduce((s,v)=>s+(+v||0),0);
+
+  const syncFromSystem = () => {
+    setNeraca(p=>({...p,
+      stok_produk: autoStok>0 ? String(autoStok) : p.stok_produk,
+      saldo_apps:  autoSaldoApps>0 ? String(autoSaldoApps) : p.saldo_apps,
+      saldo_bank:  autoSaldoBank>0 ? String(autoSaldoBank) : p.saldo_bank,
+    }));
+    notify("Data sistem berhasil ditarik ke neraca","ok");
+  };
 
   useEffect(()=>{
     let alive = true;
@@ -4754,13 +4764,102 @@ function NeracaPage({ onBack, notify, user, stocks, products }) {
         total_aset: c.totalAset, total_kewajiban: c.totalKewajiban, modal_bersih: c.modalBersih,
         dibuat_oleh: user?.nama||user?.username||'admin',
       });
-      // Refresh history
       const {data:hist} = await supabase.from('neraca_history').select('id,tgl,total_aset,total_kewajiban,modal_bersih,catatan,dibuat_oleh,created_at').order('created_at',{ascending:false}).limit(24);
       setHistory(hist||[]);
       notify("✓ Neraca disimpan","ok");
     }catch(e){ console.warn('save neraca:',e); notify("Gagal menyimpan neraca","err"); }
     setSaving(false);
   };
+
+  const deleteHistory = async (id) => {
+    if(!window.confirm("Hapus riwayat neraca ini?")) return;
+    try{
+      await supabase.from('neraca_history').delete().eq('id',id);
+      setHistory(prev=>prev.filter(h=>h.id!==id));
+      if(selectedHistory===id) setSelectedHistory(null);
+      notify("Riwayat dihapus","ok");
+    }catch(e){ notify("Gagal hapus","err"); }
+  };
+
+  // Export PDF — buka jendela cetak dengan tampilan neraca yang diformat
+  const exportPDF = (h=null) => {
+    const data = h ? JSON.parse(JSON.stringify(h)) : null;
+    const n = data?.data || neraca;
+    const tgl = data?.tgl || tglNeraca;
+    const c = data ? {totalAset:data.total_aset, totalKewajiban:data.total_kewajiban, modalBersih:data.modal_bersih,
+      totalAsetLancar:0, totalAsetTetap:0, totalKewPendek:0, totalKewPanjang:0} : calc();
+    const fmtRpLocal = (v) => "Rp "+Math.round(+v||0).toLocaleString("id-ID");
+    const rows = Object.entries(NERACA_SECTIONS).map(([,sec])=>
+      `<tr><td colspan="2" style="background:#f0f4ff;font-weight:900;padding:8px 12px;font-size:13px">${sec.label}</td></tr>`+
+      sec.fields.filter(f=>+n[f.k]>0).map(f=>`<tr><td style="padding:6px 12px 6px 24px;font-size:12px;color:#333">${f.l}</td><td style="padding:6px 12px;text-align:right;font-size:12px;font-weight:700">${fmtRpLocal(n[f.k])}</td></tr>`).join('')
+    ).join('');
+    const html = `<!DOCTYPE html><html><head><title>Neraca Keuangan ${tgl}</title>
+    <style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{font-size:20px;margin-bottom:4px}
+    .sub{font-size:12px;color:#666;margin-bottom:20px}table{width:100%;border-collapse:collapse;margin-bottom:16px}
+    td{border-bottom:1px solid #eee}tr:last-child td{border-bottom:none}
+    .summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px}
+    .box{background:#f5f5f5;padding:12px;border-radius:8px;text-align:center}
+    .box .val{font-size:18px;font-weight:900}.box .lbl{font-size:11px;color:#666}
+    .total{background:#1e3a5f;color:#fff;padding:10px 12px;border-radius:8px;display:flex;justify-content:space-between;font-weight:900;font-size:15px;margin-top:12px}
+    @media print{body{margin:16px}}</style></head><body>
+    <h1>⚖️ Neraca Keuangan</h1>
+    <div class="sub">Ammar Cell · Per tanggal: ${tgl}${data?.catatan?" · "+data.catatan:catatan?" · "+catatan:""}</div>
+    <div class="summary">
+      <div class="box"><div class="lbl">TOTAL ASET</div><div class="val" style="color:#16a34a">${fmtRpLocal(c.totalAset)}</div></div>
+      <div class="box"><div class="lbl">TOTAL KEWAJIBAN</div><div class="val" style="color:#dc2626">${fmtRpLocal(c.totalKewajiban)}</div></div>
+      <div class="box"><div class="lbl">MODAL BERSIH</div><div class="val" style="color:${c.modalBersih>=0?"#16a34a":"#dc2626"}">${fmtRpLocal(c.modalBersih)}</div></div>
+    </div>
+    <table>${rows}</table>
+    <div class="total"><span>MODAL BERSIH (Aset − Kewajiban)</span><span style="color:${c.modalBersih>=0?"#86efac":"#fca5a5"}">${fmtRpLocal(c.modalBersih)}</span></div>
+    <div style="margin-top:24px;font-size:10px;color:#aaa">Dicetak: ${new Date().toLocaleString("id-ID")} · Ammar Cell</div>
+    <script>window.onload=()=>{window.print();}</script></body></html>`;
+    const w = window.open("","_blank","width=800,height=900");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  // Export Excel — pakai SheetJS via CDN
+  const exportExcel = async (h=null) => {
+    const n = h?.data || neraca;
+    const tgl = h?.tgl || tglNeraca;
+    try{
+      // Lazy load SheetJS
+      if(!window.XLSX){
+        await new Promise((res,rej)=>{
+          const s=document.createElement('script');
+          s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload=res; s.onerror=rej; document.head.appendChild(s);
+        });
+      }
+      const XLSX = window.XLSX;
+      const rows = [
+        ["NERACA KEUANGAN — AMMAR CELL"],
+        [`Per tanggal: ${tgl}`],
+        [],
+        ["Kategori","Item","Nilai (Rp)"],
+      ];
+      Object.entries(NERACA_SECTIONS).forEach(([,sec])=>{
+        rows.push([sec.label,"",""]);
+        sec.fields.forEach(f=>{
+          rows.push(["", f.l, +n[f.k]||0]);
+        });
+        const total = sec.fields.reduce((s,f)=>s+(+n[f.k]||0),0);
+        rows.push(["","Subtotal "+sec.label, total]);
+        rows.push([]);
+      });
+      const c = h ? {totalAset:h.total_aset,totalKewajiban:h.total_kewajiban,modalBersih:h.modal_bersih} : calc();
+      rows.push(["TOTAL ASET","",c.totalAset]);
+      rows.push(["TOTAL KEWAJIBAN","",c.totalKewajiban]);
+      rows.push(["MODAL BERSIH (Ekuitas)","",c.modalBersih]);
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols']=[{wch:30},{wch:40},{wch:20}];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Neraca");
+      XLSX.writeFile(wb, `Neraca_AmmarCell_${tgl.replace(/\//g,"-")}.xlsx`);
+      notify("✓ Excel berhasil diunduh","ok");
+    }catch(e){ console.warn('exportExcel:',e); notify("Gagal export Excel","err"); }
+  };
+
 
   const inp = {width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #b2ede6",fontSize:14,fontWeight:700,outline:"none",fontFamily:"inherit",textAlign:"right"};
 
@@ -4775,10 +4874,20 @@ function NeracaPage({ onBack, notify, user, stocks, products }) {
           <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>⚖️ Neraca Keuangan</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.7)"}}>Aset, Kewajiban & Modal Bersih Bisnis</div>
         </div>
-        <button onClick={()=>setViewHistory(!viewHistory)}
-          style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-          {viewHistory?"✏️ Edit":"📜 Riwayat"}
-        </button>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>exportPDF()}
+            style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+            🖨️ PDF
+          </button>
+          <button onClick={()=>exportExcel()}
+            style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+            📊 Excel
+          </button>
+          <button onClick={()=>setViewHistory(!viewHistory)}
+            style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"6px 14px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+            {viewHistory?"✏️ Edit":"📜 Riwayat"}
+          </button>
+        </div>
       </div>
 
       {/* Ringkasan 3-kolom */}
@@ -4812,17 +4921,32 @@ function NeracaPage({ onBack, notify, user, stocks, products }) {
           {history.length===0?(
             <div style={{textAlign:"center",padding:30,color:"#aaa",background:"#fff",borderRadius:14,border:"2px solid #e0e7ff"}}>Belum ada riwayat neraca tersimpan</div>
           ):history.map(h=>(
-            <div key={h.id} onClick={()=>setSelectedHistory(selectedHistory===h.id?null:h.id)}
-              style={{background:"#fff",borderRadius:14,border:`2px solid ${selectedHistory===h.id?"#2563eb":"#e0e7ff"}`,padding:"14px 16px",marginBottom:8,cursor:"pointer"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <div>
-                  <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{h.tgl}</div>
-                  <div style={{fontSize:10,color:"#aaa"}}>oleh {h.dibuat_oleh} · {new Date(h.created_at).toLocaleString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+            <div key={h.id} style={{background:"#fff",borderRadius:14,border:`2px solid ${selectedHistory===h.id?"#2563eb":"#e0e7ff"}`,marginBottom:8,overflow:"hidden"}}>
+              <div style={{padding:"14px 16px",cursor:"pointer"}} onClick={()=>setSelectedHistory(selectedHistory===h.id?null:h.id)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{h.tgl}</div>
+                    <div style={{fontSize:10,color:"#aaa"}}>oleh {h.dibuat_oleh} · {new Date(h.created_at).toLocaleString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                  <span style={{fontWeight:900,fontSize:14,color:h.modal_bersih>=0?"#16a34a":"#dc2626"}}>{fmtRp(h.modal_bersih)}</span>
                 </div>
-                <span style={{fontWeight:900,fontSize:14,color:h.modal_bersih>=0?"#16a34a":"#dc2626"}}>{fmtRp(h.modal_bersih)}</span>
+                <div style={{display:"flex",gap:6,marginTop:8}} onClick={e=>e.stopPropagation()}>
+                  <button onClick={()=>exportPDF(h)}
+                    style={{flex:1,padding:"5px 0",borderRadius:8,border:"1px solid #e0e7ff",background:"#f8f9ff",color:"#2563eb",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                    🖨️ PDF
+                  </button>
+                  <button onClick={()=>exportExcel(h)}
+                    style={{flex:1,padding:"5px 0",borderRadius:8,border:"1px solid #e0e7ff",background:"#f8f9ff",color:"#16a34a",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                    📊 Excel
+                  </button>
+                  <button onClick={()=>deleteHistory(h.id)}
+                    style={{padding:"5px 12px",borderRadius:8,border:"1px solid #fee2e2",background:"#fff0f0",color:"#dc2626",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                    🗑️ Hapus
+                  </button>
+                </div>
               </div>
               {selectedHistory===h.id&&(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10,paddingTop:10,borderTop:"1px solid #f0f4ff"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"10px 16px 14px",borderTop:"1px solid #f0f4ff",background:"#fafbff"}}>
                   <div style={{background:"#f0fdf4",borderRadius:9,padding:"8px 10px",textAlign:"center"}}>
                     <div style={{fontSize:10,color:"#888"}}>Total Aset</div>
                     <div style={{fontWeight:800,fontSize:14,color:"#16a34a"}}>{fmtRp(h.total_aset)}</div>
@@ -4854,12 +4978,19 @@ function NeracaPage({ onBack, notify, user, stocks, products }) {
                   style={{...inp,textAlign:"left",fontSize:12,fontWeight:600}}/>
               </div>
             </div>
-            {/* Auto-fill hint */}
-            {autoStok>0&&(
-              <div style={{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:9,fontSize:11,color:"#2563eb",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span>💡 Nilai stok produk dari sistem: <b>{fmtRp(autoStok)}</b></span>
-                <button onClick={()=>setNeraca(p=>({...p,stok_produk:String(autoStok)}))}
-                  style={{background:"#2563eb",border:"none",borderRadius:7,padding:"4px 10px",color:"#fff",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Pakai</button>
+            {/* Auto-fill dari sistem */}
+            {(autoStok>0||autoSaldoApps>0||autoSaldoBank>0)&&(
+              <div style={{marginTop:10,padding:"10px 12px",background:"#eff6ff",borderRadius:9,border:"1px solid #bfdbfe"}}>
+                <div style={{fontSize:11,color:"#1e40af",fontWeight:700,marginBottom:8}}>💡 Data tersedia dari sistem:</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:10}}>
+                  {autoStok>0&&<div style={{fontSize:11,color:"#555",display:"flex",justifyContent:"space-between"}}><span>Nilai Stok Produk</span><b style={{color:"#2563eb"}}>{fmtRp(autoStok)}</b></div>}
+                  {autoSaldoApps>0&&<div style={{fontSize:11,color:"#555",display:"flex",justifyContent:"space-between"}}><span>Saldo Aplikasi</span><b style={{color:"#2563eb"}}>{fmtRp(autoSaldoApps)}</b></div>}
+                  {autoSaldoBank>0&&<div style={{fontSize:11,color:"#555",display:"flex",justifyContent:"space-between"}}><span>Saldo Rekening Bank</span><b style={{color:"#2563eb"}}>{fmtRp(autoSaldoBank)}</b></div>}
+                </div>
+                <button onClick={syncFromSystem}
+                  style={{width:"100%",background:"#2563eb",border:"none",borderRadius:8,padding:"7px",color:"#fff",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                  ⬇ Tarik Semua Data dari Sistem
+                </button>
               </div>
             )}
           </div>
@@ -15467,7 +15598,7 @@ export default function App() {
       {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto} users={users} products={products} stocks={stocks}/>}
       {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
       {page==="qc" && isAdmin && <QCAdminPage products={products} stocks={stocks} outlets={outlets} onBack={()=>setPage("menu")} notify={notify}/>}
-      {page==="neraca" && isAdmin && <NeracaPage onBack={()=>setPage("menu")} notify={notify} user={user} stocks={stocks} products={products}/>}
+      {page==="neraca" && isAdmin && <NeracaPage onBack={()=>setPage("menu")} notify={notify} user={user} stocks={stocks} products={products} saldoApps={saldoApps} saldoBank={saldoBank}/>}
       {page==="portal-admin" && isAdmin && <AdminPortalPage outlets={outlets} users={users} misi={portalMisi} setMisi={setPortalMisi} note={portalNote} setNote={setPortalNote} shift={portalShift} setShift={setPortalShift} absensiMap={portalAbsensi} setAbsensiMap={setPortalAbsensi} izinMap={portalIzin} setIzinMap={setPortalIzin} onBack={()=>setPage("menu")} notify={notify} todos={portalTodos} setTodos={setPortalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} setPoinRate={setPortalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} products={products} strukConfig={strukConfig} setStrukConfig={setStrukConfig} currentUser={user}/>}
       {page==="kasir"     && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="kasir"/>}
