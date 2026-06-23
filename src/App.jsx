@@ -6330,12 +6330,9 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
       {/* Sub-tabs Kasir/Riwayat/Stok — selalu tampil saat embedded (di bawah header GabunganPage) */}
       {embedded&&(
-        <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",display:"flex",alignItems:"center",padding:"0 16px",boxShadow:"0 1px 6px rgba(0,0,0,.15)"}}>
-          <div onClick={()=>{setShiftMode(shift?"close":"open");setShowShift(true);}} style={{background:shift?"rgba(255,255,255,.18)":"rgba(255,100,100,.3)",border:`1px solid ${shift?"rgba(255,255,255,.35)":"rgba(255,100,100,.6)"}`,borderRadius:20,padding:"4px 10px",cursor:"pointer",marginRight:10,fontSize:10,fontWeight:800,color:"#fff"}}>
-            {shift?`⏱ ${shift.nama}`:"⚠ Buka Shift"}
-          </div>
+        <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",display:"flex",alignItems:"center",justifyContent:"center",padding:"0 16px",boxShadow:"0 1px 6px rgba(0,0,0,.15)"}}>
           {[{id:"kasir",l:"Kasir"},{id:"riwayat",l:"Riwayat"},{id:"stok",l:"Stok"}].map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)} style={{background:"transparent",border:"none",color:"#fff",fontWeight:page===n.id?800:500,fontSize:11,padding:"10px 12px",borderBottom:page===n.id?"3px solid #fff":"3px solid transparent",cursor:"pointer",fontFamily:"inherit"}}>{n.l}</button>
+            <button key={n.id} onClick={()=>setPage(n.id)} style={{background:"transparent",border:"none",color:"#fff",fontWeight:page===n.id?800:500,fontSize:13,padding:"11px 20px",borderBottom:page===n.id?"3px solid #fff":"3px solid transparent",cursor:"pointer",fontFamily:"inherit"}}>{n.l}</button>
           ))}
         </div>
       )}
@@ -7401,7 +7398,8 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
       <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 14px rgba(13,148,136,.35)"}}>
-        <div style={{padding:"0 16px",display:"flex",alignItems:"center",minHeight:50}}>
+        {/* Header utama — disembunyikan saat embedded (GabunganPage punya header sendiri) */}
+        {!embedded&&<div style={{padding:"0 16px",display:"flex",alignItems:"center",minHeight:50}}>
           <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",marginRight:10,fontFamily:"inherit"}}>← Menu</button>
           <div style={{marginRight:"auto"}}>
             <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>{outletNama} <span style={{opacity:.7,fontWeight:600,fontSize:12}}>. Bank</span></div>
@@ -7412,8 +7410,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
             style={{background:shift?"rgba(255,255,255,.18)":"rgba(255,100,100,.3)",border:`1px solid ${shift?"rgba(255,255,255,.35)":"rgba(255,100,100,.6)"}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",fontSize:11,fontWeight:800,color:"#fff"}}>
             {shift?`⏱ ${shift.nama}`:"⚠ Buka Shift"}
           </div>
-        </div>
-        <div style={{background:"rgba(0,0,0,.12)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"4px 16px"}}>
+        </div>}
+        {/* Running text motivasi — tetap tampil meski embedded */}
+        <div style={{background:"rgba(0,0,0,.12)",borderTop:embedded?"none":"1px solid rgba(255,255,255,.1)",padding:"4px 16px"}}>
           <BankMotivasi/>
         </div>
       </div>
