@@ -4700,6 +4700,24 @@ function GabunganPage(props) {
         </div>
       </div>
 
+      {/* GATE: Shift kasir belum dibuka — tampilkan dari GabunganPage, bukan dari KasirApp */}
+      {!kasirShiftData&&(
+        <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(30,27,75,.97),rgba(49,46,129,.97))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
+          <div style={{fontSize:56,marginBottom:4}}>🔐</div>
+          <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Belum Dibuka</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.75)",textAlign:"center",maxWidth:280,lineHeight:1.6}}>
+            Buka shift untuk mulai mencatat transaksi kasir & bank sekaligus dalam 1 laci
+          </div>
+          <button onClick={()=>setTab("kasir")}
+            style={{marginTop:8,background:"#fff",border:"none",borderRadius:16,padding:"14px 32px",color:"#312e81",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 24px rgba(0,0,0,.3)"}}>
+            🟢 Buka Shift Sekarang
+          </button>
+          <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>
+            Shift kasir & bank akan dibuka sekaligus
+          </div>
+        </div>
+      )}
+
       {/* Tab switcher */}
       <div style={{display:"flex",gap:8,padding:"12px 18px 0"}}>
         {[["kasir","🛒 Kasir"],["bank","🏦 Bank"],["rekap","📋 Rekap Laci"]].map(([k,l])=>(
@@ -6216,7 +6234,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         <div className="kasir-layout" style={{position:"relative"}}>
 
           {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
-          {(shiftLoading||!shift)&&!embedded&&(
+          {(shiftLoading||!shift)&&(
             <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,backdropFilter:"blur(6px)",fontFamily:"'Nunito',sans-serif"}}>
               {shiftLoading?(
                 <>
@@ -7289,7 +7307,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
         </div>
       </div>
 
-      {!shift&&!embedded&&(
+      {!shift&&(
         <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,fontFamily:"'Nunito',sans-serif",padding:20}}>
           <div style={{fontSize:60}}>🔒</div>
           <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Bank Belum Dibuka</div>
