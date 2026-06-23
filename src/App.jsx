@@ -4564,14 +4564,37 @@ function GabunganPage(props) {
   const [savingRekap,setSavingRekap] = useState(false);
   const [rekapTersimpan,setRekapTersimpan] = useState(false);
 
-  const selectedOutlet = user.outletId || outlets[0]?.id || "";
+  const gabunganOutlet = user.outletId || outlets[0]?.id || "";
   const todayStr = today();
 
-  // Load shift kasir aktif (untuk tahu kasNyataSystem kasir)
+  // Auto-sinkronisasi: jika shift kasir aktif tapi bank shift belum ada, buka otomatis
+  const autoOpenBankShift = async (kasirShift) => {
+    try{
+      const {data:existing} = await supabase.from('bank_shifts').select('id').eq('outlet_id',gabunganOutlet).limit(1);
+      if(existing?.length) return; // sudah ada
+      const sd = kasirShift.saldo_data||{};
+      const s = {
+        id: uid(),
+        nama: kasirShift.nama||user.nama,
+        start: now(),
+        outletId: gabunganOutlet,
+        saldoApps: sd.saldoApps||{},
+        cashKemb: sd.cashKembalian||0,
+        totalSaldo: sd.totalSaldoApps||0,
+      };
+      await dbBank.openShift(s, gabunganOutlet, user.username||user.id);
+      notify("✓ Shift bank ikut dibuka otomatis","ok");
+    }catch(e){ console.warn('autoOpenBankShift:',e); }
+  };
+
+  // Load shift kasir aktif (untuk saldo awal dan auto-sync bank)
   const loadKasirShift = async () => {
     try{
-      const {data} = await supabase.from('active_shifts').select('*').eq('outlet_id',selectedOutlet).limit(1);
-      setKasirShiftData(data?.[0]||null);
+      const {data} = await supabase.from('active_shifts').select('*').eq('outlet_id',gabunganOutlet).limit(1);
+      const ks = data?.[0]||null;
+      setKasirShiftData(ks);
+      // Kalau kasir shift aktif, pastikan bank shift juga aktif
+      if(ks) autoOpenBankShift(ks);
     }catch(e){ console.warn('gabungan kasir shift:',e); }
   };
 
@@ -4579,7 +4602,7 @@ function GabunganPage(props) {
   const loadBankToday = async () => {
     try{
       const all = await dbBank.getTransactions();
-      const list = (all||[]).filter(t=>t.outletId===selectedOutlet && t.tgl===todayStr);
+      const list = (all||[]).filter(t=>t.outletId===gabunganOutlet && t.tgl===todayStr);
       setBankTrxHariIni(list);
     }catch(e){ console.warn('gabungan bank load:',e); }
   };
@@ -4587,20 +4610,20 @@ function GabunganPage(props) {
   useEffect(()=>{
     loadBankToday();
     loadKasirShift();
-    const ch = supabase.channel(`gabungan-bank-${selectedOutlet}`)
+    const ch = supabase.channel(`gabungan-bank-${gabunganOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
         const row = payload.new||payload.old;
-        if(row?.outlet_id===selectedOutlet) loadBankToday();
+        if(row?.outlet_id===gabunganOutlet) loadBankToday();
       })
       .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},(payload)=>{
         loadKasirShift();
       })
       .subscribe();
     return ()=>supabase.removeChannel(ch);
-  },[selectedOutlet]);
+  },[gabunganOutlet]);
 
   // Omset kasir hari ini (realtime dari transactions prop)
-  const txHariIni = transactions.filter(t=>t.outletId===selectedOutlet && t.date===todayStr);
+  const txHariIni = transactions.filter(t=>t.outletId===gabunganOutlet && t.date===todayStr);
   const omsetKasir = txHariIni.reduce((s,t)=>{
     const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);
     return s+t.total-rv;
@@ -4627,11 +4650,11 @@ function GabunganPage(props) {
     setSavingRekap(true);
     try{
       await supabase.from('portal_settings').upsert({
-        key: `rekap_laci_${selectedOutlet}_${todayStr.replace(/\//g,"")}`,
+        key: `rekap_laci_${gabunganOutlet}_${todayStr.replace(/\//g,"")}`,
         value: JSON.stringify({
           tgl: todayStr,
-          outlet_id: selectedOutlet,
-          outlet_nama: outlets.find(o=>o.id===selectedOutlet)?.nama||"",
+          outlet_id: gabunganOutlet,
+          outlet_nama: outlets.find(o=>o.id===gabunganOutlet)?.nama||"",
           staff: user.nama,
           modal_awal_kasir: modalAwalKasir,
           omset_kasir: omsetKasir,
@@ -4659,7 +4682,7 @@ function GabunganPage(props) {
       <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",padding:"12px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:160}}>
           <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>🧾 Kasir + Bank — 1 Laci</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,.7)"}}>{outlets.find(o=>o.id===selectedOutlet)?.nama||"Outlet"} · {user.nama}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.7)"}}>{outlets.find(o=>o.id===gabunganOutlet)?.nama||"Outlet"} · {user.nama}</div>
         </div>
         <div style={{display:"flex",gap:12,background:"rgba(255,255,255,.12)",borderRadius:12,padding:"8px 16px",flexWrap:"wrap"}}>
           <div style={{textAlign:"center"}}>
@@ -4694,7 +4717,7 @@ function GabunganPage(props) {
         <div style={{padding:"14px 18px"}}>
           <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:16,padding:"18px 20px",color:"#fff",marginBottom:14}}>
             <div style={{fontWeight:900,fontSize:14,marginBottom:4}}>📋 Rekap Penutupan 1 Laci</div>
-            <div style={{fontSize:11,opacity:.75,marginBottom:16}}>{todayStr} · {outlets.find(o=>o.id===selectedOutlet)?.nama}</div>
+            <div style={{fontSize:11,opacity:.75,marginBottom:16}}>{todayStr} · {outlets.find(o=>o.id===gabunganOutlet)?.nama}</div>
 
             {/* Rincian komponen */}
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
@@ -6193,7 +6216,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         <div className="kasir-layout" style={{position:"relative"}}>
 
           {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
-          {(shiftLoading||!shift)&&(
+          {(shiftLoading||!shift)&&!embedded&&(
             <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,backdropFilter:"blur(6px)",fontFamily:"'Nunito',sans-serif"}}>
               {shiftLoading?(
                 <>
@@ -7266,7 +7289,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
         </div>
       </div>
 
-      {!shift&&(
+      {!shift&&!embedded&&(
         <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:14,fontFamily:"'Nunito',sans-serif",padding:20}}>
           <div style={{fontSize:60}}>🔒</div>
           <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Bank Belum Dibuka</div>
