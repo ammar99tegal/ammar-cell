@@ -4563,6 +4563,61 @@ function GabunganPage(props) {
   const [catatan,setCatatan] = useState("");
   const [savingRekap,setSavingRekap] = useState(false);
   const [rekapTersimpan,setRekapTersimpan] = useState(false);
+  const [saldoAkhirApps, setSaldoAkhirApps] = useState({}); // saldo akhir per app name
+
+  const tutupShiftGabungan = async () => {
+    if(!laciFisik) return notify("Isi dulu uang fisik di laci","err");
+    if(!navigator.onLine) return notify("📵 Tidak bisa tutup shift — tidak ada koneksi","err");
+    setSavingRekap(true);
+    const waktuTutup = now();
+    try{
+      // 1. Tutup shift kasir
+      const kasirShiftRow = kasirShiftData;
+      if(kasirShiftRow){
+        const closeDataKasir = {
+          waktuTutup, saldoAppsClose: saldoAkhirApps,
+          kasNyataSystem: totalLaciSistem, kasNyataFisik: laciFisikNum,
+          selisih: selisihGabungan, notes: catatan,
+          cashKembC: 0, setorTunai:0, hutang:0, pending:0, pengeluaran:0, noteKlr:"",
+        };
+        try{ await dbShift.closeShift(kasirShiftRow, gabunganOutlet, user.username||user.id, closeDataKasir); }
+        catch(e){ console.warn("tutup kasir shift:",e); }
+        try{ await supabase.from('active_shifts').delete().eq('outlet_id', gabunganOutlet); }catch{}
+      }
+      // 2. Tutup shift bank
+      try{
+        const {data:bankShiftRows} = await supabase.from('bank_shifts').select('*').eq('outlet_id', gabunganOutlet).limit(1);
+        if(bankShiftRows?.length){
+          const bs = bankShiftRows[0];
+          const bsObj = {id:bs.id, nama:bs.nama, start:bs.start_time, outletId:gabunganOutlet, ...(bs.saldo_data||{})};
+          await dbBank.closeShift(bsObj, gabunganOutlet, user.username||user.id, {
+            waktuTutup, saldoAppsC: saldoAkhirApps,
+            uangLaci: laciFisikNum, uangSistem: totalLaciSistem,
+            selisih: selisihGabungan, catatan,
+          });
+        }
+      }catch(e){ console.warn("tutup bank shift:",e); }
+      // 3. Simpan rekap log
+      await supabase.from('portal_settings').upsert({
+        key: `rekap_laci_${gabunganOutlet}_${todayStr.replace(/\//g,"")}`,
+        value: JSON.stringify({
+          tgl: todayStr, outlet_id: gabunganOutlet,
+          outlet_nama: outlets.find(o=>o.id===gabunganOutlet)?.nama||"",
+          staff: user.nama, modal_awal_kasir: modalAwalKasir,
+          omset_kasir: omsetKasir, kas_masuk_bank: kasMasukBank,
+          total_laci_sistem: totalLaciSistem, laci_fisik: laciFisikNum,
+          selisih: selisihGabungan, saldo_akhir_apps: saldoAkhirApps,
+          catatan, saved_at: new Date().toISOString(),
+        })
+      },{onConflict:'key'});
+      setRekapTersimpan(true);
+      notify("✅ Shift kasir & bank berhasil ditutup sekaligus!","ok");
+      // Reset state shift di GabunganPage
+      setKasirShiftData(null);
+      setLaciFisik(""); setCatatan(""); setSaldoAkhirApps({});
+    }catch(e){ console.warn('tutupShiftGabungan:',e); notify("Gagal tutup shift","err"); }
+    setSavingRekap(false);
+  };
 
   const gabunganOutlet = user.outletId || outlets[0]?.id || "";
   const todayStr = today();
@@ -4839,7 +4894,7 @@ function GabunganPage(props) {
             </div>
           </div>
 
-          {/* Saldo Akhir Aplikasi — seperti tutup shift bank */}
+          {/* Saldo Akhir Aplikasi */}
           {(props.saldoBank||[]).length>0&&(
             <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:12,color:"#0d9488",marginBottom:10}}>💳 Saldo Akhir Aplikasi (opsional)</div>
@@ -4847,7 +4902,8 @@ function GabunganPage(props) {
                 {(props.saldoBank||[]).map(app=>(
                   <div key={app}>
                     <label style={{fontSize:10,fontWeight:700,color:"#555",display:"block",marginBottom:3}}>{app}</label>
-                    <input type="number" placeholder="0"
+                    <input type="number" placeholder="0" value={saldoAkhirApps[app]||""}
+                      onChange={e=>setSaldoAkhirApps(p=>({...p,[app]:e.target.value}))}
                       style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"2px solid #b2ede6",fontSize:12,fontWeight:700,outline:"none",fontFamily:"inherit",textAlign:"right"}}/>
                   </div>
                 ))}
@@ -4855,40 +4911,41 @@ function GabunganPage(props) {
             </div>
           )}
 
+          {/* Catatan */}
+          <div style={{marginBottom:14}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:5}}>Catatan (opsional)</label>
+            <input value={catatan} onChange={e=>setCatatan(e.target.value)} placeholder="Misal: ada lebih Rp 5.000 kemungkinan salah kembalian..."
+              style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"2px solid #e0e7ff",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+          </div>
 
-            {laciFisik!==""&&(
-              <div style={{marginTop:12}}>
-                <label style={{fontSize:11,fontWeight:700,opacity:.85,display:"block",marginBottom:6}}>Catatan (opsional)</label>
-                <input value={catatan} onChange={e=>setCatatan(e.target.value)} placeholder="Misal: ada lebih Rp 5.000 kemungkinan salah kembalian..."
-                  style={{width:"100%",padding:"10px 12px",borderRadius:11,border:"2px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.12)",color:"#fff",fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-            )}
-
-
-          {/* Tombol simpan rekap */}
+          {/* TOMBOL TUTUP SHIFT GABUNGAN */}
           {laciFisik!==""&&(
             rekapTersimpan ? (
               <div style={{background:"#dcfce7",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:14}}>
-                <div style={{fontSize:18,marginBottom:4}}>✅</div>
-                <div style={{fontWeight:900,fontSize:14,color:"#16a34a"}}>Rekap laci tersimpan!</div>
-                <div style={{fontSize:11,color:"#555",marginTop:4}}>Sekarang tutup shift kasir & bank masing-masing dari tab Kasir & Bank</div>
-                <button onClick={()=>{setRekapTersimpan(false);setLaciFisik("");setCatatan("");}}
+                <div style={{fontSize:28,marginBottom:4}}>✅</div>
+                <div style={{fontWeight:900,fontSize:15,color:"#16a34a"}}>Shift Kasir & Bank Ditutup!</div>
+                <div style={{fontSize:11,color:"#555",marginTop:4}}>Rekap tersimpan di sistem dan bisa dilihat admin</div>
+                <button onClick={()=>{setRekapTersimpan(false);setLaciFisik("");setCatatan("");setSaldoAkhirApps({});}}
                   style={{marginTop:10,background:"#fff",border:"2px solid #16a34a",borderRadius:10,padding:"6px 20px",color:"#16a34a",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                  Hitung Ulang
+                  Tutup
                 </button>
               </div>
             ) : (
-              <button onClick={simpanRekap} disabled={savingRekap}
-                style={{width:"100%",padding:13,borderRadius:12,border:"none",background:savingRekap?"#ccc":"linear-gradient(135deg,#4338ca,#6366f1)",color:"#fff",fontWeight:900,fontSize:14,cursor:savingRekap?"wait":"pointer",fontFamily:"inherit",marginBottom:14}}>
-                {savingRekap?"⏳ Menyimpan...":"💾 Simpan Rekap Laci Hari Ini"}
+              <button onClick={tutupShiftGabungan} disabled={savingRekap}
+                style={{width:"100%",padding:14,borderRadius:12,border:"none",
+                  background:savingRekap?"#ccc":"linear-gradient(135deg,#dc2626,#ef4444)",
+                  color:"#fff",fontWeight:900,fontSize:15,cursor:savingRekap?"wait":"pointer",fontFamily:"inherit",marginBottom:14,
+                  boxShadow:"0 4px 14px rgba(220,38,38,.35)"}}>
+                {savingRekap?"⏳ Menutup Shift...":"🔒 Tutup Shift & Simpan"}
               </button>
             )
           )}
 
-          <div style={{fontSize:10,color:"#aaa",textAlign:"center",lineHeight:1.6}}>
-            💡 Setelah rekap disimpan, tutup shift kasir dari tab Kasir & shift bank dari tab Bank seperti biasa.<br/>
-            Rekap ini tersimpan di sistem dan bisa dilihat admin.
-          </div>
+          {laciFisik===""&&(
+            <div style={{fontSize:10,color:"#aaa",textAlign:"center",lineHeight:1.6,marginTop:8}}>
+              💡 Isi "Uang Fisik di Laci" untuk mengaktifkan tombol tutup shift
+            </div>
+          )}
         </div>
       )}
 
