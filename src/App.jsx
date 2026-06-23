@@ -4677,58 +4677,127 @@ function GabunganPage(props) {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
-      {/* Header ringkasan gabungan */}
-      <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81,#4338ca)",padding:"12px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:160}}>
-          <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>🧾 Kasir + Bank — 1 Laci</div>
-          <div style={{fontSize:10,color:"rgba(255,255,255,.7)"}}>{outlets.find(o=>o.id===gabunganOutlet)?.nama||"Outlet"} · {user.nama}</div>
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",fontFamily:"'Nunito',sans-serif",background:"#f0faf8"}}>
+
+      {/* ══ HEADER STICKY 1 BARIS — compact, semua elemen sejajar ══ */}
+      <div style={{
+        flexShrink:0,
+        position:"sticky",top:0,zIndex:100,
+        background:"linear-gradient(135deg,#064e3b,#0d9488,#0f766e)",
+        boxShadow:"0 2px 10px rgba(0,0,0,.22)",
+        display:"flex",alignItems:"center",gap:8,padding:"0 14px",height:46,
+      }}>
+        {/* Nama outlet + user */}
+        <div style={{flexShrink:0,minWidth:0}}>
+          <div style={{fontWeight:900,fontSize:12,color:"#fff",lineHeight:1.1,whiteSpace:"nowrap"}}>
+            🧾 {outlets.find(o=>o.id===gabunganOutlet)?.nama||"Kasir+Bank"}
+          </div>
+          <div style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>{user.nama}</div>
         </div>
-        <div style={{display:"flex",gap:12,background:"rgba(255,255,255,.12)",borderRadius:12,padding:"8px 16px",flexWrap:"wrap"}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Kas Kasir</div>
-            <div style={{fontWeight:900,fontSize:13,color:"#fff"}}>{fmtRpG(kasSystemKasir)}</div>
-          </div>
-          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:12}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Kas Bank</div>
-            <div style={{fontWeight:900,fontSize:13,color:kasMasukBank>=0?"#86efac":"#fca5a5"}}>{kasMasukBank>=0?"+":""}{fmtRpG(kasMasukBank)}</div>
-          </div>
-          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:12}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Total Laci</div>
-            <div style={{fontWeight:900,fontSize:16,color:"#fbbf24"}}>{fmtRpG(totalLaciSistem)}</div>
-          </div>
+
+        <div style={{width:1,height:28,background:"rgba(255,255,255,.2)",flexShrink:0}}/>
+
+        {/* Tab pills — Kasir | Bank | Rekap | Shift */}
+        <div style={{flex:1,display:"flex",gap:3,justifyContent:"center"}}>
+          {[
+            {k:"kasir", l:"🛒 Kasir"},
+            {k:"bank",  l:"🏦 Bank"},
+            {k:"rekap", l:"📋 Rekap"},
+            {k:"shift", l: kasirShiftData ? `⏱ ${kasirShiftData.nama||"Shift"}` : "⚠ Buka Shift",
+              special: !kasirShiftData},
+          ].map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)}
+              style={{
+                padding:"4px 10px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                border:tab===t.k?"1.5px solid rgba(255,255,255,.9)":t.special?"1.5px solid rgba(255,80,80,.7)":"1.5px solid rgba(255,255,255,.18)",
+                background:tab===t.k?"rgba(255,255,255,.22)":t.special?"rgba(255,60,60,.3)":"transparent",
+                color:tab===t.k?"#fff":"rgba(255,255,255,.78)",
+                fontWeight:tab===t.k?900:600,fontSize:10,whiteSpace:"nowrap",
+                transition:"all .12s",
+              }}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        <div style={{width:1,height:28,background:"rgba(255,255,255,.2)",flexShrink:0}}/>
+
+        {/* Angka 3 kolom realtime */}
+        <div style={{display:"flex",background:"rgba(0,0,0,.2)",borderRadius:9,overflow:"hidden",flexShrink:0}}>
+          {[
+            {l:"Kasir",   v:fmtRpG(kasSystemKasir), c:"#fff"},
+            {l:"Bank",    v:(kasMasukBank>=0?"+":"")+fmtRpG(kasMasukBank), c:kasMasukBank>=0?"#86efac":"#fca5a5"},
+            {l:"🏆 Laci", v:fmtRpG(totalLaciSistem), c:"#fbbf24"},
+          ].map((item,i)=>(
+            <div key={i} style={{padding:"4px 9px",borderLeft:i>0?"1px solid rgba(255,255,255,.1)":"",textAlign:"center"}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,.55)",fontWeight:700,lineHeight:1}}>{item.l}</div>
+              <div style={{fontWeight:900,fontSize:10,color:item.c,whiteSpace:"nowrap",lineHeight:1.4}}>{item.v}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* GATE: Shift kasir belum dibuka — tampilkan dari GabunganPage, bukan dari KasirApp */}
+      {/* GATE: Shift belum dibuka */}
       {!kasirShiftData&&(
-        <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(30,27,75,.97),rgba(49,46,129,.97))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
+        <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(6,78,59,.97),rgba(13,148,136,.95))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:56,marginBottom:4}}>🔐</div>
           <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Belum Dibuka</div>
           <div style={{fontSize:13,color:"rgba(255,255,255,.75)",textAlign:"center",maxWidth:280,lineHeight:1.6}}>
             Buka shift untuk mulai mencatat transaksi kasir & bank sekaligus dalam 1 laci
           </div>
-          <button onClick={()=>setTab("kasir")}
-            style={{marginTop:8,background:"#fff",border:"none",borderRadius:16,padding:"14px 32px",color:"#312e81",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 24px rgba(0,0,0,.3)"}}>
+          <button onClick={()=>setTab("shift")}
+            style={{marginTop:8,background:"#fff",border:"none",borderRadius:16,padding:"14px 32px",color:"#0d9488",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 24px rgba(0,0,0,.3)"}}>
             🟢 Buka Shift Sekarang
           </button>
-          <div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginTop:4}}>
-            Shift kasir & bank akan dibuka sekaligus
-          </div>
         </div>
       )}
 
-      {/* Tab switcher */}
-      <div style={{display:"flex",gap:8,padding:"12px 18px 0"}}>
-        {[["kasir","🛒 Kasir"],["bank","🏦 Bank"],["rekap","📋 Rekap Laci"]].map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)}
-            style={{padding:"9px 16px",borderRadius:11,border:`2px solid ${tab===k?(k==="rekap"?"#4338ca":"#0d9488"):"#e0f5f1"}`,
-              background:tab===k?(k==="rekap"?"#4338ca":"#0d9488"):"#fff",
-              color:tab===k?"#fff":"#888",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-            {l}
-          </button>
-        ))}
-      </div>
+      {/* ══ KONTEN TABS — tidak diubah, hanya wrapper flex ══ */}
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+
+        {/* Tab Shift — buka/tutup shift gabungan */}
+        {tab==="shift"&&(
+          <div style={{flex:1,overflowY:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
+            <div style={{width:"100%",maxWidth:480}}>
+              {kasirShiftData?(
+                <div>
+                  <div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488)",borderRadius:14,padding:"16px 18px",color:"#fff",marginBottom:12}}>
+                    <div style={{fontSize:11,opacity:.75,marginBottom:4}}>Shift Aktif</div>
+                    <div style={{fontWeight:900,fontSize:18}}>{kasirShiftData.nama||"Shift Berjalan"}</div>
+                    <div style={{fontSize:11,opacity:.7,marginTop:4}}>Dibuka: {kasirShiftData.start_time||kasirShiftData.start||"-"}</div>
+                  </div>
+                  <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",padding:"14px 16px",marginBottom:12}}>
+                    {[
+                      {l:"Kas Kasir Sistem",   v:fmtRpG(kasSystemKasir)},
+                      {l:"Kas Bank Hari Ini",  v:(kasMasukBank>=0?"+":"")+fmtRpG(kasMasukBank)},
+                      {l:"Total Laci Sistem",  v:fmtRpG(totalLaciSistem), bold:true},
+                    ].map((r,i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:i<2?"1px solid #f0faf8":"none"}}>
+                        <span style={{fontSize:12,color:"#666"}}>{r.l}</span>
+                        <span style={{fontSize:12,fontWeight:r.bold?900:700,color:r.bold?"#0d9488":"#1a2e2a"}}>{r.v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:"#aaa",textAlign:"center",marginBottom:12}}>
+                    Untuk tutup shift, gunakan tombol Tutup Shift di dalam tab Kasir atau Bank masing-masing
+                  </div>
+                  <button onClick={()=>setTab("kasir")} style={{width:"100%",padding:12,borderRadius:10,border:"2px solid #0d9488",background:"#fff",color:"#0d9488",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                    🛒 Ke Tab Kasir
+                  </button>
+                </div>
+              ):(
+                <div style={{textAlign:"center",padding:"24px 0"}}>
+                  <div style={{fontSize:56,marginBottom:12}}>🔐</div>
+                  <div style={{fontWeight:900,fontSize:20,color:"#1a2e2a",marginBottom:6}}>Shift Belum Dibuka</div>
+                  <div style={{fontSize:12,color:"#888",marginBottom:20}}>Buka shift dari tab Kasir untuk mulai transaksi kasir & bank sekaligus</div>
+                  <button onClick={()=>setTab("kasir")} style={{padding:"12px 32px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:900,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                    🟢 Buka Shift Sekarang
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       {/* TAB REKAP LACI GABUNGAN */}
       {tab==="rekap"&&(
@@ -4852,13 +4921,15 @@ function GabunganPage(props) {
         </div>
       )}
 
-      {/* Tab Kasir & Bank — render komponen asli */}
-      <div style={{display: tab==="kasir"?"block":"none"}}>
+      {/* Tab Kasir & Bank — render komponen asli, tidak diubah */}
+      <div style={{display: tab==="kasir"?"flex":"none",flex:1,overflow:"hidden",flexDirection:"column"}}>
         <KasirApp {...props} onBack={()=>{}} embedded/>
       </div>
-      <div style={{display: tab==="bank"?"block":"none"}}>
+      <div style={{display: tab==="bank"?"flex":"none",flex:1,overflow:"hidden",flexDirection:"column"}}>
         <BankPage user={props.user} outlets={props.outlets} saldoApps={props.saldoBank} onBack={()=>{}} notify={props.notify} embedded portalMisi={props.portalMisi} portalMisiProgress={props.portalMisiProgress} products={props.products}/>
       </div>
+
+      </div>{/* end flex:1 content wrapper */}
     </div>
   );
 }
