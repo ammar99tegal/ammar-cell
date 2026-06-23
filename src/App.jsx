@@ -15185,6 +15185,26 @@ export default function App() {
     return all;
   };
 
+  const loadAllBankTransactions = async () => {
+    const PAGE = 1000;
+    let all = [];
+    for(let page=0; page<50; page++){
+      try{
+        const {data} = await supabase.from('bank_transactions')
+          .select('*').order('created_at',{ascending:false})
+          .range(page*PAGE, page*PAGE+PAGE-1);
+        if(!data||data.length===0) break;
+        all = all.concat(data.map(t=>({
+          id:t.id, waktu:t.waktu, tgl:t.tgl, shiftId:t.shift_id, nama:t.nama,
+          jenis:t.jenis, feeType:t.fee_type, fee:t.fee, nominal:t.nominal,
+          netNominal:t.net_nominal, outletId:t.outlet_id,
+        })));
+        if(data.length<PAGE) break;
+      }catch(e){ console.warn('loadAllBankTransactions page',page,e); break; }
+    }
+    return all;
+  };
+
   const reloadData = async () => {
     try {
       const [prods, outs, stks, txs, usrs, prodOrd, aktifMap, bTrx] = await Promise.all([
@@ -15192,15 +15212,10 @@ export default function App() {
         loadAllTransactions(), db.getUsers(),
         dbProductOrder.getOrder().catch(()=>[]),
         dbAktifProduk.getAllAktif().catch(()=>({})),
-        dbBank.getTransactions().catch(()=>[]),
+        loadAllBankTransactions().catch(()=>[]),
       ]);
-      // Update allBankTrx
-      setAllBankTrx((bTrx||[]).map(r=>({
-        id:r.id, tgl:r.tgl, waktu:r.waktu||r.created_at,
-        shiftId:r.shift_id, nama:r.nama, jenis:r.jenis,
-        fee:r.fee||0, nominal:r.nominal, netNominal:r.net_nominal,
-        outletId:r.outlet_id,
-      })));
+      // Update allBankTrx (loadAllBankTransactions sudah mapping field-nya)
+      setAllBankTrx(bTrx||[]);
       setProductsState(prods);
       setOutletsState(outs);
       try{ localStorage.setItem('ammar_outlets', JSON.stringify(outs.map(o=>({id:o.id,nama:o.nama})))); }catch{}
@@ -15364,6 +15379,8 @@ export default function App() {
           total:t.total, cash:t.cash, kembalian:t.kembalian,
           items:t.items||[],
         })));
+        // Load semua bank transactions dengan pagination
+        loadAllBankTransactions().then(bTrx=>{ setAllBankTrx(bTrx); }).catch(()=>{});
         const parsed=parseUserOutletIds(usrs);
         setUsersState(parsed);
         // Merge user_outlets async (fire-and-forget)
