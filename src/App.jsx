@@ -10675,24 +10675,29 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from('bank_transactions')
-        .select('id,tgl,waktu,shift_id,nama,jenis,fee,nominal,net_nominal,outlet_id,created_at')
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      const mapped = (data||[]).map(r => ({
-        id:         r.id,
-        tgl:        r.tgl || (r.created_at ? new Date(r.created_at).toLocaleDateString('id-ID') : ''),
-        waktu:      r.waktu || r.created_at,
-        shiftId:    r.shift_id,
-        nama:       r.nama,
-        jenis:      r.jenis,
-        fee:        r.fee   || 0,
-        nominal:    r.nominal || 0,
-        netNominal: r.net_nominal || 0,
-        outletId:   r.outlet_id,
-      }));
-      setLocalTrx(mapped);
+      const all = [];
+      for(let page=0; page<50; page++){
+        const { data } = await supabase
+          .from('bank_transactions')
+          .select('id,tgl,waktu,shift_id,nama,jenis,fee,nominal,net_nominal,outlet_id,created_at')
+          .order('created_at', { ascending: false })
+          .range(page*1000, page*1000+999);
+        if(!data||data.length===0) break;
+        all.push(...data.map(r => ({
+          id:         r.id,
+          tgl:        r.tgl || (r.created_at ? new Date(r.created_at).toLocaleDateString('id-ID') : ''),
+          waktu:      r.waktu || r.created_at,
+          shiftId:    r.shift_id,
+          nama:       r.nama,
+          jenis:      r.jenis,
+          fee:        r.fee   || 0,
+          nominal:    r.nominal || 0,
+          netNominal: r.net_nominal || 0,
+          outletId:   r.outlet_id,
+        })));
+        if(data.length<1000) break;
+      }
+      setLocalTrx(all);
       setLastRefresh(new Date().toLocaleTimeString('id-ID'));
     } catch(e) { console.error('BankDashboard load:', e); }
     setLoading(false);
@@ -11225,8 +11230,23 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         // Load active shifts -- ambil semua, filter di frontend
         const {data:shifts,error} = await supabase.from('active_shifts').select('*');
         if(!error) setKasirShifts(shifts||[]);
-        const allBankTrx = await dbBank.getTransactions();
-        setBankTrxList(allBankTrx);
+        // Load semua bank transactions dengan pagination (bypass Supabase hard-cap 1000/req)
+        const bankTrxAll = [];
+        for(let page=0; page<50; page++){
+          try{
+            const {data:pg} = await supabase.from('bank_transactions')
+              .select('*').order('created_at',{ascending:false})
+              .range(page*1000, page*1000+999);
+            if(!pg||pg.length===0) break;
+            bankTrxAll.push(...pg.map(t=>({
+              id:t.id, waktu:t.waktu, tgl:t.tgl, shiftId:t.shift_id, nama:t.nama,
+              jenis:t.jenis, feeType:t.fee_type, fee:t.fee||0, nominal:t.nominal,
+              netNominal:t.net_nominal, outletId:t.outlet_id,
+            })));
+            if(pg.length<1000) break;
+          }catch(e){ console.warn('bankTrx page',page,e); break; }
+        }
+        setBankTrxList(bankTrxAll);
         // Load active bank shifts
         const {data:bShifts} = await supabase.from('bank_shifts').select('*');
         setBankShifts(bShifts||[]);
