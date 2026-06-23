@@ -15167,11 +15167,29 @@ export default function App() {
   };
 
   // -- Reload data dari Supabase (dipanggil setelah update outlet/user) ------
+
+  // Fungsi load semua transaksi dengan pagination (bypass Supabase hard-cap 1000/request)
+  const loadAllTransactions = async () => {
+    const PAGE = 1000;
+    let all = [];
+    for(let page=0; page<50; page++){
+      try{
+        const {data} = await supabase.from('transactions')
+          .select('*').order('created_at',{ascending:false})
+          .range(page*PAGE, page*PAGE+PAGE-1);
+        if(!data||data.length===0) break;
+        all = all.concat(data.map(t=>({...t, items:t.items||[]})));
+        if(data.length<PAGE) break;
+      }catch(e){ console.warn('loadAllTransactions page',page,e); break; }
+    }
+    return all;
+  };
+
   const reloadData = async () => {
     try {
       const [prods, outs, stks, txs, usrs, prodOrd, aktifMap, bTrx] = await Promise.all([
         db.getProducts(), db.getOutlets(), db.getStocks(),
-        db.getTransactions(), db.getUsers(),
+        loadAllTransactions(), db.getUsers(),
         dbProductOrder.getOrder().catch(()=>[]),
         dbAktifProduk.getAllAktif().catch(()=>({})),
         dbBank.getTransactions().catch(()=>[]),
@@ -15235,7 +15253,7 @@ export default function App() {
         const prods        = await db.getProducts().catch(()=>[]);
         const outs         = await db.getOutlets().catch(()=>[]);
         const stks         = await db.getStocks().catch(()=>({}));
-        const txs          = await db.getTransactions().catch(()=>[]);
+        const txs          = await loadAllTransactions();
         const usrs         = await db.getUsers().catch(()=>({}));
         const saldoList    = await dbSaldo.getSaldoApps().catch(()=>[]);
         const saldoBankList= await dbSaldoBank.getSaldoBankApps().catch(()=>[]);
