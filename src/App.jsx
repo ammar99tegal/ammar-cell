@@ -4552,18 +4552,30 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ==============================================================================
 // ==============================================================================
 // GABUNGAN — Kasir + Bank dalam 1 laci (menu tambahan, khusus outlet tertentu)
-// Tidak mengubah KasirApp/BankPage sama sekali — hanya membungkus & menampilkan
-// ringkasan kas gabungan dari data yang sudah ada (transactions + bank trx hari ini)
+// Shift kasir & bank tetap terpisah, tapi ada rekap penutupan gabungan 1 laci
 // ==============================================================================
 function GabunganPage(props) {
   const { user, outlets, transactions=[], notify } = props;
-  const [tab,setTab] = useState("kasir"); // kasir | bank
+  const [tab,setTab] = useState("kasir"); // kasir | bank | rekap
   const [bankTrxHariIni,setBankTrxHariIni] = useState([]);
+  const [kasirShiftData,setKasirShiftData] = useState(null); // data shift kasir aktif
+  const [laciFisik,setLaciFisik] = useState("");
+  const [catatan,setCatatan] = useState("");
+  const [savingRekap,setSavingRekap] = useState(false);
+  const [rekapTersimpan,setRekapTersimpan] = useState(false);
 
   const selectedOutlet = user.outletId || outlets[0]?.id || "";
-  const todayStr = today(); // "DD/MM/YYYY"
+  const todayStr = today();
 
-  // Load transaksi bank hari ini untuk outlet ini (read-only, tidak ganggu BankPage) — realtime
+  // Load shift kasir aktif (untuk tahu kasNyataSystem kasir)
+  const loadKasirShift = async () => {
+    try{
+      const {data} = await supabase.from('active_shifts').select('*').eq('outlet_id',selectedOutlet).limit(1);
+      setKasirShiftData(data?.[0]||null);
+    }catch(e){ console.warn('gabungan kasir shift:',e); }
+  };
+
+  // Load transaksi bank hari ini — realtime
   const loadBankToday = async () => {
     try{
       const all = await dbBank.getTransactions();
@@ -4571,29 +4583,75 @@ function GabunganPage(props) {
       setBankTrxHariIni(list);
     }catch(e){ console.warn('gabungan bank load:',e); }
   };
+
   useEffect(()=>{
     loadBankToday();
+    loadKasirShift();
     const ch = supabase.channel(`gabungan-bank-${selectedOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
         const row = payload.new||payload.old;
         if(row?.outlet_id===selectedOutlet) loadBankToday();
       })
+      .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},(payload)=>{
+        loadKasirShift();
+      })
       .subscribe();
     return ()=>supabase.removeChannel(ch);
   },[selectedOutlet]);
 
-  // Omset kasir hari ini (dari transactions yang sudah ada di App root, realtime)
+  // Omset kasir hari ini (realtime dari transactions prop)
   const txHariIni = transactions.filter(t=>t.outletId===selectedOutlet && t.date===todayStr);
   const omsetKasir = txHariIni.reduce((s,t)=>{
     const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);
     return s+t.total-rv;
   },0);
 
-  // Kas dari bank hari ini = sum netNominal (sudah termasuk efek TARIK 2-baris)
+  // Kas dari bank hari ini = sum netNominal
   const kasMasukBank = bankTrxHariIni.reduce((s,t)=>s+(t.netNominal||0),0);
+  const feeBankHariIni = bankTrxHariIni.reduce((s,t)=>s+(t.fee||0),0);
 
-  const totalLaci = omsetKasir + kasMasukBank;
+  // Kas sistem kasir = modal awal (cash kembalian + saldo apps) + omset hari ini
+  const sdKasir = kasirShiftData?.saldo_data||{};
+  const modalAwalKasir = (sdKasir.cashKembalian||0) + (sdKasir.totalSaldoApps||0);
+  const kasSystemKasir = modalAwalKasir + omsetKasir;
+
+  // Total laci sistem gabungan
+  const totalLaciSistem = kasSystemKasir + kasMasukBank;
+  const laciFisikNum = +laciFisik||0;
+  const selisihGabungan = laciFisikNum - totalLaciSistem;
+
   const fmtRpG = (n) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+
+  const simpanRekap = async () => {
+    if(!laciFisik) return notify("Isi dulu uang fisik di laci","err");
+    setSavingRekap(true);
+    try{
+      await supabase.from('portal_settings').upsert({
+        key: `rekap_laci_${selectedOutlet}_${todayStr.replace(/\//g,"")}`,
+        value: JSON.stringify({
+          tgl: todayStr,
+          outlet_id: selectedOutlet,
+          outlet_nama: outlets.find(o=>o.id===selectedOutlet)?.nama||"",
+          staff: user.nama,
+          modal_awal_kasir: modalAwalKasir,
+          omset_kasir: omsetKasir,
+          kas_system_kasir: kasSystemKasir,
+          kas_masuk_bank: kasMasukBank,
+          fee_bank: feeBankHariIni,
+          total_laci_sistem: totalLaciSistem,
+          laci_fisik: laciFisikNum,
+          selisih: selisihGabungan,
+          tx_kasir: txHariIni.length,
+          tx_bank: bankTrxHariIni.length,
+          catatan,
+          saved_at: new Date().toISOString(),
+        })
+      },{onConflict:'key'});
+      setRekapTersimpan(true);
+      notify("✓ Rekap laci disimpan — lanjutkan tutup shift kasir & bank masing-masing","ok");
+    }catch(e){ console.warn('simpanRekap:',e); notify("Gagal simpan rekap","err"); }
+    setSavingRekap(false);
+  };
 
   return (
     <div style={{minHeight:"100vh",background:"#f0faf8",fontFamily:"'Nunito',sans-serif"}}>
@@ -4603,34 +4661,157 @@ function GabunganPage(props) {
           <div style={{fontWeight:900,fontSize:15,color:"#fff"}}>🧾 Kasir + Bank — 1 Laci</div>
           <div style={{fontSize:10,color:"rgba(255,255,255,.7)"}}>{outlets.find(o=>o.id===selectedOutlet)?.nama||"Outlet"} · {user.nama}</div>
         </div>
-        <div style={{display:"flex",gap:16,background:"rgba(255,255,255,.12)",borderRadius:12,padding:"8px 18px",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:12,background:"rgba(255,255,255,.12)",borderRadius:12,padding:"8px 16px",flexWrap:"wrap"}}>
           <div style={{textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Omset Kasir</div>
-            <div style={{fontWeight:900,fontSize:14,color:"#fff"}}>{fmtRpG(omsetKasir)}</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Kas Kasir</div>
+            <div style={{fontWeight:900,fontSize:13,color:"#fff"}}>{fmtRpG(kasSystemKasir)}</div>
           </div>
-          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:16}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Kas dari Bank</div>
-            <div style={{fontWeight:900,fontSize:14,color:kasMasukBank>=0?"#86efac":"#fca5a5"}}>{kasMasukBank>=0?"+":""}{fmtRpG(kasMasukBank)}</div>
+          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:12}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Kas Bank</div>
+            <div style={{fontWeight:900,fontSize:13,color:kasMasukBank>=0?"#86efac":"#fca5a5"}}>{kasMasukBank>=0?"+":""}{fmtRpG(kasMasukBank)}</div>
           </div>
-          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:16}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Total Laci Hari Ini</div>
-            <div style={{fontWeight:900,fontSize:16,color:"#fbbf24"}}>{fmtRpG(totalLaci)}</div>
+          <div style={{textAlign:"center",borderLeft:"1px solid rgba(255,255,255,.2)",paddingLeft:12}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.7)"}}>Total Laci</div>
+            <div style={{fontWeight:900,fontSize:16,color:"#fbbf24"}}>{fmtRpG(totalLaciSistem)}</div>
           </div>
         </div>
       </div>
 
       {/* Tab switcher */}
       <div style={{display:"flex",gap:8,padding:"12px 18px 0"}}>
-        {[["kasir","🛒 Kasir"],["bank","🏦 Bank"]].map(([k,l])=>(
+        {[["kasir","🛒 Kasir"],["bank","🏦 Bank"],["rekap","📋 Rekap Laci"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)}
-            style={{padding:"9px 22px",borderRadius:11,border:`2px solid ${tab===k?"#0d9488":"#e0f5f1"}`,background:tab===k?"#0d9488":"#fff",color:tab===k?"#fff":"#888",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            style={{padding:"9px 16px",borderRadius:11,border:`2px solid ${tab===k?(k==="rekap"?"#4338ca":"#0d9488"):"#e0f5f1"}`,
+              background:tab===k?(k==="rekap"?"#4338ca":"#0d9488"):"#fff",
+              color:tab===k?"#fff":"#888",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             {l}
           </button>
         ))}
       </div>
-      <div style={{fontSize:10,color:"#aaa",padding:"6px 18px 0"}}>💡 Kasir & Bank di bawah ini sama persis dengan menu biasa — hanya total kas laci di atas yang menggabungkan keduanya.</div>
 
-      {/* Render Kasir / Bank asli tanpa diubah, tanpa header/onBack masing-masing */}
+      {/* TAB REKAP LACI GABUNGAN */}
+      {tab==="rekap"&&(
+        <div style={{padding:"14px 18px"}}>
+          <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:16,padding:"18px 20px",color:"#fff",marginBottom:14}}>
+            <div style={{fontWeight:900,fontSize:14,marginBottom:4}}>📋 Rekap Penutupan 1 Laci</div>
+            <div style={{fontSize:11,opacity:.75,marginBottom:16}}>{todayStr} · {outlets.find(o=>o.id===selectedOutlet)?.nama}</div>
+
+            {/* Rincian komponen */}
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                <span style={{opacity:.8}}>Modal Awal (kembalian + saldo apps)</span>
+                <span style={{fontWeight:700}}>{fmtRpG(modalAwalKasir)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                <span style={{opacity:.8}}>+ Omset Kasir Hari Ini</span>
+                <span style={{fontWeight:700,color:"#86efac"}}>+{fmtRpG(omsetKasir)}</span>
+              </div>
+              <div style={{borderTop:"1px solid rgba(255,255,255,.15)",paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:13}}>
+                <span style={{opacity:.8}}>= Kas Sistem Kasir</span>
+                <span style={{fontWeight:900}}>{fmtRpG(kasSystemKasir)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
+                <span style={{opacity:.8}}>+ Kas Bersih Bank ({bankTrxHariIni.length} transaksi)</span>
+                <span style={{fontWeight:700,color:kasMasukBank>=0?"#86efac":"#fca5a5"}}>{kasMasukBank>=0?"+":""}{fmtRpG(kasMasukBank)}</span>
+              </div>
+              {feeBankHariIni>0&&(
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,opacity:.7,paddingLeft:16}}>
+                  <span>  (termasuk fee bank: {fmtRpG(feeBankHariIni)})</span>
+                </div>
+              )}
+            </div>
+
+            {/* Total sistem */}
+            <div style={{background:"rgba(255,255,255,.12)",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:11,opacity:.75}}>Total Laci Menurut Sistem</div>
+                <div style={{fontWeight:900,fontSize:20,color:"#fbbf24"}}>{fmtRpG(totalLaciSistem)}</div>
+              </div>
+              <div style={{fontSize:24}}>💰</div>
+            </div>
+
+            {/* Input uang fisik */}
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,fontWeight:700,opacity:.85,display:"block",marginBottom:6}}>Uang Fisik di Laci (hitung manual)</label>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontWeight:800,fontSize:14,color:"#fbbf24"}}>Rp</span>
+                <input type="number" value={laciFisik} onChange={e=>setLaciFisik(e.target.value)} placeholder="0"
+                  style={{width:"100%",padding:"12px 12px 12px 38px",borderRadius:11,border:`2px solid ${laciFisik?"#fbbf24":"rgba(255,255,255,.3)"}`,background:"rgba(255,255,255,.12)",color:"#fff",fontSize:20,fontWeight:900,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+
+            {/* Selisih */}
+            {laciFisik!==""&&(
+              <div style={{borderRadius:11,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",
+                background:selisihGabungan===0?"rgba(134,239,172,.2)":selisihGabungan>0?"rgba(251,191,36,.2)":"rgba(252,165,165,.2)",
+                border:`1px solid ${selisihGabungan===0?"rgba(134,239,172,.4)":selisihGabungan>0?"rgba(251,191,36,.4)":"rgba(252,165,165,.4)"}`}}>
+                <div>
+                  <div style={{fontSize:11,opacity:.8,fontWeight:700}}>Selisih (Fisik − Sistem)</div>
+                  <div style={{fontSize:9,opacity:.6}}>Positif = lebih · Negatif = kurang</div>
+                </div>
+                <span style={{fontWeight:900,fontSize:20,color:selisihGabungan===0?"#86efac":selisihGabungan>0?"#fbbf24":"#fca5a5"}}>
+                  {selisihGabungan===0?"Rp 0 ✅":selisihGabungan>0?`+${fmtRpG(selisihGabungan)}`:`-${fmtRpG(Math.abs(selisihGabungan))}`}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Info detail per komponen */}
+          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0e7ff",padding:"14px 16px",marginBottom:14}}>
+            <div style={{fontWeight:700,fontSize:12,color:"#4338ca",marginBottom:10}}>📊 Detail Transaksi Hari Ini</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[
+                {l:"Transaksi Kasir",v:txHariIni.length+" trx",c:"#0d9488"},
+                {l:"Omset Kasir",v:fmtRpG(omsetKasir),c:"#0d9488"},
+                {l:"Transaksi Bank",v:bankTrxHariIni.length+" trx",c:"#2980b9"},
+                {l:"Net Kas Bank",v:(kasMasukBank>=0?"+":"")+fmtRpG(kasMasukBank),c:kasMasukBank>=0?"#16a34a":"#dc2626"},
+              ].map(({l,v,c})=>(
+                <div key={l} style={{background:"#f8faff",borderRadius:9,padding:"8px 10px"}}>
+                  <div style={{fontSize:10,color:"#888"}}>{l}</div>
+                  <div style={{fontWeight:900,fontSize:13,color:c}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+            {/* Catatan opsional */}
+            {laciFisik!==""&&(
+              <div style={{marginTop:12}}>
+                <label style={{fontSize:11,fontWeight:700,opacity:.85,display:"block",marginBottom:6}}>Catatan (opsional)</label>
+                <input value={catatan} onChange={e=>setCatatan(e.target.value)} placeholder="Misal: ada lebih Rp 5.000 kemungkinan salah kembalian..."
+                  style={{width:"100%",padding:"10px 12px",borderRadius:11,border:"2px solid rgba(255,255,255,.3)",background:"rgba(255,255,255,.12)",color:"#fff",fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+            )}
+
+
+          {/* Tombol simpan rekap */}
+          {laciFisik!==""&&(
+            rekapTersimpan ? (
+              <div style={{background:"#dcfce7",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:14}}>
+                <div style={{fontSize:18,marginBottom:4}}>✅</div>
+                <div style={{fontWeight:900,fontSize:14,color:"#16a34a"}}>Rekap laci tersimpan!</div>
+                <div style={{fontSize:11,color:"#555",marginTop:4}}>Sekarang tutup shift kasir & bank masing-masing dari tab Kasir & Bank</div>
+                <button onClick={()=>{setRekapTersimpan(false);setLaciFisik("");setCatatan("");}}
+                  style={{marginTop:10,background:"#fff",border:"2px solid #16a34a",borderRadius:10,padding:"6px 20px",color:"#16a34a",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                  Hitung Ulang
+                </button>
+              </div>
+            ) : (
+              <button onClick={simpanRekap} disabled={savingRekap}
+                style={{width:"100%",padding:13,borderRadius:12,border:"none",background:savingRekap?"#ccc":"linear-gradient(135deg,#4338ca,#6366f1)",color:"#fff",fontWeight:900,fontSize:14,cursor:savingRekap?"wait":"pointer",fontFamily:"inherit",marginBottom:14}}>
+                {savingRekap?"⏳ Menyimpan...":"💾 Simpan Rekap Laci Hari Ini"}
+              </button>
+            )
+          )}
+
+          <div style={{fontSize:10,color:"#aaa",textAlign:"center",lineHeight:1.6}}>
+            💡 Setelah rekap disimpan, tutup shift kasir dari tab Kasir & shift bank dari tab Bank seperti biasa.<br/>
+            Rekap ini tersimpan di sistem dan bisa dilihat admin.
+          </div>
+        </div>
+      )}
+
+      {/* Tab Kasir & Bank — render komponen asli */}
       <div style={{display: tab==="kasir"?"block":"none"}}>
         <KasirApp {...props} onBack={()=>{}} embedded/>
       </div>
@@ -4640,6 +4821,7 @@ function GabunganPage(props) {
     </div>
   );
 }
+
 
 // ==============================================================================
 // NERACA KEUANGAN — Neraca Pembukaan, Aset, Kewajiban, Modal Bersih
