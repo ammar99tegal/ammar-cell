@@ -6395,7 +6395,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
       {/* KASIR */}
       {page==="kasir"&&(
-        <div className="kasir-layout" style={{position:"relative"}}>
+        <div className="kasir-layout" style={{position:"relative", ...(embedded?{height:"calc(100vh - 94px)"}:{})}}>
 
           {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
           {(shiftLoading||!shift)&&(
