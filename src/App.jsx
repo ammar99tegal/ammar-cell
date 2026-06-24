@@ -5864,8 +5864,10 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         if(!s || s.id !== shift.id){
           console.warn('[ShiftVerify] Shift tidak ditemukan di DB:', shift.id);
           // Verifikasi GANDA: cek shift_logs
-          const {data:log}=await supabase.from('shift_logs').select('id').eq('id',shift.id)
-            .limit(1).catch(()=>({data:null}));
+          const {data:log}=await (async()=>{
+            try{ return await supabase.from('shift_logs').select('id').eq('id',shift.id).limit(1); }
+            catch{ return {data:null}; }
+          })();
           if(log && log.length>0){
             // Terkonfirmasi sudah tutup -- baru null
             setShiftState(null);
