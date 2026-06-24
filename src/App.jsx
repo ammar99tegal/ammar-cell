@@ -4556,9 +4556,12 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // ==============================================================================
 function GabunganPage(props) {
   const { user, outlets, transactions=[], notify } = props;
+  const isBankRole = user.role==="bank"; // role bank: shift dari bank, kasir tanpa shift
   const [tab,setTab] = useState("kasir"); // kasir | bank | rekap
   const [bankTrxHariIni,setBankTrxHariIni] = useState([]);
   const [kasirShiftData,setKasirShiftData] = useState(null); // data shift kasir aktif
+  const [bankShiftData,setBankShiftData] = useState(null); // data shift bank aktif (untuk role bank)
+  const [showBukaShiftBank,setShowBukaShiftBank] = useState(false); // modal buka shift bank
   const [laciFisik,setLaciFisik] = useState("");
   const [catatan,setCatatan] = useState("");
   const [savingRekap,setSavingRekap] = useState(false);
@@ -4649,8 +4652,35 @@ function GabunganPage(props) {
       const ks = data?.[0]||null;
       setKasirShiftData(ks);
       // Kalau kasir shift aktif, pastikan bank shift juga aktif
-      if(ks) autoOpenBankShift(ks);
+      if(ks && !isBankRole) autoOpenBankShift(ks);
     }catch(e){ console.warn('gabungan kasir shift:',e); }
+  };
+
+  // Load shift bank aktif — untuk role bank sebagai gate utama
+  const loadBankShift = async () => {
+    try{
+      const {data} = await supabase.from('bank_shifts').select('*').eq('outlet_id',gabunganOutlet).limit(1);
+      setBankShiftData(data?.[0]||null);
+    }catch(e){ console.warn('gabungan bank shift:',e); }
+  };
+
+  // Buka shift bank (dipanggil dari modal BankShiftModal)
+  const bukaShiftBank = async (data) => {
+    const s = {
+      id: uid(),
+      nama: user.username||user.nama||"bank",
+      start: now(),
+      outletId: gabunganOutlet,
+      saldoApps: data.saldoApps||{},
+      cashKemb: data.cashKemb||0,
+      totalSaldo: data.totalSaldo||0,
+    };
+    try{
+      await dbBank.openShift(s, gabunganOutlet, user.username||user.id);
+      setBankShiftData(s);
+      setShowBukaShiftBank(false);
+      notify("✅ Shift bank dibuka!","ok");
+    }catch(e){ console.warn('bukaShiftBank:',e); notify("Gagal buka shift bank","err"); }
   };
 
   // Load transaksi bank hari ini — realtime
@@ -4665,6 +4695,7 @@ function GabunganPage(props) {
   useEffect(()=>{
     loadBankToday();
     loadKasirShift();
+    if(isBankRole) loadBankShift();
     const ch = supabase.channel(`gabungan-bank-${gabunganOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
         const row = payload.new||payload.old;
@@ -4672,6 +4703,9 @@ function GabunganPage(props) {
       })
       .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},(payload)=>{
         loadKasirShift();
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},(payload)=>{
+        if(isBankRole) loadBankShift();
       })
       .subscribe();
     return ()=>supabase.removeChannel(ch);
@@ -4792,7 +4826,27 @@ function GabunganPage(props) {
       </div>
 
       {/* GATE: Shift belum dibuka */}
-      {!kasirShiftData&&(
+      {/* GATE: Role bank — shift bank belum dibuka */}
+      {isBankRole&&!bankShiftData&&!showBukaShiftBank&&(
+        <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(14,59,100,.97),rgba(41,128,185,.95))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
+          <div style={{fontSize:56,marginBottom:4}}>🏦</div>
+          <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Bank Belum Dibuka</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.75)",textAlign:"center",maxWidth:280,lineHeight:1.6}}>
+            Buka shift bank untuk mulai melayani transaksi kasir & bank dalam 1 laci
+          </div>
+          <button onClick={()=>setShowBukaShiftBank(true)}
+            style={{marginTop:8,background:"#fff",border:"none",borderRadius:16,padding:"14px 32px",color:"#2980b9",fontWeight:900,fontSize:15,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 24px rgba(0,0,0,.3)"}}>
+            🟢 Buka Shift Bank Sekarang
+          </button>
+        </div>
+      )}
+      {/* Modal buka shift bank untuk role bank */}
+      {isBankRole&&showBukaShiftBank&&(
+        <BankShiftModal mode="open" shift={null} trxList={[]} saldoApps={props.saldoBank||DEFAULT_SALDO_APPS} onOpen={bukaShiftBank} onClose={()=>{}} onCancel={()=>setShowBukaShiftBank(false)}/>
+      )}
+
+      {/* GATE: Role staff/kasir biasa — shift kasir belum dibuka */}
+      {!isBankRole&&!kasirShiftData&&(
         <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(6,78,59,.97),rgba(13,148,136,.95))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:56,marginBottom:4}}>🔐</div>
           <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Belum Dibuka</div>
@@ -6342,7 +6396,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         <div className="kasir-layout" style={{position:"relative"}}>
 
           {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
-          {(shiftLoading||!shift)&&(
+          {/* Role bank: bypass gate kasir (tidak perlu buka shift kasir) */}
+          {(shiftLoading||!shift)&&!(embedded&&user.role==="bank")&&(
             <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,backdropFilter:"blur(6px)",fontFamily:"'Nunito',sans-serif"}}>
               {shiftLoading?(
                 <>
@@ -14771,12 +14826,16 @@ function PilihAksesPage({ user, outlets, onPilih, onLogout }) {
   const hasGps  = !!(activeOutlet?.lat&&activeOutlet?.lng);
   const isKasir = user.role==="kasir"||user.role==="staff"||(user.role==="karyawan"&&userOutletIds.length>0);
   const isBank  = user.role==="bank"||user.role==="staff";
+  const isBankRole = user.role==="bank"; // role bank murni: akses gabungan tanpa syarat fitur_gabungan
   const outletHasGabungan = !!(activeOutlet?.fitur_gabungan??activeOutlet?.fiturGabungan);
 
   const MENU = [
-    isKasir&&{k:"kasir",icon:"🛒",label:"Kasir",      sub:"Buka transaksi penjualan",     grad:"linear-gradient(135deg,#0d9488,#14b8a6)",glow:"rgba(13,148,136,.35)",locked:!boleh},
-    isBank &&{k:"bank", icon:"🏦",label:"Bank",        sub:"Pencatatan transaksi keuangan",grad:"linear-gradient(135deg,#2980b9,#3498db)",glow:"rgba(41,128,185,.35)",locked:!boleh},
-    (isKasir&&isBank&&outletHasGabungan)&&{k:"gabungan",icon:"🧾",label:"Kasir + Bank (1 Laci)",sub:"Transaksi gabungan satu laci",grad:"linear-gradient(135deg,#4338ca,#6366f1)",glow:"rgba(67,56,202,.35)",locked:!boleh},
+    isKasir&&!isBankRole&&{k:"kasir",icon:"🛒",label:"Kasir",      sub:"Buka transaksi penjualan",     grad:"linear-gradient(135deg,#0d9488,#14b8a6)",glow:"rgba(13,148,136,.35)",locked:!boleh},
+    isBank &&!isBankRole&&{k:"bank", icon:"🏦",label:"Bank",        sub:"Pencatatan transaksi keuangan",grad:"linear-gradient(135deg,#2980b9,#3498db)",glow:"rgba(41,128,185,.35)",locked:!boleh},
+    // Role bank: langsung ke gabungan (kasir + bank 1 laci, buka shift = saldo bank)
+    isBankRole&&{k:"gabungan",icon:"🏦",label:"Kasir + Bank (1 Laci)",sub:"Transaksi kasir & bank — shift bank",grad:"linear-gradient(135deg,#2980b9,#3498db)",glow:"rgba(41,128,185,.35)",locked:!boleh},
+    // Staff (kasir+bank): tampilkan gabungan jika outlet aktifkan fitur_gabungan
+    (!isBankRole&&isKasir&&isBank&&outletHasGabungan)&&{k:"gabungan",icon:"🧾",label:"Kasir + Bank (1 Laci)",sub:"Transaksi gabungan satu laci",grad:"linear-gradient(135deg,#4338ca,#6366f1)",glow:"rgba(67,56,202,.35)",locked:!boleh},
     {k:"portal",icon:"👤",label:"Portal Saya",sub:"Absensi, izin, misi & gaji",grad:"linear-gradient(135deg,#059669,#0d9488)",glow:"rgba(5,150,105,.3)",locked:false,free:true},
   ].filter(Boolean);
 
