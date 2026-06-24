@@ -5005,7 +5005,7 @@ function GabunganPage(props) {
 
       {/* Tab Kasir & Bank — render komponen asli, tidak diubah */}
       <div style={{display: tab==="kasir"?"flex":"none",flex:1,overflow:"hidden",flexDirection:"column"}}>
-        <KasirApp {...props} onBack={()=>{}} embedded/>
+        <KasirApp {...props} onBack={()=>{}} embedded onBukaShiftBank={isBankRole?()=>setShowBukaShiftBank(true):undefined}/>
       </div>
       <div style={{display: tab==="bank"?"flex":"none",flex:1,overflow:"hidden",flexDirection:"column"}}>
         <BankPage user={props.user} outlets={props.outlets} saldoApps={props.saldoBank} onBack={()=>{}} notify={props.notify} embedded portalMisi={props.portalMisi} portalMisiProgress={props.portalMisiProgress} products={props.products}/>
@@ -5812,7 +5812,7 @@ function QCStaffPage({ user, outlets, products, stocks, notify }) {
   );
 }
 
-function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{}, portalMisi=[], portalMisiProgress={}, strukConfig={}, embedded=false }) {
+function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outlets, saldoApps, onBack, notify, prodOrder, aktifProds={}, connStatus="online", offlineQueue=[], setOfflineQueue=()=>{}, portalMisi=[], portalMisiProgress={}, strukConfig={}, embedded=false, onBukaShiftBank=null }) {
   // Admin bisa pilih outlet; karyawan sudah terkunci ke outletnya
   const [selectedOutlet, setSelectedOutlet] = useState(user.outletId||outlets[0]?.id||"");
   const outlet = outlets.find(o=>o.id===selectedOutlet);
@@ -6398,8 +6398,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         <div className="kasir-layout" style={{position:"relative"}}>
 
           {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
-          {/* Role bank: bypass gate kasir (tidak perlu buka shift kasir) */}
-          {(shiftLoading||!shift)&&!(embedded&&user.role==="bank")&&(
+          {(shiftLoading||!shift)&&(
             <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(10,122,112,.96),rgba(13,148,136,.96))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,backdropFilter:"blur(6px)",fontFamily:"'Nunito',sans-serif"}}>
               {shiftLoading?(
                 <>
@@ -6408,18 +6407,24 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
                 </>
               ):(
                 <>
-                  <div style={{fontSize:64,lineHeight:1}}>🔒</div>
-                  <div style={{fontWeight:900,fontSize:24,color:"#fff",textAlign:"center",letterSpacing:"-0.5px"}}>Shift Belum Dibuka</div>
+                  <div style={{fontSize:64,lineHeight:1}}>{onBukaShiftBank?"🏦":"🔒"}</div>
+                  <div style={{fontWeight:900,fontSize:24,color:"#fff",textAlign:"center",letterSpacing:"-0.5px"}}>
+                    {onBukaShiftBank?"Shift Bank Belum Dibuka":"Shift Belum Dibuka"}
+                  </div>
                   <div style={{fontSize:14,color:"rgba(255,255,255,.85)",textAlign:"center",maxWidth:320,lineHeight:1.7,padding:"0 24px"}}>
-                    Kamu harus membuka shift terlebih dahulu sebelum bisa melakukan transaksi
+                    {onBukaShiftBank
+                      ?"Buka shift bank terlebih dahulu untuk mulai melayani transaksi"
+                      :"Kamu harus membuka shift terlebih dahulu sebelum bisa melakukan transaksi"}
                   </div>
                   <button
-                    onClick={()=>{setShiftMode("open");setShowShift(true);}}
-                    style={{background:"#fff",border:"none",borderRadius:16,padding:"16px 36px",color:"#0d9488",fontWeight:900,fontSize:17,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 30px rgba(0,0,0,.25)",marginTop:8,transition:"transform .15s"}}
+                    onClick={onBukaShiftBank
+                      ?onBukaShiftBank
+                      :()=>{setShiftMode("open");setShowShift(true);}}
+                    style={{background:"#fff",border:"none",borderRadius:16,padding:"16px 36px",color:onBukaShiftBank?"#2980b9":"#0d9488",fontWeight:900,fontSize:17,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 8px 30px rgba(0,0,0,.25)",marginTop:8,transition:"transform .15s"}}
                     onMouseEnter={e=>e.currentTarget.style.transform="scale(1.04)"}
                     onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}
                   >
-                    🟢 Buka Shift Sekarang
+                    🟢 Buka Shift {onBukaShiftBank?"Bank ":""}Sekarang
                   </button>
                   <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginTop:4}}>
                     {outlets.find(o=>o.id===selectedOutlet)?.nama}
