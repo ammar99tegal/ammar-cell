@@ -6351,7 +6351,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const QUICK=[5000,10000,20000,50000,100000];
 
   return (
-    <div style={{fontFamily:"'Nunito',sans-serif",background:"#f0faf8",minHeight:"100vh"}}>
+    <div style={{fontFamily:"'Nunito',sans-serif",background:"#f0faf8",...(embedded?{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}:{minHeight:"100vh"})}}>
       {/* HEADER — disembunyikan saat embedded (GabunganPage sudah punya header sendiri) */}
       {!embedded&&<div style={{background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",alignItems:"center",padding:"0 16px",boxShadow:"0 2px 14px rgba(13,148,136,.35)",position:"sticky",top:0,zIndex:100}}>
         <button onClick={onBack} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer",marginRight:8,fontFamily:"inherit"}}>← Menu</button>
@@ -6395,7 +6395,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
       {/* KASIR */}
       {page==="kasir"&&(
-        <div className="kasir-layout" style={{position:"relative", ...(embedded?{height:"calc(100vh - 94px)"}:{})}}>
+        <div className="kasir-layout" style={{position:"relative",...(embedded?{flex:1,height:"auto"}:{})}}>
 
           {/* -- OVERLAY: Loading shift / Shift belum dibuka -- */}
           {(shiftLoading||!shift)&&(
