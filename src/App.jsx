@@ -8947,9 +8947,25 @@ function GrowthBadge({g}){
   );
 }
 
-function ExportTab({fastMoving=[],outletStats=[],transactions=[]}){
+function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dateTo=""}){
   const [checked,setChecked]=useState({trxPerItem:true,revenue:false,fastMoving:false,bankRevenue:false,profitMargin:false});
   const [state,setState]=useState("idle");
+
+  // Filter transaksi berdasarkan periode yang dipilih user
+  const filteredTx = React.useMemo(()=>{
+    if(!dateFrom&&!dateTo) return transactions;
+    const from = dateFrom ? new Date(dateFrom) : null;
+    const to   = dateTo   ? new Date(dateTo)   : null;
+    if(from) from.setHours(0,0,0,0);
+    if(to)   to.setHours(23,59,59,999);
+    return transactions.filter(t=>{
+      const d = t.date ? new Date(t.date) : null;
+      if(!d) return false;
+      if(from && d < from) return false;
+      if(to   && d > to)   return false;
+      return true;
+    });
+  },[transactions,dateFrom,dateTo]);
   const items=[
     {k:"trxPerItem",l:"Transaksi Per Item",desc:"Nama item, total omset per item, jumlah terjual",icon:"📦"},
     {k:"revenue",l:"Revenue Summary",desc:"Omset, profit, margin per outlet per periode",icon:"💰"},
@@ -9512,7 +9528,7 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
       )}
 
       {activeTab==="analisis"&&<AnalisisTab transactions={transactions} outlets={outlets} outletStats={OUTLET_STATS_REAL}/>}
-      {activeTab==="export"&&<ExportTab fastMoving={FAST_MOVING_REAL} outletStats={OUTLET_STATS_REAL} transactions={filteredTx}/>}
+      {activeTab==="export"&&<ExportTab fastMoving={FAST_MOVING_REAL} outletStats={OUTLET_STATS_REAL} transactions={transactions} dateFrom={dateFrom} dateTo={dateTo}/>}
     </div>
   );
 }
