@@ -1,5 +1,5 @@
 // Ammar Cell App -- build 20260602-1043
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
 
 // ==============================================================================
@@ -7158,28 +7158,30 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
         } else if(payload.eventType==='DELETE'){
           setTrxList(prev=>prev.filter(t=>t.id!==payload.old?.id));
         }
-      }).subscribe();
+      }).subscribe((status)=>{
+        if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          console.warn('[Bank] channel trx mati, reload fallback...');
+          setTimeout(()=>loadAll(false), 2000);
+        }
+      });
 
     const chShift = supabase.channel(`bank-shift-${selectedOutlet}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},(payload)=>{
         if(payload.eventType==='DELETE'){
-          // Verifikasi dulu ke Supabase -- jangan langsung null
           const deletedId     = payload.old?.id;
           const deletedOutlet = payload.old?.outlet_id;
           setShiftState(prev=>{
             if(!prev) return null;
             if(deletedOutlet && deletedOutlet!==selectedOutlet) return prev;
             if(deletedId && deletedId!==prev.id) return prev;
-            // Cek ke Supabase dulu
             dbBank.getActiveShift(selectedOutlet,user.username).then(active=>{
               if(!active){
                 setShiftState(null);
                 try{localStorage.removeItem(`bank_shift_${selectedOutlet}`);}catch{}
               }
             }).catch(()=>{});
-            return prev; // pertahankan sementara
+            return prev;
           });
-          // Reload riwayat karena kemungkinan shift baru ditutup
           setTimeout(()=>loadAll(false), 800);
         } else if(payload.new?.outlet_id===selectedOutlet){
           const s=payload.new;
@@ -7187,12 +7189,21 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
           setShiftState(sd);
           try{localStorage.setItem(`bank_shift_${selectedOutlet}`,JSON.stringify(sd));}catch{}
         }
-      }).subscribe();
+      }).subscribe((status)=>{
+        if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          console.warn('[Bank] channel shift mati, reload fallback...');
+          setTimeout(()=>loadAll(false), 2000);
+        }
+      });
 
     const chLog = supabase.channel(`bank-shiftlog-${selectedOutlet}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_shift_logs'},()=>{
         setTimeout(()=>loadAll(false), 500);
-      }).subscribe();
+      }).subscribe((status)=>{
+        if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          setTimeout(()=>loadAll(false), 2000);
+        }
+      });
 
     return ()=>{
       supabase.removeChannel(chTrx);
@@ -8952,7 +8963,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
   const [state,setState]=useState("idle");
 
   // Filter transaksi berdasarkan periode yang dipilih user
-  const filteredTx = React.useMemo(()=>{
+  const filteredTx = useMemo(()=>{
     if(!dateFrom&&!dateTo) return transactions;
     const from = dateFrom ? new Date(dateFrom) : null;
     const to   = dateTo   ? new Date(dateTo)   : null;
@@ -15330,10 +15341,10 @@ export default function App() {
       if(document.visibilityState==='visible'){ checkConn(); reloadData(); }
     };
 
-    // Reload data setiap 90 detik sebagai fallback realtime putus
+    // Reload data setiap 20 detik sebagai fallback realtime putus (dipercepat dari 90s)
     const reloadIv = setInterval(()=>{
       if(document.visibilityState==='visible'&&navigator.onLine) reloadData();
-    }, 90000);
+    }, 20000);
 
     window.addEventListener('online',  onOnline);
     window.addEventListener('offline', onOffline);
@@ -15764,22 +15775,33 @@ export default function App() {
 
   // -- Realtime active_shifts -- laporan admin update otomatis ----------------
   useEffect(()=>{
-    const ch = supabase.channel('realtime-shifts')
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{ reloadData(); })
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},(p)=>{
-        const r=p.new; if(!r) return;
-        const t={id:r.id,waktu:r.waktu,tgl:r.tgl,shiftId:r.shift_id,nama:r.nama,
-          jenis:r.jenis,feeType:r.fee_type,fee:r.fee||0,nominal:r.nominal,
-          netNominal:r.net_nominal,outletId:r.outlet_id};
-        setAllBankTrx(prev=>prev.find(x=>x.id===t.id)?prev:[t,...prev]);
-      })
-      .on('postgres_changes',{event:'DELETE',schema:'public',table:'bank_transactions'},(p)=>{
-        setAllBankTrx(prev=>prev.filter(x=>x.id!==p.old?.id));
-      })
-      .subscribe();
-    return ()=>supabase.removeChannel(ch);
+    let ch;
+    const subscribe = () => {
+      if(ch) try{ supabase.removeChannel(ch); }catch{}
+      ch = supabase.channel('realtime-shifts')
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'shift_logs'},()=>{ reloadData(); })
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},(p)=>{
+          const r=p.new; if(!r) return;
+          const t={id:r.id,waktu:r.waktu,tgl:r.tgl,shiftId:r.shift_id,nama:r.nama,
+            jenis:r.jenis,feeType:r.fee_type,fee:r.fee||0,nominal:r.nominal,
+            netNominal:r.net_nominal,outletId:r.outlet_id};
+          setAllBankTrx(prev=>prev.find(x=>x.id===t.id)?prev:[t,...prev]);
+        })
+        .on('postgres_changes',{event:'DELETE',schema:'public',table:'bank_transactions'},(p)=>{
+          setAllBankTrx(prev=>prev.filter(x=>x.id!==p.old?.id));
+        })
+        .subscribe((status)=>{
+          // Auto-reconnect jika channel mati
+          if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+            console.warn('[Realtime] Channel shifts mati ('+status+'), reconnect dalam 3s...');
+            setTimeout(subscribe, 3000);
+          }
+        });
+    };
+    subscribe();
+    return ()=>{ try{ supabase.removeChannel(ch); }catch{} };
   },[]);
 
   // -- Realtime portal: misi, todos, absensi, izin, settings, foto ----------
