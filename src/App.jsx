@@ -8985,17 +8985,28 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
     {k:"profitMargin",l:"Analisis Profit & Growth",desc:"Margin per produk, QoQ growth, proyeksi",icon:"📊"},
   ];
   const cnt=Object.values(checked).filter(Boolean).length;
-  const mockData={
-    trxPerItem:[["Nama Item","Total Omset","Qty Terjual","Jumlah Transaksi"],["SIUL XL 6/7","Rp 450.000","30","30"],["SIUL TRI 10/3","Rp 435.000","29","29"],["SP INDOSAT 3GB","Rp 450.000","18","18"],["KABEL REBORN","Rp 375.000","15","15"]],
-    revenue:[["Outlet","Omset","Profit","Margin","Trx"],["AC Merpati","Rp 10.820.000","Rp 780.000","7.2%","230"],["AC Cikrik","Rp 3.245.000","Rp 248.363","7.7%","73"],["Istana 67","Rp 0","Rp 0","0%","0"]],
-  };
+
+  // Hitung data real dari filteredTx untuk preview & export
+  const realTrxPerItem = useMemo(()=>{
+    const itemMap={};
+    filteredTx.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
+      if(!itemMap[i.name]) itemMap[i.name]={name:i.name,omset:0,qty:0,trx:0};
+      itemMap[i.name].omset+=i.price*i.qty;
+      itemMap[i.name].qty+=i.qty;
+      itemMap[i.name].trx+=1;
+    }));
+    return Object.values(itemMap).sort((a,b)=>b.omset-a.omset);
+  },[filteredTx]);
+
+  const periodLabel = dateFrom&&dateTo ? `${dateFrom} s/d ${dateTo}` : "Semua Data";
+
   return (
     <div style={{padding:"20px 24px",maxWidth:900,margin:"0 auto"}}>
       <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:18,padding:"20px 24px",marginBottom:18,display:"flex",alignItems:"center",gap:16}}>
         <div style={{fontSize:42}}>📤</div>
         <div style={{flex:1}}>
           <div style={{fontWeight:900,fontSize:18,color:"#fff"}}>Export Data</div>
-          <div style={{fontSize:12,color:"rgba(255,255,255,.65)",marginTop:3}}>Pilih data yang ingin diexport lalu klik Export CSV</div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.65)",marginTop:3}}>Periode: <b style={{color:"#a5b4fc"}}>{periodLabel}</b> · {filteredTx.length} transaksi</div>
         </div>
         {cnt>0&&<div style={{background:"rgba(255,255,255,.15)",borderRadius:12,padding:"8px 16px",textAlign:"center"}}>
           <div style={{fontWeight:900,fontSize:22,color:"#a5b4fc"}}>{cnt}</div>
@@ -9020,7 +9031,6 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
             setState("loading");
             setTimeout(()=>{
               try {
-                // Build CSV per checked item
                 const BOM = "\uFEFF";
                 const dl = (rows,filename) => {
                   const csv = BOM+rows.map(r=>r.map(c=>'"'+String(c||"").replace(/"/g,'""')+'"').join(",")).join("\n");
@@ -9029,31 +9039,24 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
                   a.download = filename; a.click();
                 };
                 if(checked.trxPerItem){
-                  const itemMap={};
-                  filteredTx.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
-                    if(!itemMap[i.name]) itemMap[i.name]={name:i.name,omset:0,qty:0,trx:0};
-                    itemMap[i.name].omset+=i.price*i.qty;
-                    itemMap[i.name].qty+=i.qty;
-                    itemMap[i.name].trx+=1;
-                  }));
-                  const rows=[["Nama Item","Total Omset","Qty Terjual","Jumlah Transaksi"],...Object.values(itemMap).sort((a,b)=>b.omset-a.omset).map(x=>[x.name,x.omset,x.qty,x.trx])];
-                  dl(rows,"transaksi-per-item.csv");
+                  const rows=[["Nama Item","Total Omset","Qty Terjual","Jumlah Transaksi"],...realTrxPerItem.map(x=>[x.name,x.omset,x.qty,x.trx])];
+                  dl(rows,`transaksi-per-item_${dateFrom||"all"}_${dateTo||"all"}.csv`);
                 }
                 if(checked.revenue){
                   const rows=[["Outlet","Omset","Profit","Margin","Transaksi"],...outletStats.map(o=>[o.nama,o.omset,o.profit,o.omset>0?(o.profit/o.omset*100).toFixed(1)+"%":"0%",o.trx])];
-                  dl(rows,"revenue-summary.csv");
+                  dl(rows,`revenue-summary_${dateFrom||"all"}_${dateTo||"all"}.csv`);
                 }
                 if(checked.fastMoving){
                   const rows=[["Rank","Nama Produk","Qty Terjual","Total Omset","Jumlah Transaksi"],...fastMoving.map(x=>[x.rank,x.name,x.qty,x.omset,x.trx])];
-                  dl(rows,"fast-moving-top100.csv");
+                  dl(rows,`fast-moving-top100_${dateFrom||"all"}_${dateTo||"all"}.csv`);
                 }
                 if(checked.bankRevenue){
                   const rows=[["Outlet","Masuk","Keluar","Saldo","Transaksi Bank"],...outletStats.map(o=>[o.nama,o.bank?o.bank.masuk:0,o.bank?o.bank.keluar:0,o.bank?(o.bank.masuk-o.bank.keluar):0,o.bank?o.bank.trx:0])];
-                  dl(rows,"bank-revenue.csv");
+                  dl(rows,`bank-revenue_${dateFrom||"all"}_${dateTo||"all"}.csv`);
                 }
                 if(checked.profitMargin){
                   const rows=[["Outlet","Omset","Profit","Margin"],...outletStats.map(o=>[o.nama,o.omset,o.profit,o.omset>0?(o.profit/o.omset*100).toFixed(1)+"%":"0%"])];
-                  dl(rows,"profit-margin.csv");
+                  dl(rows,`profit-margin_${dateFrom||"all"}_${dateTo||"all"}.csv`);
                 }
                 setState("done"); setTimeout(()=>setState("idle"),3000);
               } catch(e){ console.error(e); setState("idle"); }
@@ -9064,31 +9067,38 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
           </button>
         </div>
         <div>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e293b",marginBottom:10}}>Preview Data</div>
+          <div style={{fontWeight:800,fontSize:13,color:"#1e293b",marginBottom:10}}>Preview Data · <span style={{color:"#6366f1",fontWeight:700}}>{periodLabel}</span></div>
           {checked.trxPerItem&&(
             <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0e7ff",overflow:"hidden",marginBottom:10}}>
-              <div style={{padding:"9px 13px",background:"#eef2ff",borderBottom:"1px solid #e0e7ff",fontWeight:700,fontSize:11,color:"#4338ca"}}>📦 Transaksi Per Item</div>
+              <div style={{padding:"9px 13px",background:"#eef2ff",borderBottom:"1px solid #e0e7ff",fontWeight:700,fontSize:11,color:"#4338ca",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span>📦 Transaksi Per Item</span>
+                <span style={{fontWeight:600,color:"#6366f1"}}>{realTrxPerItem.length} item</span>
+              </div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                  <thead><tr>{mockData.trxPerItem[0].map(h=><th key={h} style={{padding:"6px 10px",background:"#f8fafc",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                  <tbody>{mockData.trxPerItem.slice(1).map((row,i)=>(
+                  <thead><tr>{["Nama Item","Total Omset","Qty","Trx"].map(h=><th key={h} style={{padding:"6px 10px",background:"#f8fafc",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <tbody>{realTrxPerItem.slice(0,5).map((row,i)=>(
                     <tr key={i} style={{background:i%2===0?"#fff":"#fafbff"}}>
-                      {row.map((cell,j)=><td key={j} style={{padding:"6px 10px",color:"#1e293b",fontWeight:j===0?700:600,borderBottom:"1px solid #f8fafc",whiteSpace:"nowrap"}}>{cell}</td>)}
+                      <td style={{padding:"6px 10px",color:"#1e293b",fontWeight:700,borderBottom:"1px solid #f8fafc",whiteSpace:"nowrap"}}>{row.name}</td>
+                      <td style={{padding:"6px 10px",color:"#0d9488",fontWeight:700,borderBottom:"1px solid #f8fafc"}}>{fmtRp(row.omset)}</td>
+                      <td style={{padding:"6px 10px",color:"#6366f1",fontWeight:600,borderBottom:"1px solid #f8fafc"}}>{row.qty}</td>
+                      <td style={{padding:"6px 10px",color:"#64748b",fontWeight:600,borderBottom:"1px solid #f8fafc"}}>{row.trx}</td>
                     </tr>
                   ))}</tbody>
                 </table>
               </div>
-              <div style={{padding:"5px 10px",background:"#f8fafc",fontSize:9,color:"#94a3b8"}}>...dan {(fastMoving||[]).length-4} baris lainnya</div>
+              {realTrxPerItem.length>5&&<div style={{padding:"5px 10px",background:"#f8fafc",fontSize:9,color:"#94a3b8"}}>...dan {realTrxPerItem.length-5} item lainnya akan ikut di CSV</div>}
+              {realTrxPerItem.length===0&&<div style={{padding:"16px",textAlign:"center",color:"#94a3b8",fontSize:11}}>Tidak ada transaksi di periode ini</div>}
             </div>
           )}
           {checked.revenue&&(
             <div style={{background:"#fff",borderRadius:13,border:"2px solid #e0f2fe",overflow:"hidden",marginBottom:10}}>
-              <div style={{padding:"9px 13px",background:"#e0f2fe",borderBottom:"1px solid #bae6fd",fontWeight:700,fontSize:11,color:"#0369a1"}}>💰 Revenue Summary</div>
+              <div style={{padding:"9px 13px",background:"#e0f2fe",borderBottom:"1px solid #bae6fd",fontWeight:700,fontSize:11,color:"#0369a1"}}>💰 Revenue Summary per Outlet</div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                  <thead><tr>{mockData.revenue[0].map(h=><th key={h} style={{padding:"6px 10px",background:"#f8fafc",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                  <tbody>{mockData.revenue.slice(1).map((row,i)=>(
-                    <tr key={i}>{row.map((c,j)=><td key={j} style={{padding:"6px 10px",fontWeight:700,color:j===2?"#10b981":j===3?"#6366f1":"#1e293b",borderBottom:"1px solid #f8fafc",whiteSpace:"nowrap"}}>{c}</td>)}</tr>
+                  <thead><tr>{["Outlet","Omset","Profit","Margin","Trx"].map(h=><th key={h} style={{padding:"6px 10px",background:"#f8fafc",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <tbody>{outletStats.map((o,i)=>(
+                    <tr key={i}><td style={{padding:"6px 10px",fontWeight:700,color:"#1e293b",borderBottom:"1px solid #f8fafc",whiteSpace:"nowrap"}}>{o.nama}</td><td style={{padding:"6px 10px",fontWeight:700,color:"#0d9488",borderBottom:"1px solid #f8fafc"}}>{fmtRp(o.omset)}</td><td style={{padding:"6px 10px",fontWeight:700,color:"#10b981",borderBottom:"1px solid #f8fafc"}}>{fmtRp(o.profit)}</td><td style={{padding:"6px 10px",fontWeight:700,color:"#6366f1",borderBottom:"1px solid #f8fafc"}}>{o.omset>0?(o.profit/o.omset*100).toFixed(1)+"%":"0%"}</td><td style={{padding:"6px 10px",fontWeight:600,color:"#64748b",borderBottom:"1px solid #f8fafc"}}>{o.trx}</td></tr>
                   ))}</tbody>
                 </table>
               </div>
@@ -9102,7 +9112,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
           )}
           <div style={{background:"#f0fdf4",borderRadius:12,padding:"12px 14px",border:"2px solid #bbf7d0",marginTop:10}}>
             <div style={{fontWeight:700,fontSize:11,color:"#15803d",marginBottom:6}}>Format Export</div>
-            {["File CSV -- bisa dibuka di Excel/Google Sheets","Encoding UTF-8 dengan BOM","Satu file per jenis data yang dipilih"].map((t,i)=>(
+            {["File CSV -- bisa dibuka di Excel/Google Sheets","Encoding UTF-8 dengan BOM","Nama file sudah include periode export"].map((t,i)=>(
               <div key={i} style={{fontSize:10,color:"#166534",marginBottom:3,display:"flex",gap:5}}><span>✓</span><span>{t}</span></div>
             ))}
           </div>
