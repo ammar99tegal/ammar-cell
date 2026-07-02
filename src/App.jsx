@@ -3473,9 +3473,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const prodMap={};
     group.items.forEach(t=>{
       t.items.filter(i=>!i.refunded).forEach(i=>{
-        if(!prodMap[i.name]) prodMap[i.name]={name:i.name,qty:0,omset:0};
+        if(!prodMap[i.name]) prodMap[i.name]={name:i.name,qty:0,omset:0,profit:0};
         prodMap[i.name].qty+=i.qty;
         prodMap[i.name].omset+=i.price*i.qty;
+        prodMap[i.name].profit+=(i.price-(i.modal||0))*i.qty;
       });
     });
     return Object.values(prodMap).sort((a,b)=>b.qty-a.qty);
@@ -3733,6 +3734,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const group=selectedShift;
     const detail=getShiftDetail(group);
     const gOmset=calcOmset(group.items);
+    const gProfit=calcProfit(group.items);
     const gItems=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
     const saldo=getShiftSaldo(group.key);
 
@@ -3846,11 +3848,12 @@ function LaporanPage({ transactions, outlets, onBack }) {
                   {[
                     {l:"Total transaksi hari ini", v:`${group.items.length}`, plain:true},
                     {l:"Total omzet",               v:fmtRp(gOmset)},
+                    {l:"Total profit",              v:fmtRp(gProfit), highlight:true},
                     {l:"Total item terjual",        v:`${gItems}`, plain:true},
                   ].map(r=>(
                     <div key={r.l} style={{display:"flex",justifyContent:"space-between",fontSize:13}}>
                       <span style={{opacity:.85}}>{r.l}</span>
-                      <span style={{fontWeight:800}}>{r.v}</span>
+                      <span style={{fontWeight:800,color:r.highlight?"#86efac":undefined}}>{r.v}</span>
                     </div>
                   ))}
 
@@ -3887,9 +3890,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
           })()}
 
           {/* Ringkasan shift */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
             {[
               {l:"Omset Bersih",  v:fmtRp(gOmset),        c:"#0d9488", bg:"linear-gradient(135deg,#0d9488,#14b8a6)", tc:"#fff"},
+              {l:"Profit",        v:fmtRp(gProfit),        c:"#8e44ad", bg:"linear-gradient(135deg,#7c3aed,#8b5cf6)", tc:"#fff"},
               {l:"Item Terjual",  v:`${gItems} pcs`,        c:"#8e44ad", bg:"#f5eeff",                                tc:"#8e44ad"},
               {l:"Transaksi",     v:`${group.items.length}`, c:"#2980b9", bg:"#e8f4fd",                                tc:"#2980b9"},
             ].map(k=>(
@@ -4057,7 +4061,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
             </div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr style={{background:"#e0faf5"}}>
-                {["#","Produk","Qty Terjual","Omset"].map(h=>(
+                {["#","Produk","Qty Terjual","Omset","Profit"].map(h=>(
                   <th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:800,color:"#0d9488"}}>{h}</th>
                 ))}
               </tr></thead>
@@ -4068,9 +4072,10 @@ function LaporanPage({ transactions, outlets, onBack }) {
                     <td style={{padding:"8px 12px",fontWeight:700}}>{p.name}</td>
                     <td style={{padding:"8px 12px",fontWeight:900,color:"#0d9488"}}>{p.qty} pcs</td>
                     <td style={{padding:"8px 12px",fontWeight:800,color:"#555"}}>{fmtRp(p.omset)}</td>
+                    <td style={{padding:"8px 12px",fontWeight:800,color:p.profit>0?"#8b5cf6":p.profit<0?"#ef4444":"#aaa"}}>{fmtRp(p.profit)}</td>
                   </tr>
                 ))}
-                {detail.length===0&&<tr><td colSpan={4} style={{padding:24,textAlign:"center",color:"#ccc"}}>Tidak ada produk terjual</td></tr>}
+                {detail.length===0&&<tr><td colSpan={5} style={{padding:24,textAlign:"center",color:"#ccc"}}>Tidak ada produk terjual</td></tr>}
               </tbody>
             </table>
           </div>
