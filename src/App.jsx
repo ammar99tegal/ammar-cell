@@ -1914,6 +1914,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
         id:r.id, time:r.time||r.created_at?.substring(11,16)||"",
         type:r.type, outletNama:r.outlet_nama||r.outletNama||"",
         productName:r.product_name||r.productName||"",
+        productId:r.product_id||r.productId||"",
         qty:r.qty||0, note:r.note||"",
       }));
       setLog(mapped);
@@ -1923,7 +1924,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     const ch = supabase.channel("stock-logs-rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"stock_logs"},(p)=>{
         const r=p.new; if(!r) return;
-        setLog(prev=>[{id:r.id,time:r.time||"",type:r.type,outletNama:r.outlet_nama||"",productName:r.product_name||"",qty:r.qty||0,note:r.note||""},...prev]);
+        setLog(prev=>[{id:r.id,time:r.time||"",type:r.type,outletNama:r.outlet_nama||"",productName:r.product_name||"",productId:r.product_id||"",qty:r.qty||0,note:r.note||""},...prev]);
       })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"stock_logs"},(p)=>{
         const id=p.old?.id; if(!id) return;
@@ -2410,8 +2411,45 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
                 <tbody>
                   {log.map((l,i)=>(
                     <LogRow key={l.id} l={l} i={i}
-                      onEdit={updated=>setLog(prev=>prev.map(x=>x.id===l.id?{...x,...updated}:x))}
-                      onDelete={()=>setLog(prev=>prev.filter(x=>x.id!==l.id))}
+                      onEdit={async updated=>{
+                        try{
+                          const {error}=await supabase.from('stock_logs').update({qty:updated.qty,note:updated.note}).eq('id',l.id);
+                          if(error) throw error;
+                          setLog(prev=>prev.map(x=>x.id===l.id?{...x,...updated}:x));
+                          // Sinkron stok: hitung selisih qty dan update stocks
+                          const diff = updated.qty - l.qty;
+                          if(diff!==0){
+                            const outletId = outlets.find(o=>o.nama===l.outletNama)?.id;
+                            if(outletId){
+                              const mul = l.type==="masuk"?1:-1;
+                              setStocks(prev=>{
+                                const s={...(prev[outletId]||{})};
+                                s[l.productId]=(s[l.productId]||0)+mul*diff;
+                                return {...prev,[outletId]:s};
+                              });
+                            }
+                          }
+                        }catch(e){ notify("Gagal update log: "+e.message,"err"); }
+                      }}
+                      onDelete={async ()=>{
+                        if(!window.confirm("Hapus log ini? Stok akan dikembalikan.")) return;
+                        try{
+                          const {error}=await supabase.from('stock_logs').delete().eq('id',l.id);
+                          if(error) throw error;
+                          setLog(prev=>prev.filter(x=>x.id!==l.id));
+                          // Kembalikan stok
+                          const outletId = outlets.find(o=>o.nama===l.outletNama)?.id;
+                          if(outletId){
+                            const mul = l.type==="masuk"?-1:1; // balik operasi asli
+                            setStocks(prev=>{
+                              const s={...(prev[outletId]||{})};
+                              s[l.productId]=(s[l.productId]||0)+mul*l.qty;
+                              return {...prev,[outletId]:s};
+                            });
+                          }
+                          notify("✅ Log dihapus","ok");
+                        }catch(e){ notify("Gagal hapus log: "+e.message,"err"); }
+                      }}
                     />
                   ))}
                 </tbody>
@@ -8963,6 +9001,8 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
   const [state,setState]=useState("idle");
 
   // Filter transaksi berdasarkan periode yang dipilih user
+  // Format tanggal transaksi: dd/mm/yyyy — harus diparse manual
+  const parseTxDate = s => { try{ const [d,m,y]=s.split("/"); return new Date(+y,+m-1,+d); }catch{ return null; } };
   const filteredTx = useMemo(()=>{
     if(!dateFrom&&!dateTo) return transactions;
     const from = dateFrom ? new Date(dateFrom) : null;
@@ -8970,7 +9010,7 @@ function ExportTab({fastMoving=[],outletStats=[],transactions=[],dateFrom="",dat
     if(from) from.setHours(0,0,0,0);
     if(to)   to.setHours(23,59,59,999);
     return transactions.filter(t=>{
-      const d = t.date ? new Date(t.date) : null;
+      const d = parseTxDate(t.date);
       if(!d) return false;
       if(from && d < from) return false;
       if(to   && d > to)   return false;
@@ -9283,9 +9323,9 @@ function DashboardOverallPage({ transactions, outlets, stocks, bankTrx=[], onBac
     const bankData = bList.length>0 ? {masuk:bMasuk,keluar:bKeluar,fee:bFee,trx:bList.length} : null;
     return { nama:o.nama, omset:calcOmset(list), profit:calcProfit(list), trx:list.length, color:colors[i%colors.length], bank:bankData };
   });
-  // Fast moving real
+  // Fast moving real — ikut filter periode
   const itemMap = {};
-  transactions.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
+  filteredTx.forEach(t=>(t.items||[]).filter(i=>!i.refunded).forEach(i=>{
     if(!itemMap[i.name]) itemMap[i.name]={name:i.name,qty:0,omset:0,trx:0};
     itemMap[i.name].qty  += i.qty;
     itemMap[i.name].omset+= i.price*i.qty;
