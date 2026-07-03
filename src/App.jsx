@@ -6717,6 +6717,28 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       {/* MODALS */}
       {showManual&&(
         <Modal onClose={()=>setShowManual(false)} title="➕ Input Manual">
+          {/* Pilihan Cepat Prefix */}
+          <div style={{marginBottom:10}}>
+            <label style={{...lbl}}>Pilihan Cepat</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {["SIUL ISAT","SIUL TRI","SIUL XL","SIUL AXIS","SIUL TSEL","SIUL SMART"].map(prefix=>(
+                <button key={prefix} onClick={()=>{
+                  const cur=manualForm.name||"";
+                  // Kalau sudah ada prefix lain, ganti prefixnya; kalau belum ada, tambah
+                  const existing=["SIUL ISAT","SIUL TRI","SIUL XL","SIUL AXIS","SIUL TSEL","SIUL SMART"].find(p=>cur.startsWith(p));
+                  const suffix=existing?cur.slice(existing.length):cur;
+                  setManualForm(p=>({...p,name:prefix+suffix}));
+                }}
+                  style={{padding:"4px 9px",borderRadius:7,border:"2px solid",
+                    borderColor:manualForm.name?.startsWith(prefix)?"#0d9488":"#b2ede6",
+                    background:manualForm.name?.startsWith(prefix)?"#0d9488":"#f0faf8",
+                    color:manualForm.name?.startsWith(prefix)?"#fff":"#0d9488",
+                    fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+                  {prefix}
+                </button>
+              ))}
+            </div>
+          </div>
           {[{l:"Nama *",k:"name",t:"text",p:"Nama item..."},{l:"Harga Modal *",k:"modal",t:"number",p:"0"},{l:"Harga Jual *",k:"price",t:"number",p:"0"},{l:"Qty",k:"qty",t:"number",p:"1"}].map(f=>(
             <div key={f.k} style={{marginBottom:8}}>
               <label style={{...lbl}}>{f.l}</label>
