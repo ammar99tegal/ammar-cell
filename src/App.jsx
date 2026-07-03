@@ -3734,7 +3734,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     const group=selectedShift;
     const detail=getShiftDetail(group);
     const gOmset=calcOmset(group.items);
-    const gProfit=calcProfit(group.items);
+    const gProfit=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+(i.price-(i.modal||0))*i.qty,0),0);
     const gItems=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
     const saldo=getShiftSaldo(group.key);
 
