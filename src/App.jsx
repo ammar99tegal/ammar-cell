@@ -11427,7 +11427,7 @@ function ConnStatusBar({ status, lastPing, offlineQueue }) {
     offline:      { bg:"#dc2626", icon:"📵", text:"Tidak Ada Koneksi -- Transaksi tersimpan lokal, akan dikirim saat online",  pulse:true  },
     reconnecting: { bg:"#d97706", icon:"🔄", text:"Menghubungkan kembali...",                                                  pulse:true  },
     slow:         { bg:"#b45309", icon:"⚠️",  text:`Koneksi Lambat (${lastPing||"..."}ms) -- Data mungkin tertunda`,          pulse:false },
-    warn:         { bg:"#ca8a04", icon:"⚡",  text:`Sinyal Lemah (${lastPing||"..."}ms)`,                                      pulse:false },
+    warn:         { bg:"#ca8a04", icon:"⚡",  text:`Sinyal Agak Lambat (${lastPing||"..."}ms) -- Masih aman`,                   pulse:false },
   }[status]||{ bg:"#dc2626", icon:"📵", text:"Koneksi Bermasalah", pulse:true };
 
   return (
@@ -15362,8 +15362,9 @@ export default function App() {
   // -- Connection monitor: ping Supabase tiap 10 detik ---------------------
   useEffect(()=>{
     let wasOffline = false;
+    let hiddenSince = null; // catat kapan layar mulai sleep
 
-    const checkConn = async () => {
+    const checkConn = async (fromVisibility=false) => {
       if(!navigator.onLine){
         setConnStatus("offline");
         wasOffline = true;
@@ -15375,16 +15376,13 @@ export default function App() {
         await supabase.from('active_shifts').select('id').limit(1);
         const ms=Date.now()-t0;
         setLastPing(ms);
-        if(wasOffline){
+        if(wasOffline||fromVisibility){
+          // Baru reconnect (dari offline atau dari sleep layar)
           setConnStatus("reconnecting");
           setTimeout(async()=>{
-            // Flush offline queue DULU sebelum reload
             setOfflineQueue(prev=>{
               if(prev.length>0){
-                flushOfflineQueue(prev).then(ok=>{
-                  // Setelah flush, reload data agar admin lihat data terbaru
-                  reloadData();
-                });
+                flushOfflineQueue(prev).then(()=>{ reloadData(); });
               } else {
                 reloadData();
               }
@@ -15393,14 +15391,23 @@ export default function App() {
             setConnStatus("online");
           },1500);
           wasOffline=false;
+          hiddenSince=null;
         } else {
-          setConnStatus(ms>3000?"slow":ms>1500?"warn":"online");
+          // Threshold wajar: slow >8s, warn >3s — bukan reconnect setelah sleep
+          setConnStatus(ms>8000?"slow":ms>3000?"warn":"online");
         }
       }catch(e){
         setConnStatus("offline");
         wasOffline=true;
       }
     };
+
+    // Keepalive ping setiap 25 detik — cegah Android sleep WebSocket
+    const keepaliveIv = setInterval(async()=>{
+      if(navigator.onLine&&document.visibilityState==='visible'){
+        try{ await supabase.from('active_shifts').select('id').limit(1); }catch{}
+      }
+    }, 25000);
 
     const pingIv = setInterval(checkConn, 10000);
     checkConn();
@@ -15415,7 +15422,16 @@ export default function App() {
       wasOffline=true;
     };
     const onVisible = () => {
-      if(document.visibilityState==='visible'){ checkConn(); reloadData(); }
+      if(document.visibilityState==='visible'){
+        // Kalau layar sleep >30 detik, treat seperti reconnect (WebSocket mungkin mati)
+        const sleepDuration = hiddenSince ? Date.now()-hiddenSince : 0;
+        if(sleepDuration>30000) wasOffline=true;
+        hiddenSince=null;
+        checkConn(sleepDuration>30000);
+        reloadData();
+      } else {
+        hiddenSince=Date.now(); // catat kapan mulai sleep
+      }
     };
 
     // Reload data setiap 20 detik sebagai fallback realtime putus (dipercepat dari 90s)
@@ -15430,6 +15446,7 @@ export default function App() {
     return () => {
       clearInterval(pingIv);
       clearInterval(reloadIv);
+      clearInterval(keepaliveIv);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', onVisible);
