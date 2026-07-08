@@ -15574,23 +15574,25 @@ export default function App() {
   // -- Load semua data dari Supabase saat pertama buka ----------------------
   useEffect(()=>{
     const load = async () => {
-      // Timeout 15 detik -- jika lebih dari itu tampilkan error
+      // Timeout 40 detik -- lebih toleran untuk Android baterai rendah & Supabase cold start
       const timeout = setTimeout(()=>{
         setDbError("Koneksi terlalu lambat. Cek internet dan coba lagi.");
         setLoading(false);
-      }, 15000);
+      }, 40000);
 
       try {
-        // Load satu per satu dengan fallback -- satu gagal tidak crash semua
-        const prods        = await db.getProducts().catch(()=>[]);
-        const outs         = await db.getOutlets().catch(()=>[]);
-        const stks         = await db.getStocks().catch(()=>({}));
-        const txs          = await loadAllTransactions();
-        const usrs         = await db.getUsers().catch(()=>({}));
-        const saldoList    = await dbSaldo.getSaldoApps().catch(()=>[]);
-        const saldoBankList= await dbSaldoBank.getSaldoBankApps().catch(()=>[]);
-        const prodOrd      = await dbProductOrder.getOrder().catch(()=>[]);
-        const aktifMap     = await dbAktifProduk.getAllAktif().catch(()=>({}));
+        // Load paralel -- jauh lebih cepat dari serial, kurangi risiko timeout
+        const [prods, outs, stks, txs, usrs, saldoList, saldoBankList, prodOrd, aktifMap] = await Promise.all([
+          db.getProducts().catch(()=>[]),
+          db.getOutlets().catch(()=>[]),
+          db.getStocks().catch(()=>({})),
+          loadAllTransactions().catch(()=>[]),
+          db.getUsers().catch(()=>({})),
+          dbSaldo.getSaldoApps().catch(()=>[]),
+          dbSaldoBank.getSaldoBankApps().catch(()=>[]),
+          dbProductOrder.getOrder().catch(()=>[]),
+          dbAktifProduk.getAllAktif().catch(()=>({})),
+        ]);
 
         // Load user_outlets mapping (untuk multi-outlet assignment)
         try {
@@ -16109,14 +16111,23 @@ export default function App() {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');*{box-sizing:border-box;}`}</style>
       <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
       <div style={{fontWeight:900,fontSize:18,color:"#ff4757",marginBottom:8}}>Koneksi Database Gagal</div>
-      <div style={{color:"#666",fontSize:13,textAlign:"center",maxWidth:380,lineHeight:1.6,marginBottom:16}}>{dbError}</div>
-      <div style={{background:"#f8f8f8",borderRadius:10,padding:"12px 16px",fontSize:12,color:"#555",maxWidth:380}}>
+      <div style={{color:"#666",fontSize:13,textAlign:"center",maxWidth:400,lineHeight:1.6,marginBottom:12}}>{dbError}</div>
+      <div style={{background:"#fff8e1",border:"2px solid #ffe082",borderRadius:12,padding:"12px 16px",marginBottom:12,maxWidth:400,fontSize:12,color:"#7d6608"}}>
+        <b>💡 Kemungkinan penyebab:</b>
+        <div style={{marginTop:6,lineHeight:1.8}}>
+          • <b>Baterai rendah</b> → Android throttle koneksi background<br/>
+          • <b>Supabase cold start</b> (~20–30 detik pertama)<br/>
+          • Koneksi internet sesaat tidak stabil
+        </div>
+      </div>
+      <div style={{background:"#f8f8f8",borderRadius:10,padding:"12px 16px",fontSize:12,color:"#555",maxWidth:400,marginBottom:16}}>
         <b>Cek:</b><br/>
         1. File <code>src/supabase.js</code> sudah diisi URL & KEY yang benar<br/>
         2. SQL setup sudah dijalankan di Supabase<br/>
         3. Koneksi internet aktif
       </div>
-      <button onClick={()=>window.location.reload()} style={{marginTop:16,background:"#0d9488",border:"none",borderRadius:10,padding:"10px 24px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>🔄 Coba Lagi</button>
+      <button onClick={()=>window.location.reload()} style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:12,padding:"12px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(13,148,136,.35)"}}>🔄 Coba Lagi</button>
+      <div style={{marginTop:12,fontSize:11,color:"#aaa",textAlign:"center"}}>⚡ Shift yang sedang berjalan <b>aman</b> — data tersimpan di server, tidak hilang</div>
     </div>
   );
 
