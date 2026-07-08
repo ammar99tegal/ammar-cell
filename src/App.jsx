@@ -4598,8 +4598,9 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
 // Shift kasir & bank tetap terpisah, tapi ada rekap penutupan gabungan 1 laci
 // ==============================================================================
 function GabunganPage(props) {
-  const { user, outlets, transactions=[], notify } = props;
-  const isBankRole = user.role==="bank"; // role bank: shift dari bank, kasir tanpa shift
+  const { user, outlets, transactions=[], notify, useShiftBank=false } = props;
+  // isBankRole: role bank ATAU admin/staff yang masuk lewat menu Kasir+Bank (useShiftBank=true)
+  const isBankRole = user.role==="bank" || useShiftBank;
   const [tab,setTab] = useState("kasir"); // kasir | bank | rekap
   const [bankTrxHariIni,setBankTrxHariIni] = useState([]);
   const [kasirShiftData,setKasirShiftData] = useState(null); // data shift kasir aktif
@@ -16207,7 +16208,7 @@ export default function App() {
       </>)}
       {page==="gabungan"  && (<>
         {kasirGpsHook.warnCD!=null&&<GpsWarningOverlay warnCD={kasirGpsHook.warnCD} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsAcc={kasirGpsHook.gpsAcc} onVerify={kasirGpsHook.dismissWarning} onLock={handleGpsViolation} pilihScene="gabungan"/>}
-        <GabunganPage user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} saldoBank={saldoBank} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} strukConfig={strukConfig} onBack={()=>{setPage("pilih");setPilihScene(null);}}/>
+        <GabunganPage user={user} products={products} stocks={stocks} setStocks={setStocks} transactions={transactions} setTx={setTx} outlets={outlets} saldoApps={saldoApps} saldoBank={saldoBank} notify={notify} prodOrder={prodOrder} aktifProds={aktifProdsRoot} connStatus={connStatus} offlineQueue={offlineQueue} setOfflineQueue={setOfflineQueue} gpsStatus={kasirGpsHook.gpsStatus} gpsJarak={kasirGpsHook.gpsJarak} gpsNextCek={kasirGpsHook.nextCek} onGpsCek={kasirGpsHook.cekSekarang} portalMisi={portalMisi} portalMisiProgress={portalMisiProgress} strukConfig={strukConfig} useShiftBank={user.role==="bank"||user.role==="admin"} onBack={()=>{setPage("pilih");setPilihScene(null);}}/>
       </>)}
       {page==="monitor"   && (isAdmin||isMonitor) && <MonitorPage user={user} outlets={outlets} transactions={transactions} stocks={stocks} products={products} prodOrder={prodOrder} onBack={isMonitor?null:()=>setPage("menu")} notify={notify}/>}
       {page==="cashflow"  && (isAdmin||isCashflowOnly) && <CashflowPage  transactions={transactions} outlets={outlets} onBack={isCashflowOnly?null:()=>setPage("menu")} notify={notify} initialTab={isCashflowOnly?"jurnal":"kalkulator"} isCashflowOnly={isCashflowOnly}/>}
