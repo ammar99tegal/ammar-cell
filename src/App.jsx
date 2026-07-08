@@ -4618,34 +4618,37 @@ function GabunganPage(props) {
     setSavingRekap(true);
     const waktuTutup = now();
     try{
-      // 1. Tutup shift kasir
-      const kasirShiftRow = kasirShiftData;
-      if(kasirShiftRow){
-        const closeDataKasir = {
-          waktuTutup, saldoAppsClose: saldoAkhirApps,
-          kasNyataSystem: totalLaciSistem, kasNyataFisik: laciFisikNum,
-          selisih: selisihGabungan, notes: catatan,
-          cashKembC: 0, setorTunai:0, hutang:0, pending:0, pengeluaran:0, noteKlr:"",
-        };
-        try{ await dbShift.closeShift(kasirShiftRow, gabunganOutlet, user.username||user.id, closeDataKasir); }
-        catch(e){ console.warn("tutup kasir shift:",e); }
-        try{ await supabase.from('active_shifts').delete().eq('outlet_id', gabunganOutlet); }catch{}
+      // Tutup shift kasir + bank secara PARALEL (lebih cepat, kurangi freeze UI tablet)
+      const closeDataKasir = kasirShiftData ? {
+        waktuTutup, saldoAppsClose: saldoAkhirApps,
+        kasNyataSystem: totalLaciSistem, kasNyataFisik: laciFisikNum,
+        selisih: selisihGabungan, notes: catatan,
+        cashKembC: 0, setorTunai:0, hutang:0, pending:0, pengeluaran:0, noteKlr:"",
+      } : null;
+
+      const [, bankShiftRows] = await Promise.all([
+        // 1. Tutup shift kasir
+        kasirShiftData ? (async()=>{
+          try{ await dbShift.closeShift(kasirShiftData, gabunganOutlet, user.username||user.id, closeDataKasir); }catch(e){ console.warn("tutup kasir shift:",e); }
+          try{ await supabase.from('active_shifts').delete().eq('outlet_id', gabunganOutlet); }catch{}
+        })() : Promise.resolve(),
+        // 2. Ambil data bank shift (untuk tutup)
+        supabase.from('bank_shifts').select('*').eq('outlet_id', gabunganOutlet).limit(1).then(r=>r.data).catch(()=>[]),
+      ]);
+
+      // 3. Tutup shift bank
+      if(bankShiftRows?.length){
+        const bs = bankShiftRows[0];
+        const bsObj = {id:bs.id, nama:bs.nama, start:bs.start_time, outletId:gabunganOutlet, ...(bs.saldo_data||{})};
+        try{ await dbBank.closeShift(bsObj, gabunganOutlet, user.username||user.id, {
+          waktuTutup, saldoAppsC: saldoAkhirApps,
+          uangLaci: laciFisikNum, uangSistem: totalLaciSistem,
+          selisih: selisihGabungan, catatan,
+        }); }catch(e){ console.warn("tutup bank shift:",e); }
       }
-      // 2. Tutup shift bank
-      try{
-        const {data:bankShiftRows} = await supabase.from('bank_shifts').select('*').eq('outlet_id', gabunganOutlet).limit(1);
-        if(bankShiftRows?.length){
-          const bs = bankShiftRows[0];
-          const bsObj = {id:bs.id, nama:bs.nama, start:bs.start_time, outletId:gabunganOutlet, ...(bs.saldo_data||{})};
-          await dbBank.closeShift(bsObj, gabunganOutlet, user.username||user.id, {
-            waktuTutup, saldoAppsC: saldoAkhirApps,
-            uangLaci: laciFisikNum, uangSistem: totalLaciSistem,
-            selisih: selisihGabungan, catatan,
-          });
-        }
-      }catch(e){ console.warn("tutup bank shift:",e); }
-      // 3. Simpan rekap log
-      await supabase.from('portal_settings').upsert({
+
+      // 4. Simpan rekap log (tidak blocking UI — fire and forget)
+      supabase.from('portal_settings').upsert({
         key: `rekap_laci_${gabunganOutlet}_${todayStr.replace(/\//g,"")}`,
         value: JSON.stringify({
           tgl: todayStr, outlet_id: gabunganOutlet,
@@ -4656,11 +4659,12 @@ function GabunganPage(props) {
           selisih: selisihGabungan, saldo_akhir_apps: saldoAkhirApps,
           catatan, saved_at: new Date().toISOString(),
         })
-      },{onConflict:'key'});
+      },{onConflict:'key'}).catch(e=>console.warn('rekap log:',e));
+
       setRekapTersimpan(true);
       notify("✅ Shift kasir & bank berhasil ditutup sekaligus!","ok");
-      // Reset state shift di GabunganPage
       setKasirShiftData(null);
+      setBankShiftData(null);
       setLaciFisik(""); setCatatan(""); setSaldoAkhirApps({});
     }catch(e){ console.warn('tutupShiftGabungan:',e); notify("Gagal tutup shift","err"); }
     setSavingRekap(false);
@@ -6930,10 +6934,18 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
   const [kasNyata,setKasNyata]=useState("");
   const [notes,setNotes]=useState("");
 
-  const tAppO=Object.values(saldoOpen).reduce((s,v)=>s+(+v||0),0);
-  const tAppC=Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0);
-  const shiftTrx=transactions.filter(t=>t.shiftId===shift?.id);
-  const totalP=shiftTrx.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+  // Memoize — hanya recalculate kalau shiftId atau transactions berubah
+  // PENTING: tanpa memo ini, setiap keystroke di form trigger filter ribuan transaksi → tablet lag
+  const shiftTrx = useMemo(()=>
+    transactions.filter(t=>t.shiftId===shift?.id),
+    [transactions, shift?.id]
+  );
+  const totalP = useMemo(()=>
+    shiftTrx.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0),
+    [shiftTrx]
+  );
+  const tAppO=useMemo(()=>Object.values(saldoOpen).reduce((s,v)=>s+(+v||0),0),[saldoOpen]);
+  const tAppC=useMemo(()=>Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0),[saldoClose]);
   const st=+setor||0,htg=+hutang||0,pnd=+pending||0,pk=+klr||0;
   const kasSystem=totalP-st-htg-pnd-pk;
   const kasFisik=+kasNyata||0;
@@ -8001,19 +8013,17 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
     }
   },[saldoClose]);
 
-  // Hitung
-  const shiftTrx    = trxList.filter(t=>t.shiftId===shift?.id);
-  const sMasuk      = shiftTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
-  const sKeluar     = shiftTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-  // Uang sistem = cash kembalian + transaksi shift (saldo aplikasi TIDAK ikut)
+  // Hitung — memoize agar tidak recalculate setiap keystroke
+  const shiftTrx    = useMemo(()=>trxList.filter(t=>t.shiftId===shift?.id),[trxList,shift?.id]);
+  const sMasuk      = useMemo(()=>shiftTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0),[shiftTrx]);
+  const sKeluar     = useMemo(()=>shiftTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0),[shiftTrx]);
   const cashKembAwal  = shift?.cashKemb||0;
   const uangSistemS   = cashKembAwal + sMasuk - sKeluar;
   const uangLaciNum   = +uangLaci||0;
   const selisih       = uangLaciNum - uangSistemS;
-  const totalSaldoF   = Object.values(saldoForm).reduce((s,v)=>s+(+v||0),0);
-  const totalSaldoC   = Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0);
+  const totalSaldoF   = useMemo(()=>Object.values(saldoForm).reduce((s,v)=>s+(+v||0),0),[saldoForm]);
+  const totalSaldoC   = useMemo(()=>Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0),[saldoClose]);
   const cashKembNum   = +cashKemb||0;
-  // Uang sistem awal = cash kembalian SAJA (saldo aplikasi hanya catatan)
   const totalSistemBuka = cashKembNum;
 
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",background:"#fff",marginBottom:10};
@@ -11427,8 +11437,8 @@ function ConnStatusBar({ status, lastPing, offlineQueue }) {
   const cfg = {
     offline:      { bg:"#dc2626", icon:"📵", text:"Tidak Ada Koneksi -- Transaksi tersimpan lokal, akan dikirim saat online",  pulse:true  },
     reconnecting: { bg:"#d97706", icon:"🔄", text:"Menghubungkan kembali...",                                                  pulse:true  },
-    slow:         { bg:"#b45309", icon:"⚠️",  text:`Koneksi Lambat (${lastPing||"..."}ms) -- Data mungkin tertunda`,          pulse:false },
-    warn:         { bg:"#ca8a04", icon:"⚡",  text:`Sinyal Agak Lambat (${lastPing||"..."}ms) -- Masih aman`,                   pulse:false },
+    slow:         { bg:"#b45309", icon:"⚠️",  text:`Koneksi Lambat${lastPing?` (${lastPing}ms)`:""} -- Data mungkin tertunda`,          pulse:false },
+    warn:         { bg:"#ca8a04", icon:"⚡",  text:`Sinyal Agak Lambat${lastPing?` (${lastPing}ms)`:""} -- Masih aman`,                   pulse:false },
   }[status]||{ bg:"#dc2626", icon:"📵", text:"Koneksi Bermasalah", pulse:true };
 
   return (
@@ -15372,13 +15382,17 @@ export default function App() {
         return;
       }
       try{
-        // Ping ringan ke Supabase
+        // Ping ringan ke Supabase — ukur latency ACTUAL (bukan durasi offline)
         const t0=Date.now();
         await supabase.from('active_shifts').select('id').limit(1);
         const ms=Date.now()-t0;
-        setLastPing(ms);
-        if(wasOffline||fromVisibility){
-          // Baru reconnect (dari offline atau dari sleep layar)
+
+        // Kalau ping > 10 detik, ini bukan "koneksi lambat" — ini reconnect setelah sleep/freeze
+        // Jangan tampilkan angka ms yang menyesatkan (bisa ribuan detik)
+        const isReconnect = wasOffline || fromVisibility || ms > 10000;
+
+        if(isReconnect){
+          setLastPing(null); // reset ping — angka lama tidak relevan
           setConnStatus("reconnecting");
           setTimeout(async()=>{
             setOfflineQueue(prev=>{
@@ -15394,8 +15408,9 @@ export default function App() {
           wasOffline=false;
           hiddenSince=null;
         } else {
-          // Threshold wajar: slow >8s, warn >3s — bukan reconnect setelah sleep
-          setConnStatus(ms>8000?"slow":ms>3000?"warn":"online");
+          setLastPing(ms);
+          // Threshold wajar: slow >5s, warn >2s
+          setConnStatus(ms>5000?"slow":ms>2000?"warn":"online");
         }
       }catch(e){
         setConnStatus("offline");
@@ -15424,14 +15439,15 @@ export default function App() {
     };
     const onVisible = () => {
       if(document.visibilityState==='visible'){
-        // Kalau layar sleep >30 detik, treat seperti reconnect (WebSocket mungkin mati)
+        // Selalu anggap reconnect saat tab aktif lagi — WebSocket mungkin mati saat background
+        // (Chrome/Edge throttle agresif tab background, apalagi di Windows)
         const sleepDuration = hiddenSince ? Date.now()-hiddenSince : 0;
-        if(sleepDuration>30000) wasOffline=true;
+        if(sleepDuration>5000) wasOffline=true; // background >5 detik = treat sebagai reconnect
         hiddenSince=null;
-        checkConn(sleepDuration>30000);
-        reloadData();
+        checkConn(sleepDuration>5000);
+        if(sleepDuration>30000) reloadData(); // reload data hanya kalau lama tidak aktif
       } else {
-        hiddenSince=Date.now(); // catat kapan mulai sleep
+        hiddenSince=Date.now();
       }
     };
 
