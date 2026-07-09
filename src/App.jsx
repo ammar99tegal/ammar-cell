@@ -5882,6 +5882,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   const [activeCat,   setActiveCat]   = useState("Semua");
   const [showPayment, setShowPayment] = useState(false);
   const [cashInput,   setCashInput]   = useState("");
+  const [paying,      setPaying]      = useState(false); // anti-dobel klik bayar
   const [showManual,  setShowManual]  = useState(false);
   const [manualForm,  setManualForm]  = useState({name:"",modal:"",price:"",qty:1});
   const [shift,       setShiftState]  = useState(null); // selalu null dulu, load dari Supabase
@@ -6218,7 +6219,9 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
   };
 
   const pay=()=>{
+    if(paying) return; // anti-dobel klik
     if(!cart.length) return notify("Keranjang kosong!","err");
+    setPaying(true);
     const cashFinal=cashNum>=total?cashNum:total;
     const trx={id:uid(),time:now(),date:today(),shiftId:shift?.id,shiftNama:shift?.nama,kasir:user.nama,outletId:selectedOutlet,
       items:cart.map(i=>({...i,refunded:false,refundReason:""})),total,cash:cashFinal,kembalian:cashFinal-total};
@@ -6235,6 +6238,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       setCartPersist([]);setCashInput("");setShowPayment(false);
       setLastTrx(trx);
       notify("📵 Offline -- Transaksi tersimpan lokal, dikirim saat online","warn");
+      setTimeout(()=>setPaying(false), 2000);
       return;
     }
     // Simpan ke localStorage dulu sebagai backup
@@ -6278,6 +6282,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     setCartPersist([]);setCashInput("");setShowPayment(false);
     setLastTrx(trx);
     notify("✓ Transaksi berhasil!","ok");
+    setTimeout(()=>setPaying(false), 2000); // reset setelah 2 detik
   };
 
   const doRefund=()=>{
@@ -6581,7 +6586,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
                   {cashNum>0&&cashNum>=total&&<div style={{background:"#e0faf5",borderRadius:9,padding:"6px 10px",marginBottom:7,display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:700,fontSize:12,color:"#555"}}>Kembalian</span><span style={{fontWeight:900,fontSize:14,color:"#0d9488"}}>{fmtRp(change)}</span></div>}
                   <div style={{display:"flex",gap:7}}>
                     <button onClick={()=>{setShowPayment(false);setCashInput("");}} style={{flex:1,background:"#f0f0f0",border:"none",borderRadius:9,padding:9,fontWeight:700,fontSize:12,color:"#666",cursor:"pointer",fontFamily:"inherit"}}>Batal</button>
-                    <button onClick={pay} style={{flex:2,background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:9,color:"#fff",fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:5,cursor:"pointer",fontFamily:"inherit"}}>{Ic.Check()} Proses Bayar</button>
+                    <button onClick={pay} disabled={paying} style={{flex:2,background:paying?"#94a3b8":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:9,color:"#fff",fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:5,cursor:paying?"not-allowed":"pointer",fontFamily:"inherit"}}>{paying?"⏳ Memproses...":<>{Ic.Check()} Proses Bayar</>}</button>
                   </div>
                 </div>
               )}
@@ -7096,6 +7101,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   const [loading,      setLoading]    = useState(true);
   const [histExpanded, setHistExpanded] = useState({});
   const [histSelected, setHistSelected] = useState(null); // untuk modal konfirmasi
+  const [savingTrx,   setSavingTrx]  = useState(false); // anti-dobel klik simpan trx
 
   // -- Load semua data --------------------------------------------------------
   const loadAll = async (showLoading=false) => {
@@ -7515,6 +7521,8 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   };
 
   const saveTrx = async (trx) => {
+    if(savingTrx) return; // anti-dobel klik
+    setSavingTrx(true);
     const makeRow = (data) => ({
       id:uid(), waktu:now(), tgl:today(),
       outletId:selectedOutlet, shiftId:shift?.id, ...data,
@@ -7533,6 +7541,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
       catch(e){ console.error(e); notify("Gagal simpan!","err"); }
     }
     setShowForm(false); setEditTrx(null);
+    setTimeout(()=>setSavingTrx(false), 2000);
   };
 
   const deleteTrx = async (id) => {
@@ -7886,7 +7895,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
       )}
 
       {showShift&&<BankShiftModal mode={shiftMode} shift={shift} trxList={trxList} saldoApps={saldoApps} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)}/>}
-      {showForm&&<BankTrxForm editData={editTrx} onSave={saveTrx} onCancel={()=>{setShowForm(false);setEditTrx(null);}}/>}
+      {showForm&&<BankTrxForm editData={editTrx} onSave={saveTrx} onCancel={()=>{setShowForm(false);setEditTrx(null);}} saving={savingTrx}/>}
 
       {/* Modal Setor Tunai */}
       {showSetor&&(
@@ -8219,7 +8228,7 @@ function BankShiftModal({mode, shift, trxList, saldoApps, onOpen, onClose, onCan
 }
 
 // -- BankTrxForm (komponen terpisah) -------------------------------------------
-function BankTrxForm({editData, onSave, onCancel}) {
+function BankTrxForm({editData, onSave, onCancel, saving=false}) {
   const [nama,    setNama]    = useState(editData?.nama||"");
   const [jenis,   setJenis]   = useState(editData?.jenis||"masuk");
   const [nomStr,  setNomStr]  = useState(editData?.nominal?fmt(editData.nominal):"");
@@ -8346,9 +8355,9 @@ function BankTrxForm({editData, onSave, onCancel}) {
             style={{width:44,height:44,borderRadius:10,border:"2px solid #b2ede6",background:"#fff",color:"#aaa",fontSize:18,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             ✕
           </button>
-          <button onClick={handleSave} disabled={!nama.trim()||!nomNum}
-            style={{flex:1,background:!nama.trim()||!nomNum?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:12,color:"#fff",fontWeight:900,fontSize:14,cursor:!nama.trim()||!nomNum?"not-allowed":"pointer",fontFamily:"inherit"}}>
-            💾 Simpan
+          <button onClick={handleSave} disabled={!nama.trim()||!nomNum||saving}
+            style={{flex:1,background:(!nama.trim()||!nomNum||saving)?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:10,padding:12,color:"#fff",fontWeight:900,fontSize:14,cursor:(!nama.trim()||!nomNum||saving)?"not-allowed":"pointer",fontFamily:"inherit"}}>
+            {saving?"⏳ Menyimpan...":"💾 Simpan"}
           </button>
         </div>
       </div>
