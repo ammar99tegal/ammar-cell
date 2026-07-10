@@ -7660,27 +7660,55 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   };
 
   const saveTrx = async (trx) => {
-    if(savingTrx) return; // anti-dobel klik
+    if(savingTrx) return;
     setSavingTrx(true);
     const makeRow = (data) => ({
       id:uid(), waktu:now(), tgl:today(),
       outletId:selectedOutlet, shiftId:shift?.id, ...data,
     });
-    if(editTrx){
-      try{ await dbBank.updateTransaction(editTrx.id, makeRow(trx)); notify("Diperbarui ✓","ok"); }
-      catch{ notify("Gagal update!","err"); }
-    } else if(trx.feeType==="tarik"&&(+trx.fee||0)>0){
-      try{
-        await dbBank.addTransaction(makeRow({nama:trx.nama+" (TARIK)",    jenis:"keluar",feeType:"tarik",fee:0,nominal:trx.nominal,netNominal:-(trx.nominal)}));
-        await dbBank.addTransaction(makeRow({nama:trx.nama+" (FEE TARIK)",jenis:"masuk", feeType:"tarik",fee:0,nominal:trx.fee,    netNominal:+(trx.fee)}));
+
+    try{
+      if(editTrx){
+        // Edit: optimistic update UI dulu
+        const updated = makeRow(trx);
+        setTrxList(prev=>prev.map(t=>t.id===editTrx.id?{...t,...updated}:t));
+        setShowForm(false); setEditTrx(null);
+        setSavingTrx(false);
+        // Simpan ke DB di background
+        dbBank.updateTransaction(editTrx.id, updated)
+          .then(()=>notify("Diperbarui ✓","ok"))
+          .catch(()=>notify("⚠️ Gagal update, coba lagi","err"));
+
+      } else if(trx.feeType==="tarik"&&(+trx.fee||0)>0){
+        const row1 = makeRow({nama:trx.nama+" (TARIK)",    jenis:"keluar",feeType:"tarik",fee:0,nominal:trx.nominal,netNominal:-(trx.nominal)});
+        const row2 = makeRow({nama:trx.nama+" (FEE TARIK)",jenis:"masuk", feeType:"tarik",fee:0,nominal:trx.fee,    netNominal:+(trx.fee)});
+        // Optimistic: tampilkan langsung
+        setTrxList(prev=>[row2, row1, ...prev]);
+        setShowForm(false); setEditTrx(null);
+        setSavingTrx(false);
         notify("Tersimpan ✓","ok");
-      }catch(e){ console.error(e); notify("Gagal simpan!","err"); }
-    } else {
-      try{ await dbBank.addTransaction(makeRow(trx)); notify("Tersimpan ✓","ok"); }
-      catch(e){ console.error(e); notify("Gagal simpan!","err"); }
+        // Simpan ke DB di background
+        Promise.all([
+          dbBank.addTransaction(row1),
+          dbBank.addTransaction(row2),
+        ]).catch(e=>{ console.error(e); notify("⚠️ Sinkronisasi gagal, reload halaman","err"); });
+
+      } else {
+        const row = makeRow(trx);
+        // Optimistic: tampilkan langsung
+        setTrxList(prev=>[row,...prev]);
+        setShowForm(false); setEditTrx(null);
+        setSavingTrx(false);
+        notify("Tersimpan ✓","ok");
+        // Simpan ke DB di background
+        dbBank.addTransaction(row)
+          .catch(e=>{ console.error(e); notify("⚠️ Sinkronisasi gagal, reload halaman","err"); });
+      }
+    } catch(e){
+      console.error('saveTrx error:',e);
+      notify("Gagal simpan: "+e.message,"err");
+      setSavingTrx(false);
     }
-    setShowForm(false); setEditTrx(null);
-    setTimeout(()=>setSavingTrx(false), 2000);
   };
 
   const deleteTrx = async (id) => {
