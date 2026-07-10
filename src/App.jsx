@@ -15781,147 +15781,124 @@ export default function App() {
   // -- Load semua data dari Supabase saat pertama buka ----------------------
   useEffect(()=>{
     const load = async () => {
-      // Timeout 40 detik -- lebih toleran untuk Android baterai rendah & Supabase cold start
+      // Timeout 60 detik untuk Supabase cold start + Android throttle
       const timeout = setTimeout(()=>{
         setDbError("Koneksi terlalu lambat. Cek internet dan coba lagi.");
         setLoading(false);
-      }, 40000);
+      }, 60000);
 
       try {
-        // Load paralel -- jauh lebih cepat dari serial, kurangi risiko timeout
-        const [prods, outs, stks, txs, usrs, saldoList, saldoBankList, prodOrd, aktifMap] = await Promise.all([
+        // TAHAP 1: Data kritis — app langsung bisa dipakai setelah ini
+        // Limit transaksi ke 500 terbaru agar tidak timeout
+        const [prods, outs, stks, usrs] = await Promise.all([
           db.getProducts().catch(()=>[]),
           db.getOutlets().catch(()=>[]),
           db.getStocks().catch(()=>({})),
-          loadAllTransactions().catch(()=>[]),
           db.getUsers().catch(()=>({})),
+        ]);
+
+        // Set state kritis → app tampil
+        clearTimeout(timeout);
+        setProductsState(prods);
+        setOutletsState(outs);
+        setStocksState(stks);
+        const parsed = parseUserOutletIds(usrs);
+        setUsersState(parsed);
+        setLoading(false); // ← App tampil sekarang, sisanya load di background
+
+        // TAHAP 2: Data transaksi & saldo — background, tidak block UI
+        Promise.all([
+          loadAllTransactions().catch(()=>[]),
           dbSaldo.getSaldoApps().catch(()=>[]),
           dbSaldoBank.getSaldoBankApps().catch(()=>[]),
           dbProductOrder.getOrder().catch(()=>[]),
           dbAktifProduk.getAllAktif().catch(()=>({})),
-        ]);
+        ]).then(([txs, saldoList, saldoBankList, prodOrd, aktifMap])=>{
+          if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
+          if(Object.keys(aktifMap).length>0) setAktifProdsRoot(aktifMap);
+          if(Array.isArray(saldoList)&&saldoList.length>0) setSaldoApps(saldoList);
+          if(Array.isArray(saldoBankList)&&saldoBankList.length>0) setSaldoBank(saldoBankList);
+          setTx((txs||[]).map(t=>({
+            id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
+            shiftNama:t.shift_nama, kasir:t.kasir,
+            date:t.date, time:t.time,
+            total:t.total, cash:t.cash, kembalian:t.kembalian,
+            items:t.items||[],
+          })));
+          loadAllBankTransactions().then(bTrx=>{ setAllBankTrx(bTrx); }).catch(()=>{});
+        }).catch(e=>console.warn('bg load txs:',e));
 
-        // Load user_outlets mapping (untuk multi-outlet assignment)
-        try {
-          const {data:userOutletsRows} = await supabase.from('user_outlets').select('*');
-          if(userOutletsRows?.length>0){
-            // Merge outletIds ke users
-            const mapping = {};
-            userOutletsRows.forEach(r=>{
-              if(!mapping[r.username]) mapping[r.username]=[];
-              mapping[r.username].push(r.outlet_id);
-            });
-            setUsersState(prev=>{
-              const n={...prev};
-              Object.entries(mapping).forEach(([uname,ids])=>{
-                if(n[uname]) n[uname]={...n[uname],outletIds:ids,outletId:ids[0]};
+        // TAHAP 3: Data portal & setting — paling rendah prioritasnya
+        setTimeout(()=>{
+          Promise.allSettled([
+            supabase.from('user_outlets').select('*'),
+            supabase.from('portal_misi').select('*').order('created_at'),
+            supabase.from('portal_settings').select('*').in('key',['note','shift','poin_rate','struk_config']),
+            supabase.from('portal_absensi').select('*').order('tgl',{ascending:false}),
+            supabase.from('portal_izin').select('*').order('created_at',{ascending:false}),
+            supabase.from('portal_todos').select('*').order('urutan'),
+            supabase.from('portal_todo_status').select('*'),
+            supabase.from('portal_misi_progress').select('*'),
+            supabase.from('portal_misi_foto').select('*').order('created_at',{ascending:false}),
+          ]).then(results=>{
+            const [uoRes,misiRes,settingsRes,absenRes,izinRes,todoRes,todoStRes,progRes,fotoRes] = results;
+
+            // user_outlets
+            if(uoRes.status==='fulfilled'&&uoRes.value?.data?.length){
+              const mp={};
+              uoRes.value.data.forEach(r=>{if(!mp[r.username])mp[r.username]=[];mp[r.username].push(r.outlet_id);});
+              setUsersState(prev=>{const n={...prev};Object.entries(mp).forEach(([u,ids])=>{if(n[u])n[u]={...n[u],outletIds:ids,outletId:ids[0]};});return n;});
+            }
+            // portal_misi
+            if(misiRes.status==='fulfilled'&&misiRes.value?.data?.length) setPortalMisi(misiRes.value.data);
+            // settings
+            if(settingsRes.status==='fulfilled'&&settingsRes.value?.data?.length){
+              settingsRes.value.data.forEach(row=>{
+                if(row.key==='note') setPortalNote(row.value);
+                if(row.key==='shift') try{setPortalShift(JSON.parse(row.value));}catch{}
+                if(row.key==='poin_rate') setPortalPoinRate(+row.value);
+                if(row.key==='struk_config') try{setStrukConfig(prev=>({...prev,...JSON.parse(row.value)}));}catch{}
               });
-              return n;
-            });
-          }
-        } catch(e){ console.warn('user_outlets load:',e); }
-        try {
-          const { data: portalMisiRows } = await supabase.from('portal_misi').select('*').order('created_at');
-          if(portalMisiRows?.length) setPortalMisi(portalMisiRows);
-        } catch(e){ console.warn('portal_misi load:',e); }
-        try {
-          const { data: portalNoteRows } = await supabase.from('portal_settings').select('*').eq('key','note').limit(1);
-          if(portalNoteRows?.[0]?.value) setPortalNote(portalNoteRows[0].value);
-        } catch(e){ console.warn('portal_note load:',e); }
-        try {
-          const { data: portalShiftRows } = await supabase.from('portal_settings').select('*').eq('key','shift').limit(1);
-          if(portalShiftRows?.[0]?.value) setPortalShift(JSON.parse(portalShiftRows[0].value));
-        } catch(e){ console.warn('portal_shift load:',e); }
-        try {
-          const { data: portalAbsensiRows } = await supabase.from('portal_absensi').select('*').order('tgl',{ascending:false});
-          if(portalAbsensiRows?.length){
-            const m={};
-            portalAbsensiRows.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
-            setPortalAbsensi(m);
-          }
-        } catch(e){ console.warn('portal_absensi load:',e); }
-        try {
-          const { data: portalIzinRows } = await supabase.from('portal_izin').select('*').order('created_at',{ascending:false});
-          if(portalIzinRows?.length){
-            const m={};
-            portalIzinRows.forEach(r=>{ if(!m[r.user_id]) m[r.user_id]=[]; m[r.user_id].push(r); });
-            setPortalIzin(m);
-          }
-        } catch(e){ console.warn('portal_izin load:',e); }
-        try {
-          const { data: todoRows } = await supabase.from('portal_todos').select('*').order('urutan');
-          if(todoRows) setPortalTodos(todoRows);
-        } catch(e){ console.warn('portal_todos load:',e); }
-        try {
-          const { data: todoStatusRows } = await supabase.from('portal_todo_status').select('*');
-          if(todoStatusRows?.length){
-            const m={};
-            todoStatusRows.forEach(r=>{
-              if(!m[r.username]) m[r.username]={};
-              if(!m[r.username][r.todo_id]) m[r.username][r.todo_id]={};
-              m[r.username][r.todo_id][r.tgl]={done:r.done, status:r.status||'menunggu', confirmed_at:r.confirmed_at};
-            });
-            setPortalTodoStatus(m);
-          }
-        } catch(e){ console.warn('portal_todo_status load:',e); }
-        try {
-          const { data: poinRateRows } = await supabase.from('portal_settings').select('*').eq('key','poin_rate').limit(1);
-          if(poinRateRows?.[0]?.value) setPortalPoinRate(+poinRateRows[0].value);
-        } catch(e){ console.warn('poin_rate load:',e); }
-        try {
-          const { data: strukRows } = await supabase.from('portal_settings').select('*').eq('key','struk_config').limit(1);
-          if(strukRows?.[0]?.value) setStrukConfig(prev=>({...prev,...JSON.parse(strukRows[0].value)}));
-        } catch(e){ console.warn('struk_config load:',e); }
-        try {
-          const { data: progRows } = await supabase.from('portal_misi_progress').select('*');
-          if(progRows?.length){
-            const m={};
-            progRows.forEach(r=>{
-              if(!m[r.misi_id]) m[r.misi_id]={};
-              if(!m[r.misi_id][r.username]) m[r.misi_id][r.username]={};
-              m[r.misi_id][r.username][r.periode_key]={progress:r.progress,selesai:r.selesai};
-            });
-            setPortalMisiProgress(m);
-          }
-        } catch(e){ console.warn('portal_misi_progress load:',e); }
-        try {
-          const { data: fotoRows } = await supabase.from('portal_misi_foto').select('*').order('created_at',{ascending:false});
-          if(fotoRows) setPortalMisiFoto(fotoRows);
-        } catch(e){ console.warn('portal_misi_foto load:',e); }
+            }
+            // absensi
+            if(absenRes.status==='fulfilled'&&absenRes.value?.data?.length){
+              const m={};absenRes.value.data.forEach(r=>{if(!m[r.user_id])m[r.user_id]=[];m[r.user_id].push(r);});
+              setPortalAbsensi(m);
+            }
+            // izin
+            if(izinRes.status==='fulfilled'&&izinRes.value?.data?.length){
+              const m={};izinRes.value.data.forEach(r=>{if(!m[r.user_id])m[r.user_id]=[];m[r.user_id].push(r);});
+              setPortalIzin(m);
+            }
+            // todos
+            if(todoRes.status==='fulfilled'&&todoRes.value?.data) setPortalTodos(todoRes.value.data);
+            // todo status
+            if(todoStRes.status==='fulfilled'&&todoStRes.value?.data?.length){
+              const m={};
+              todoStRes.value.data.forEach(r=>{
+                if(!m[r.username])m[r.username]={};
+                if(!m[r.username][r.todo_id])m[r.username][r.todo_id]={};
+                m[r.username][r.todo_id][r.tgl]={done:r.done,status:r.status||'menunggu',confirmed_at:r.confirmed_at};
+              });
+              setPortalTodoStatus(m);
+            }
+            // misi progress
+            if(progRes.status==='fulfilled'&&progRes.value?.data?.length){
+              const m={};
+              progRes.value.data.forEach(r=>{
+                if(!m[r.misi_id])m[r.misi_id]={};
+                if(!m[r.misi_id][r.username])m[r.misi_id][r.username]={};
+                m[r.misi_id][r.username][r.periode_key]={progress:r.progress,selesai:r.selesai};
+              });
+              setPortalMisiProgress(m);
+            }
+            // misi foto
+            if(fotoRes.status==='fulfilled'&&fotoRes.value?.data) setPortalMisiFoto(fotoRes.value.data);
+          }).catch(e=>console.warn('bg portal load:',e));
+        }, 2000); // delay 2 detik — beri waktu app render dulu
 
-        clearTimeout(timeout);
-
-        setProductsState(prods);
-        setOutletsState(outs);
-        setStocksState(stks);
-        if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
-        if(Object.keys(aktifMap).length>0) setAktifProdsRoot(aktifMap);
-        if (Array.isArray(saldoList) && saldoList.length > 0) setSaldoApps(saldoList);
-        if (Array.isArray(saldoBankList) && saldoBankList.length > 0) setSaldoBank(saldoBankList);
-        setTx(txs.map(t=>({
-          id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
-          shiftNama:t.shift_nama, kasir:t.kasir,
-          date:t.date, time:t.time,
-          total:t.total, cash:t.cash, kembalian:t.kembalian,
-          items:t.items||[],
-        })));
-        // Load semua bank transactions dengan pagination
-        loadAllBankTransactions().then(bTrx=>{ setAllBankTrx(bTrx); }).catch(()=>{});
-        const parsed=parseUserOutletIds(usrs);
-        setUsersState(parsed);
-        // Merge user_outlets async (fire-and-forget)
-        supabase.from('user_outlets').select('*').then(({data:uoRows})=>{
-          if(!uoRows?.length) return;
-          const mp={};
-          uoRows.forEach(r=>{if(!mp[r.username])mp[r.username]=[];mp[r.username].push(r.outlet_id);});
-          setUsersState(prev=>{
-            const n={...prev};
-            Object.entries(mp).forEach(([u,ids])=>{if(n[u])n[u]={...n[u],outletIds:ids,outletId:ids[0]};});
-            return n;
-          });
-        }).catch(()=>{});
-        setLoading(false);
       } catch(e) {
+        clearTimeout(timeout);
         console.error('Load error:', e);
         setDbError("Tidak bisa terhubung ke database. Cek koneksi internet.");
         setLoading(false);
@@ -16303,12 +16280,18 @@ export default function App() {
 
   // -- Loading screen --------------------------------------------------------
   if (loading) return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');*{box-sizing:border-box;}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a7a70,#0d9488,#14b8a6)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Nunito',sans-serif",padding:24}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');*{box-sizing:border-box;}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}`}</style>
       <div style={{fontSize:52,marginBottom:16}}>🏪</div>
-      <div style={{fontWeight:900,fontSize:22,color:"#fff",marginBottom:8}}>Ammar Cell</div>
-      <div style={{width:36,height:36,border:"4px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 1s linear infinite",marginTop:12}}/>
-      <div style={{color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:600,marginTop:14}}>Memuat data...</div>
+      <div style={{fontWeight:900,fontSize:22,color:"#fff",marginBottom:4}}>Ammar Cell</div>
+      <div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginBottom:20}}>Memuat aplikasi...</div>
+      <div style={{width:40,height:40,border:"4px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+      <div style={{color:"rgba(255,255,255,.75)",fontSize:12,fontWeight:600,marginTop:20,textAlign:"center",maxWidth:280,lineHeight:1.7,animation:"pulse 2s ease-in-out infinite"}}>
+        Jika terlalu lama, pastikan koneksi internet aktif dan coba refresh
+      </div>
+      <button onClick={()=>window.location.reload()} style={{marginTop:20,background:"rgba(255,255,255,.2)",border:"2px solid rgba(255,255,255,.4)",borderRadius:12,padding:"10px 24px",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+        🔄 Refresh
+      </button>
     </div>
   );
 
