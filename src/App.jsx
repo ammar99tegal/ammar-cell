@@ -4617,15 +4617,30 @@ function GabunganPage(props) {
     if(!navigator.onLine) return notify("📵 Tidak bisa tutup shift — tidak ada koneksi","err");
     setSavingRekap(true);
     const waktuTutup = now();
+
+    // Hitung ulang inline — agar tidak bergantung pada variabel const di bawah fungsi ini
+    const _todayStr = today();
+    const _txHariIni = transactions.filter(t=>t.outletId===gabunganOutlet && t.date===_todayStr);
+    const _omsetKasir = _txHariIni.reduce((s,t)=>{
+      const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);
+      return s+t.total-rv;
+    },0);
+    const _kasMasukBank = bankTrxHariIni.reduce((s,t)=>s+(t.netNominal||0),0);
+    const _sdKasir = kasirShiftData?.saldo_data||{};
+    const _modalAwalKasir = (_sdKasir.cashKembalian||0) + (_sdKasir.totalSaldoApps||0);
+    const _kasSystemKasir = _modalAwalKasir + _omsetKasir;
+    const _totalLaciSistem = _kasSystemKasir + _kasMasukBank;
+    const _laciFisikNum = +laciFisik||0;
+    const _selisihGabungan = _laciFisikNum - _totalLaciSistem;
+
     try{
       const closeDataKasir = kasirShiftData ? {
         waktuTutup, saldoAppsClose: saldoAkhirApps,
-        kasNyataSystem: totalLaciSistem, kasNyataFisik: laciFisikNum,
-        selisih: selisihGabungan, notes: catatan,
+        kasNyataSystem: _totalLaciSistem, kasNyataFisik: _laciFisikNum,
+        selisih: _selisihGabungan, notes: catatan,
         cashKembC: 0, setorTunai:0, hutang:0, pending:0, pengeluaran:0, noteKlr:"",
       } : null;
 
-      // 1. Simpan rekap kasir + ambil data bank shift (paralel)
       const [, bankShiftRows] = await Promise.all([
         kasirShiftData ? (async()=>{
           try{ await dbShift.closeShift(kasirShiftData, gabunganOutlet, user.username||user.id, closeDataKasir); }catch(e){ console.warn("tutup kasir shift:",e); }
@@ -4633,18 +4648,17 @@ function GabunganPage(props) {
         supabase.from('bank_shifts').select('*').eq('outlet_id', gabunganOutlet).limit(1).then(r=>r.data).catch(()=>[]),
       ]);
 
-      // 2. Tutup shift bank (simpan rekap)
       if(bankShiftRows?.length){
         const bs = bankShiftRows[0];
         const bsObj = {id:bs.id, nama:bs.nama, start:bs.start_time, outletId:gabunganOutlet, ...(bs.saldo_data||{})};
         try{ await dbBank.closeShift(bsObj, gabunganOutlet, user.username||user.id, {
           waktuTutup, saldoAppsC: saldoAkhirApps,
-          uangLaci: laciFisikNum, uangSistem: totalLaciSistem,
-          selisih: selisihGabungan, catatan,
+          uangLaci: _laciFisikNum, uangSistem: _totalLaciSistem,
+          selisih: _selisihGabungan, catatan,
         }); }catch(e){ console.warn("tutup bank shift:",e); }
       }
 
-      // 3. Hapus active_shifts + bank_shifts dengan retry
+      // Hapus active_shifts + bank_shifts dengan retry
       for(let i=0; i<3; i++){
         try{
           await Promise.all([
@@ -4653,18 +4667,16 @@ function GabunganPage(props) {
           ]);
           break;
         }catch(e){
-          console.warn(`[TutupGabungan] Hapus attempt ${i+1} gagal:`, e);
           if(i<2) await new Promise(r=>setTimeout(r,1000*(i+1)));
         }
       }
 
-      // 4. Verifikasi DB sebelum update UI — jangan null-kan state kalau DB masih ada
+      // Verifikasi DB
       const [{data:kasirCheck},{data:bankCheck}] = await Promise.all([
         supabase.from('active_shifts').select('id').eq('outlet_id', gabunganOutlet).limit(1).catch(()=>({data:[]})),
         supabase.from('bank_shifts').select('id').eq('outlet_id', gabunganOutlet).limit(1).catch(()=>({data:[]})),
       ]);
       if(kasirCheck?.length || bankCheck?.length){
-        // Masih ada di DB — coba sekali lagi
         await Promise.all([
           kasirCheck?.length ? supabase.from('active_shifts').delete().eq('outlet_id', gabunganOutlet).catch(()=>{}) : Promise.resolve(),
           bankCheck?.length  ? supabase.from('bank_shifts').delete().eq('outlet_id', gabunganOutlet).catch(()=>{})   : Promise.resolve(),
@@ -4676,24 +4688,23 @@ function GabunganPage(props) {
         if(rc1?.length || rc2?.length){
           notify("⚠️ Shift gagal ditutup penuh di database — coba lagi","err");
           setSavingRekap(false);
-          return; // jangan update UI
+          return;
         }
       }
 
-      // 5. DB bersih — baru update UI
-      // Simpan rekap log (fire & forget)
+      // Rekap log (fire & forget)
       supabase.from('portal_settings').upsert({
-        key: `rekap_laci_${gabunganOutlet}_${todayStr.replace(/\//g,"")}`,
+        key: `rekap_laci_${gabunganOutlet}_${_todayStr.replace(/\//g,"")}`,
         value: JSON.stringify({
-          tgl: todayStr, outlet_id: gabunganOutlet,
+          tgl: _todayStr, outlet_id: gabunganOutlet,
           outlet_nama: outlets.find(o=>o.id===gabunganOutlet)?.nama||"",
-          staff: user.nama, modal_awal_kasir: modalAwalKasir,
-          omset_kasir: omsetKasir, kas_masuk_bank: kasMasukBank,
-          total_laci_sistem: totalLaciSistem, laci_fisik: laciFisikNum,
-          selisih: selisihGabungan, saldo_akhir_apps: saldoAkhirApps,
+          staff: user.nama, modal_awal_kasir: _modalAwalKasir,
+          omset_kasir: _omsetKasir, kas_masuk_bank: _kasMasukBank,
+          total_laci_sistem: _totalLaciSistem, laci_fisik: _laciFisikNum,
+          selisih: _selisihGabungan, saldo_akhir_apps: saldoAkhirApps,
           catatan, saved_at: new Date().toISOString(),
         })
-      },{onConflict:'key'}).catch(e=>console.warn('rekap log:',e));
+      },{onConflict:'key'}).catch(()=>{});
 
       setRekapTersimpan(true);
       notify("✅ Shift kasir & bank berhasil ditutup!","ok");
@@ -4703,7 +4714,6 @@ function GabunganPage(props) {
 
     }catch(e){
       console.warn('tutupShiftGabungan error:',e);
-      // Idempotent check — kalau DB sudah bersih, update UI
       const [{data:c1},{data:c2}] = await Promise.all([
         supabase.from('active_shifts').select('id').eq('outlet_id',gabunganOutlet).limit(1).catch(()=>({data:[1]})),
         supabase.from('bank_shifts').select('id').eq('outlet_id',gabunganOutlet).limit(1).catch(()=>({data:[1]})),
