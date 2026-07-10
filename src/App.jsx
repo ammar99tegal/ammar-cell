@@ -6412,16 +6412,15 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const closeShift = async (data) => {
     if(closingShift) return; // anti-dobel
-    // -- Guard: jangan tutup shift saat offline -----------------------------
-    if(!navigator.onLine || connStatus==="offline"){
-      notify("📵 Tidak bisa tutup shift -- tidak ada koneksi internet. Pastikan tersambung dulu.","err");
+    // Guard: hanya blokir kalau benar-benar offline (navigator.onLine lebih reliable)
+    if(!navigator.onLine){
+      notify("📵 Tidak bisa tutup shift — tidak ada koneksi internet.","err");
       return;
     }
     setClosingShift(true);
     const closeData={...data, waktuTutup:now()};
-    const shiftRef = shift; // simpan referensi SEBELUM di-null
+    const shiftRef = shift;
 
-    // Simpan ke localStorage untuk laporan (selalu, sebagai backup)
     try{
       const shiftSaldoKey=`ammar_shift_saldo_${shiftRef?.id}`;
       const existing=JSON.parse(localStorage.getItem(shiftSaldoKey)||"{}");
@@ -6441,60 +6440,44 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       await dbShift.closeShift(shiftRef, selectedOutlet, user.username, closeData);
 
       // 2. Hapus active_shifts (dengan retry 3x)
-      let deleted = false;
       for(let i=0; i<3; i++){
         try{
           await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
-          deleted = true;
           break;
         }catch(e){
-          console.warn(`[CloseShift] Hapus active_shifts attempt ${i+1} gagal:`, e);
-          if(i<2) await new Promise(r=>setTimeout(r,1000*(i+1)));
+          if(i<2) await new Promise(r=>setTimeout(r,800));
         }
       }
 
-      // 3. Verifikasi — pastikan shift benar-benar sudah tidak ada di DB
-      let stillExists = false;
-      try{
-        const {data:check} = await supabase.from('active_shifts').select('id').eq('outlet_id', selectedOutlet).limit(1);
-        stillExists = !!(check?.length);
-      }catch{}
-
-      if(stillExists){
-        // Masih ada di DB — coba hapus sekali lagi
-        try{ await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet); }catch{}
-        const {data:recheck} = await supabase.from('active_shifts').select('id').eq('outlet_id', selectedOutlet).limit(1).catch(()=>({data:[]}));
-        if(recheck?.length){
-          notify("⚠️ Shift gagal ditutup penuh — coba lagi atau hubungi admin","err");
-          setClosingShift(false);
-          return; // jangan ubah UI kalau DB belum bersih
-        }
+      // 3. Verifikasi
+      const {data:check} = await supabase.from('active_shifts').select('id').eq('outlet_id', selectedOutlet).limit(1).catch(()=>({data:[]}));
+      if(check?.length){
+        await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet).catch(()=>{});
       }
 
-      // 4. Berhasil — baru update UI
+      // 4. Update UI
       setShiftState(null);
       try{ localStorage.removeItem(shiftKey); }catch{}
       setShowShift(false);
-      notify(`✅ Shift ditutup. Selisih: ${fmtRp(data.selisih)}`, data.selisih===0?"ok":"warn");
+      notify(`✅ Shift ditutup. Selisih: ${fmtRp(data.selisih||0)}`, (data.selisih||0)===0?"ok":"warn");
 
     }catch(e){
       console.error("[CloseShift] Error:", e);
-      // Cek apakah shift sebetulnya sudah tidak ada (idempotent)
+      // Idempotent check
       try{
         const {data:check} = await supabase.from('active_shifts').select('id').eq('outlet_id', selectedOutlet).limit(1);
         if(!check?.length){
-          // Shift sudah tidak ada di DB — aman untuk tutup UI
           setShiftState(null);
           try{ localStorage.removeItem(shiftKey); }catch{}
           setShowShift(false);
-          notify(`✅ Shift berhasil ditutup`, "ok");
+          notify("✅ Shift berhasil ditutup","ok");
           setClosingShift(false);
           return;
         }
       }catch{}
-      notify("❌ Gagal tutup shift: "+( e?.message||"koneksi bermasalah")+". Coba lagi.","err");
+      notify("⚠️ Coba tap tombol sekali lagi — "+(e?.message||"koneksi bermasalah"),"err");
     }
-    setClosingShift(false);
+    setClosingShift(false); // SELALU reset, apapun yang terjadi
   };
 
   const txOutlet    = transactions.filter(t=>t.outletId===selectedOutlet);
