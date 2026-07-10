@@ -297,6 +297,12 @@ function LoginPage({ users, onLogin, onChangePass }) {
     if(!username||!password) return setError("Isi username dan password!");
     setLoading(true);
     setTimeout(()=>{
+      // Kalau users kosong sama sekali = data belum loaded
+      if(!users || Object.keys(users).length === 0){
+        setError("Data pengguna belum termuat. Tunggu sebentar lalu coba lagi.");
+        setLoading(false);
+        return;
+      }
       const user = users[username.toLowerCase()];
       if(!user||user.pass!==password){ setError("Username atau password salah!"); setLoading(false); }
       else { setError(""); onLogin({username:username.toLowerCase(),...user}); }
@@ -15800,13 +15806,24 @@ export default function App() {
 
       try {
         // TAHAP 1: Data kritis — app langsung bisa dipakai setelah ini
-        // Limit transaksi ke 500 terbaru agar tidak timeout
-        const [prods, outs, stks, usrs] = await Promise.all([
+        const [prods, outs, stks] = await Promise.all([
           db.getProducts().catch(()=>[]),
           db.getOutlets().catch(()=>[]),
           db.getStocks().catch(()=>({})),
-          db.getUsers().catch(()=>({})),
         ]);
+
+        // Load users TERPISAH dengan retry — kalau gagal login tidak bisa sama sekali
+        let usrs = {};
+        for(let attempt=0; attempt<3; attempt++){
+          try{
+            usrs = await db.getUsers();
+            if(usrs && Object.keys(usrs).length > 0) break; // berhasil
+            console.warn(`[Users] Attempt ${attempt+1}: empty, retry...`);
+          }catch(e){
+            console.warn(`[Users] Attempt ${attempt+1} error:`, e.message);
+            if(attempt < 2) await new Promise(r=>setTimeout(r, 1000));
+          }
+        }
 
         // Set state kritis → app tampil
         clearTimeout(timeout);
@@ -15814,6 +15831,7 @@ export default function App() {
         setOutletsState(outs);
         setStocksState(stks);
         const parsed = parseUserOutletIds(usrs);
+        console.log('[Users] loaded:', Object.keys(parsed).length, 'users');
         setUsersState(parsed);
         setLoading(false); // ← App tampil sekarang, sisanya load di background
 
