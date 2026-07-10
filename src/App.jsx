@@ -6487,13 +6487,6 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     setClosingShift(false);
   };
 
-  // Saat embedded kasir+bank: redirect ShiftModal kasir → BankShiftModal di GabunganPage
-  useEffect(()=>{
-    if(showShift && onBukaShiftBank){
-      setShowShift(false);
-      onBukaShiftBank();
-    }
-  },[showShift, onBukaShiftBank]);
   const txOutlet    = transactions.filter(t=>t.outletId===selectedOutlet);
   const shiftTrxList= shift?txOutlet.filter(t=>t.shiftId===shift.id):[];
   const omsetShift  = calcOmset(shiftTrxList);
@@ -6534,7 +6527,10 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
             {outlets.map(o=><option key={o.id} value={o.id} style={{color:"#000"}}>{o.nama}</option>)}
           </select>
         )}
-        <div onClick={()=>{setShiftMode(shift?"close":"open");setShowShift(true);}} style={{background:shift?"rgba(255,255,255,.18)":"rgba(255,100,100,.3)",border:`1px solid ${shift?"rgba(255,255,255,.35)":"rgba(255,100,100,.6)"}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",marginRight:8,fontSize:11,fontWeight:800,color:"#fff"}}>
+        <div onClick={()=>{
+          if(onBukaShiftBank && !shift){ onBukaShiftBank(); return; }
+          setShiftMode(shift?"close":"open"); setShowShift(true);
+        }} style={{background:shift?"rgba(255,255,255,.18)":"rgba(255,100,100,.3)",border:`1px solid ${shift?"rgba(255,255,255,.35)":"rgba(255,100,100,.6)"}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",marginRight:8,fontSize:11,fontWeight:800,color:"#fff"}}>
           {shift?`⏱ ${shift.nama}`:"⚠ Buka Shift"}
         </div>
         {[{id:"kasir",l:"Kasir"},{id:"riwayat",l:"Riwayat"},{id:"stok",l:"Stok"}].map(n=>(
