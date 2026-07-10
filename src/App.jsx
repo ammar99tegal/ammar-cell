@@ -1,5 +1,5 @@
-// Ammar Cell App -- build 20260602-1043
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+// Ammar Cell App -- build 20260710-0900
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
 
 // ==============================================================================
@@ -15320,6 +15320,31 @@ const parseUserOutletIds = (usrs) => {
   return result;
 };
 
+// Error Boundary — tangkap crash React agar tidak blank putih di tablet
+class ErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state={hasError:false,error:null}; }
+  static getDerivedStateFromError(error){ return {hasError:true,error}; }
+  componentDidCatch(error,info){ console.error('[AppCrash]',error,info); }
+  render(){
+    if(!this.state.hasError) return this.props.children;
+    return (
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"sans-serif",background:"#f0faf8",padding:24,textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
+        <div style={{fontWeight:900,fontSize:18,color:"#dc2626",marginBottom:8}}>Aplikasi Error</div>
+        <div style={{fontSize:12,color:"#666",marginBottom:4}}>
+          {this.state.error?.message||"Terjadi kesalahan tidak terduga"}
+        </div>
+        <div style={{fontSize:11,color:"#aaa",marginBottom:20}}>Build: 20260710-0900</div>
+        <button onClick={()=>window.location.reload()}
+          style={{background:"#0d9488",border:"none",borderRadius:12,padding:"12px 28px",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>
+          🔄 Muat Ulang
+        </button>
+        <div style={{marginTop:10,fontSize:11,color:"#aaa"}}>Data shift aman — tersimpan di server</div>
+      </div>
+    );
+  }
+}
+
 export default function App() {
   // -- Session: ambil dari localStorage agar tidak login ulang --------------
   const savedUser = (() => { try { const s=localStorage.getItem('ammar_user'); return s?JSON.parse(s):null; } catch{return null;} })();
@@ -16330,6 +16355,7 @@ export default function App() {
   );
 
   return (
+    <ErrorBoundary>
     <div style={{fontFamily:"'Nunito',sans-serif"}}>
       <style>{css}</style>
       <Toast toast={toast}/>
@@ -16433,5 +16459,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
