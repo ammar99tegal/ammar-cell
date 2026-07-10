@@ -6499,6 +6499,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
 
   const txOutlet    = transactions.filter(t=>t.outletId===selectedOutlet);
   const shiftTrxList= shift?txOutlet.filter(t=>t.shiftId===shift.id):[];
+  const calcOmset   = list=>list.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
   const omsetShift  = calcOmset(shiftTrxList);
   const omsetHari   = calcOmset(txOutlet.filter(t=>t.date===today()));
   const itemHari    = txOutlet.filter(t=>t.date===today()).reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
