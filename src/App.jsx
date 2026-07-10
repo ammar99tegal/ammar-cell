@@ -6487,7 +6487,13 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     setClosingShift(false);
   };
 
-  const calcOmset=list=>list.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
+  // Saat embedded kasir+bank: redirect ShiftModal kasir → BankShiftModal di GabunganPage
+  useEffect(()=>{
+    if(showShift && onBukaShiftBank){
+      setShowShift(false);
+      onBukaShiftBank();
+    }
+  },[showShift, onBukaShiftBank]);
   const txOutlet    = transactions.filter(t=>t.outletId===selectedOutlet);
   const shiftTrxList= shift?txOutlet.filter(t=>t.shiftId===shift.id):[];
   const omsetShift  = calcOmset(shiftTrxList);
@@ -6873,7 +6879,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           </div>
         </Modal>
       )}
-      {showShift&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
+      {/* Saat embedded kasir+bank: ShiftModal kasir diganti BankShiftModal dari GabunganPage */}
+      {showShift&&!onBukaShiftBank&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
     </div>
   );
 }
