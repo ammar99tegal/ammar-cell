@@ -446,6 +446,7 @@ function LoginPage({ users, onLogin, onChangePass }) {
 function MenuUtama({ user, onNavigate, onLogout, stats }) {
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
+    {id:"gabungan", icon:"🏦",          label:"Kasir + Bank (1 Laci)", desc:"Transaksi kasir & bank — shift bank", color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
     {id:"bank",     icon:Ic.Cash(22),   label:"Bank",               desc:"Pencatatan transaksi keuangan",color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"monitor",  icon:Ic.Dashboard(),label:"Monitor Live",        desc:"Pantau kasir & bank realtime", color:"#27ae60", bg:"#e8f8f0", roles:["admin"]},
     {id:"cashflow", icon:Ic.Dashboard(),label:"Cashflow Manager",    desc:"Pantau arus kas & saran bisnis",color:"#27ae60",bg:"#e8f8f0", roles:["admin"]},
