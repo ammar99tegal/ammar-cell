@@ -4740,33 +4740,13 @@ function GabunganPage(props) {
   const todayStr = today();
 
   // Auto-sinkronisasi: jika shift kasir aktif tapi bank shift belum ada, buka otomatis
-  const autoOpenBankShift = async (kasirShift) => {
-    try{
-      const {data:existing} = await supabase.from('bank_shifts').select('id').eq('outlet_id',gabunganOutlet).limit(1);
-      if(existing?.length) return; // sudah ada
-      const sd = kasirShift.saldo_data||{};
-      const s = {
-        id: uid(),
-        nama: kasirShift.nama||user.nama,
-        start: now(),
-        outletId: gabunganOutlet,
-        saldoApps: sd.saldoApps||{},
-        cashKemb: sd.cashKembalian||0,
-        totalSaldo: sd.totalSaldoApps||0,
-      };
-      await dbBank.openShift(s, gabunganOutlet, user.username||user.id);
-      notify("✓ Shift bank ikut dibuka otomatis","ok");
-    }catch(e){ console.warn('autoOpenBankShift:',e); }
-  };
-
-  // Load shift kasir aktif (untuk saldo awal dan auto-sync bank)
+  // Load shift bank aktif — untuk role bank sebagai gate utama
   const loadKasirShift = async () => {
     try{
       const {data} = await supabase.from('active_shifts').select('*').eq('outlet_id',gabunganOutlet).limit(1);
       const ks = data?.[0]||null;
       setKasirShiftData(ks);
-      // Kalau kasir shift aktif, pastikan bank shift juga aktif
-      if(ks && !isBankRole) autoOpenBankShift(ks);
+      // Bank shift selalu dibuka manual via form — tidak auto
     }catch(e){ console.warn('gabungan kasir shift:',e); }
   };
 
