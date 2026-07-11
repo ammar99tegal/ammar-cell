@@ -7660,47 +7660,32 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
       id:uid(), waktu:now(), tgl:today(),
       outletId:selectedOutlet, shiftId:shift?.id, ...data,
     });
-
     try{
       if(editTrx){
-        // Edit: optimistic update UI dulu
         const updated = makeRow(trx);
+        await dbBank.updateTransaction(editTrx.id, updated);
         setTrxList(prev=>prev.map(t=>t.id===editTrx.id?{...t,...updated}:t));
-        setShowForm(false); setEditTrx(null);
-        setSavingTrx(false);
-        // Simpan ke DB di background
-        dbBank.updateTransaction(editTrx.id, updated)
-          .then(()=>notify("Diperbarui ✓","ok"))
-          .catch(()=>notify("⚠️ Gagal update, coba lagi","err"));
-
+        notify("Diperbarui ✓","ok");
       } else if(trx.feeType==="tarik"&&(+trx.fee||0)>0){
         const row1 = makeRow({nama:trx.nama+" (TARIK)",    jenis:"keluar",feeType:"tarik",fee:0,nominal:trx.nominal,netNominal:-(trx.nominal)});
         const row2 = makeRow({nama:trx.nama+" (FEE TARIK)",jenis:"masuk", feeType:"tarik",fee:0,nominal:trx.fee,    netNominal:+(trx.fee)});
-        // Optimistic: tampilkan langsung
-        setTrxList(prev=>[row2, row1, ...prev]);
-        setShowForm(false); setEditTrx(null);
-        setSavingTrx(false);
-        notify("Tersimpan ✓","ok");
-        // Simpan ke DB di background
-        Promise.all([
+        await Promise.all([
           dbBank.addTransaction(row1),
           dbBank.addTransaction(row2),
-        ]).catch(e=>{ console.error(e); notify("⚠️ Sinkronisasi gagal, reload halaman","err"); });
-
+        ]);
+        setTrxList(prev=>[row2, row1, ...prev]);
+        notify("Tersimpan ✓","ok");
       } else {
         const row = makeRow(trx);
-        // Optimistic: tampilkan langsung
+        await dbBank.addTransaction(row);
         setTrxList(prev=>[row,...prev]);
-        setShowForm(false); setEditTrx(null);
-        setSavingTrx(false);
         notify("Tersimpan ✓","ok");
-        // Simpan ke DB di background
-        dbBank.addTransaction(row)
-          .catch(e=>{ console.error(e); notify("⚠️ Sinkronisasi gagal, reload halaman","err"); });
       }
-    } catch(e){
+      setShowForm(false); setEditTrx(null);
+    }catch(e){
       console.error('saveTrx error:',e);
-      notify("Gagal simpan: "+e.message,"err");
+      notify("❌ Gagal simpan — coba lagi","err");
+    }finally{
       setSavingTrx(false);
     }
   };
