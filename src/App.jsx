@@ -4790,7 +4790,7 @@ function GabunganPage(props) {
     loadBankToday();
     loadKasirShift();
     if(isBankRole) loadBankShift();
-    const ch = supabase.channel(`gabungan-bank-${gabunganOutlet}`)
+    const ch = supabase.channel(`gabungan-bank-${gabunganOutlet}-${isBankRole?'bank':'staff'}`)
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
         const row = payload.new||payload.old;
         if(row?.outlet_id===gabunganOutlet) loadBankToday();
@@ -4803,7 +4803,7 @@ function GabunganPage(props) {
       })
       .subscribe();
     return ()=>supabase.removeChannel(ch);
-  },[gabunganOutlet]);
+  },[gabunganOutlet, isBankRole]);
 
   // Omset kasir hari ini (realtime dari transactions prop)
   const txHariIni = transactions.filter(t=>t.outletId===gabunganOutlet && t.date===todayStr);
