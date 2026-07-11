@@ -7182,6 +7182,7 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   const [pinjamNom,    setPinjamNom]  = useState("");
   const [pinjamNama,   setPinjamNama] = useState("BANK PINJAM VOUCHER");
   const [filterJenis,  setFilterJenis]= useState("semua");
+  const [showAllToday, setShowAllToday]= useState(false); // toggle lihat semua trx hari ini
   const [showBalance,  setShowBalance]= useState(false);
   const [balanceVal,   setBalanceVal] = useState("");
   const [lastBalance,  setLastBalance]= useState(null);
@@ -7388,7 +7389,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   const totalMasuk    = trxList.filter(t=>t.shiftId===shift?.id&&t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
   const totalKeluar   = trxList.filter(t=>t.shiftId===shift?.id&&t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
   const shiftTrxList  = shift ? trxList.filter(t=>t.shiftId===shift.id) : [];
-  const filtered      = filterJenis==="semua"?shiftTrxList:filterJenis==="masuk"?shiftTrxList.filter(t=>t.netNominal>0):shiftTrxList.filter(t=>t.netNominal<0);
+  const todayTrxList  = trxList.filter(t=>t.tgl===today()&&t.outletId===selectedOutlet);
+  const baseTrxList   = showAllToday ? todayTrxList : shiftTrxList;
+  const filtered      = filterJenis==="semua"?baseTrxList:filterJenis==="masuk"?baseTrxList.filter(t=>t.netNominal>0):baseTrxList.filter(t=>t.netNominal<0);
   const totalSaldo    = shift?.saldoApps?Object.values(shift.saldoApps).reduce((s,v)=>s+(+v||0),0):0;
 
   const setShift = (val) => {
@@ -7827,10 +7830,19 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
         <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
           <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
             <div>
-              <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📋 Transaksi Shift Ini</div>
-              {shift&&<div style={{fontSize:10,color:"#aaa",marginTop:2}}>Shift: {shift.nama} . {shiftTrxList.length} transaksi</div>}
+              <div style={{fontWeight:800,fontSize:14,color:"#0d9488"}}>📋 {showAllToday?"Semua Transaksi Hari Ini":"Transaksi Shift Ini"}</div>
+              <div style={{fontSize:10,color:"#aaa",marginTop:2}}>
+                {showAllToday
+                  ?`${todayTrxList.length} transaksi hari ini (semua shift)`
+                  :shift?`Shift: ${shift.nama} · ${shiftTrxList.length} transaksi`:"Tidak ada shift aktif"}
+              </div>
             </div>
-            <div style={{display:"flex",gap:6}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {/* Toggle Shift Ini / Hari Ini */}
+              <button onClick={()=>setShowAllToday(v=>!v)}
+                style={{padding:"5px 12px",borderRadius:20,border:"2px solid",borderColor:showAllToday?"#f59e0b":"#b2ede6",background:showAllToday?"#f59e0b":"#fff",color:showAllToday?"#fff":"#64748b",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                {showAllToday?"📅 Hari Ini":"🔒 Shift Ini"}
+              </button>
               {[{k:"semua",l:"Semua"},{k:"masuk",l:"⬇ Masuk"},{k:"keluar",l:"⬆ Keluar"}].map(f=>(
                 <button key={f.k} onClick={()=>setFilterJenis(f.k)} style={{padding:"5px 12px",borderRadius:20,border:"2px solid",borderColor:filterJenis===f.k?"#0d9488":"#b2ede6",background:filterJenis===f.k?"#0d9488":"#fff",color:filterJenis===f.k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{f.l}</button>
               ))}
