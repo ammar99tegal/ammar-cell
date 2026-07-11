@@ -1027,7 +1027,7 @@ function CategoryEditRow({ cat, onSave }) {
 function StokPageInner({ tab, products, outlets, stocks, setStocks, selectedOutlet, notify, prodOrder }) {
   return (
     <StokPage
-      key={tab}
+      key={`${tab}-${selectedOutlet}`}
       products={products} outlets={outlets}
       stocks={stocks} setStocks={setStocks}
       onBack={null} notify={notify}
@@ -4923,7 +4923,7 @@ function GabunganPage(props) {
       {/* GATE: Shift belum dibuka */}
       {/* GATE: Role bank — shift bank belum dibuka */}
       {isBankRole&&!bankShiftData&&!showBukaShiftBank&&(
-        <div style={{position:"fixed",inset:0,zIndex:200,background:"linear-gradient(135deg,rgba(14,59,100,.97),rgba(41,128,185,.95))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
+        <div style={{position:"fixed",inset:0,zIndex:9999,background:"linear-gradient(135deg,rgba(14,59,100,.97),rgba(41,128,185,.95))",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'Nunito',sans-serif"}}>
           <div style={{fontSize:56,marginBottom:4}}>🏦</div>
           <div style={{fontWeight:900,fontSize:22,color:"#fff",textAlign:"center"}}>Shift Bank Belum Dibuka</div>
           <div style={{fontSize:13,color:"rgba(255,255,255,.75)",textAlign:"center",maxWidth:280,lineHeight:1.6}}>
@@ -4937,7 +4937,9 @@ function GabunganPage(props) {
       )}
       {/* Modal buka shift bank untuk role bank */}
       {isBankRole&&showBukaShiftBank&&(
-        <BankShiftModal mode="open" shift={null} trxList={[]} saldoApps={props.saldoBank||DEFAULT_SALDO_APPS} onOpen={bukaShiftBank} onClose={()=>{}} onCancel={()=>setShowBukaShiftBank(false)}/>
+        <div style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.5)"}}>
+          <BankShiftModal mode="open" shift={null} trxList={[]} saldoApps={props.saldoBank||DEFAULT_SALDO_APPS} onOpen={bukaShiftBank} onClose={()=>{}} onCancel={()=>setShowBukaShiftBank(false)}/>
+        </div>
       )}
 
       {/* GATE: Role staff/kasir biasa — shift kasir belum dibuka */}
@@ -6857,7 +6859,9 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
         </Modal>
       )}
       {/* Saat embedded kasir+bank: ShiftModal kasir diganti BankShiftModal dari GabunganPage */}
-      {showShift&&!onBukaShiftBank&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
+      {/* ShiftModal kasir — TIDAK muncul kalau embedded+onBukaShiftBank (mode Kasir+Bank) */}
+      {showShift&&!onBukaShiftBank&&!embedded&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
+      {showShift&&embedded&&!onBukaShiftBank&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
     </div>
   );
 }
