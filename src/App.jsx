@@ -6469,18 +6469,17 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     setClosingShift(false); // SELALU reset, apapun yang terjadi
   };
 
-  const txOutlet    = transactions.filter(t=>t.outletId===selectedOutlet);
-  const shiftTrxList= shift?txOutlet.filter(t=>t.shiftId===shift.id):[];
+  const txOutlet    = useMemo(()=>transactions.filter(t=>t.outletId===selectedOutlet),[transactions,selectedOutlet]);
+  const shiftTrxList= useMemo(()=>shift?txOutlet.filter(t=>t.shiftId===shift.id):[],[txOutlet,shift?.id]);
   const calcOmset   = list=>list.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
-  const omsetShift  = calcOmset(shiftTrxList);
-  const omsetHari   = calcOmset(txOutlet.filter(t=>t.date===today()));
-  const itemHari    = txOutlet.filter(t=>t.date===today()).reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
-
-  const groupByShift=()=>{
+  const omsetShift  = useMemo(()=>calcOmset(shiftTrxList),[shiftTrxList]);
+  const omsetHari   = useMemo(()=>calcOmset(txOutlet.filter(t=>t.date===today())),[txOutlet]);
+  const itemHari    = useMemo(()=>txOutlet.filter(t=>t.date===today()).reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0),[txOutlet]);
+  const groupByShift= useMemo(()=>{
     const g={};
     txOutlet.forEach(t=>{const k=t.shiftId||"ns";const l=t.shiftNama||"Tanpa Shift";if(!g[k])g[k]={key:k,label:l,items:[]};g[k].items.push(t);});
     return Object.values(g);
-  };
+  },[txOutlet]);
 
   const QUICK=[5000,10000,20000,50000,100000];
 
@@ -6701,7 +6700,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           </div>
           {txOutlet.length===0?(
             <div style={{textAlign:"center",color:"#bbb",padding:50,fontSize:14}}>Belum ada transaksi</div>
-          ):groupByShift().map(group=>{
+          ):groupByShift.map(group=>{
             const gO=calcOmset(group.items);
             const gI=group.items.reduce((s,t)=>s+t.items.filter(i=>!i.refunded).reduce((ss,i)=>ss+i.qty,0),0);
             return (
@@ -6860,8 +6859,8 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       )}
       {/* Saat embedded kasir+bank: ShiftModal kasir diganti BankShiftModal dari GabunganPage */}
       {/* ShiftModal kasir — TIDAK muncul kalau embedded+onBukaShiftBank (mode Kasir+Bank) */}
-      {showShift&&!onBukaShiftBank&&!embedded&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
-      {showShift&&embedded&&!onBukaShiftBank&&<ShiftModal mode={shiftMode} shift={shift} transactions={txOutlet} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
+      {showShift&&!onBukaShiftBank&&!embedded&&<ShiftModal mode={shiftMode} shift={shift} transactions={shiftTrxList} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
+      {showShift&&embedded&&!onBukaShiftBank&&<ShiftModal mode={shiftMode} shift={shift} transactions={shiftTrxList} saldoApps={saldoApps||DEFAULT_SALDO_APPS} onOpen={openShift} onClose={closeShift} onCancel={()=>setShowShift(false)} userName={user.nama} userUsername={user.username||user.id}/>}
     </div>
   );
 }
