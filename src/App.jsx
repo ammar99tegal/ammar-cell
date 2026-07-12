@@ -6425,30 +6425,27 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
     }catch{}
 
     try{
-      // 1. Simpan rekap ke shift_logs
-      await dbShift.closeShift(shiftRef, selectedOutlet, user.username, closeData);
+      // Jalankan simpan rekap + hapus active_shifts PARALEL dengan timeout 10 detik
+      const withTimeout = (p, ms) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
 
-      // 2. Hapus active_shifts (dengan retry 3x)
-      for(let i=0; i<3; i++){
-        try{
-          await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet);
-          break;
-        }catch(e){
-          if(i<2) await new Promise(r=>setTimeout(r,800));
-        }
-      }
+      await withTimeout(Promise.all([
+        // 1. Simpan rekap ke shift_logs
+        dbShift.closeShift(shiftRef, selectedOutlet, user.username, closeData).catch(e=>console.warn('closeShift log:',e)),
+        // 2. Hapus active_shifts
+        supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet).catch(e=>console.warn('delete shift:',e)),
+      ]), 10000); // max 10 detik
 
-      // 3. Verifikasi
-      const {data:check} = await supabase.from('active_shifts').select('id').eq('outlet_id', selectedOutlet).limit(1).catch(()=>({data:[]}));
-      if(check?.length){
-        await supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet).catch(()=>{});
-      }
-
-      // 4. Update UI
+      // 3. Update UI langsung — tidak tunggu verifikasi
       setShiftState(null);
       try{ localStorage.removeItem(shiftKey); }catch{}
       setShowShift(false);
       notify(`✅ Shift ditutup. Selisih: ${fmtRp(data.selisih||0)}`, (data.selisih||0)===0?"ok":"warn");
+
+      // 4. Verifikasi di background (tidak blocking UI)
+      supabase.from('active_shifts').select('id').eq('outlet_id', selectedOutlet).limit(1)
+        .then(({data:check})=>{
+          if(check?.length) supabase.from('active_shifts').delete().eq('outlet_id', selectedOutlet).catch(()=>{});
+        }).catch(()=>{});
 
     }catch(e){
       console.error("[CloseShift] Error:", e);
@@ -7025,15 +7022,11 @@ function ShiftModal({ mode, shift, transactions, saldoApps, onOpen, onClose, onC
   const [kasNyata,setKasNyata]=useState("");
   const [notes,setNotes]=useState("");
 
-  // Memoize — hanya recalculate kalau shiftId atau transactions berubah
-  // PENTING: tanpa memo ini, setiap keystroke di form trigger filter ribuan transaksi → tablet lag
-  const shiftTrx = useMemo(()=>
-    transactions.filter(t=>t.shiftId===shift?.id),
-    [transactions, shift?.id]
-  );
+  // transactions sudah difilter dari parent (shiftTrxList) — tidak perlu filter lagi
+  const shiftTrx = transactions; // langsung pakai, sudah filtered
   const totalP = useMemo(()=>
-    shiftTrx.reduce((s,t)=>{const rv=t.items.filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0),
-    [shiftTrx]
+    transactions.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0),
+    [transactions]
   );
   const tAppO=useMemo(()=>Object.values(saldoOpen).reduce((s,v)=>s+(+v||0),0),[saldoOpen]);
   const tAppC=useMemo(()=>Object.values(saldoClose).reduce((s,v)=>s+(+v||0),0),[saldoClose]);
