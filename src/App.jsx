@@ -15685,12 +15685,20 @@ export default function App() {
 
   // Fungsi load semua transaksi dengan pagination (bypass Supabase hard-cap 1000/request)
   const loadAllTransactions = async () => {
+    // Batasi 30 hari terakhir — hemat RAM tablet spek rendah
+    // Data lebih lama tetap aman di DB, bisa dilihat di Dashboard admin
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().split('T')[0]; // yyyy-mm-dd
+
     const PAGE = 1000;
     let all = [];
-    for(let page=0; page<50; page++){
+    for(let page=0; page<20; page++){
       try{
         const {data} = await supabase.from('transactions')
-          .select('*').order('created_at',{ascending:false})
+          .select('*')
+          .gte('created_at', cutoffStr)
+          .order('created_at',{ascending:false})
           .range(page*PAGE, page*PAGE+PAGE-1);
         if(!data||data.length===0) break;
         all = all.concat(data.map(t=>({...t, items:t.items||[]})));
@@ -15701,12 +15709,19 @@ export default function App() {
   };
 
   const loadAllBankTransactions = async () => {
+    // Batasi 30 hari terakhir
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+
     const PAGE = 1000;
     let all = [];
-    for(let page=0; page<50; page++){
+    for(let page=0; page<20; page++){
       try{
         const {data} = await supabase.from('bank_transactions')
-          .select('*').order('created_at',{ascending:false})
+          .select('*')
+          .gte('created_at', cutoffStr)
+          .order('created_at',{ascending:false})
           .range(page*PAGE, page*PAGE+PAGE-1);
         if(!data||data.length===0) break;
         all = all.concat(data.map(t=>({
@@ -15722,51 +15737,51 @@ export default function App() {
 
   const reloadData = async () => {
     try {
-      const [prods, outs, stks, txs, usrs, prodOrd, aktifMap, bTrx] = await Promise.all([
-        db.getProducts(), db.getOutlets(), db.getStocks(),
-        loadAllTransactions(), db.getUsers(),
-        dbProductOrder.getOrder().catch(()=>[]),
-        dbAktifProduk.getAllAktif().catch(()=>({})),
-        loadAllBankTransactions().catch(()=>[]),
+      // Reload ringan — hanya transaksi hari ini + stok, bukan semua 30 hari
+      // Ini dipanggil setiap 20 detik, harus cepat dan hemat RAM
+      const todayStr = new Date().toISOString().split('T')[0];
+      const [stks, txToday, bTrxToday] = await Promise.all([
+        db.getStocks().catch(()=>({})),
+        supabase.from('transactions').select('*')
+          .gte('created_at', todayStr).order('created_at',{ascending:false})
+          .then(r=>r.data||[]).catch(()=>[]),
+        supabase.from('bank_transactions').select('*')
+          .gte('created_at', todayStr).order('created_at',{ascending:false})
+          .then(r=>r.data||[]).catch(()=>[]),
       ]);
-      // Update allBankTrx (loadAllBankTransactions sudah mapping field-nya)
-      setAllBankTrx(bTrx||[]);
-      setProductsState(prods);
-      setOutletsState(outs);
-      try{ localStorage.setItem('ammar_outlets', JSON.stringify(outs.map(o=>({id:o.id,nama:o.nama})))); }catch{}
-      // Restore offline queue saat app startup
-      try{
-        const allQ=[];
-        outs.forEach(o=>{
-          const q=JSON.parse(localStorage.getItem(`offline_queue_${o.id}`)||'[]');
-          allQ.push(...q);
-        });
-        if(allQ.length>0){ setOfflineQueue(allQ); console.log('[OfflineQueue] Restored',allQ.length,'item'); }
-      }catch{}
+
       setStocksState(stks);
-      if(Array.isArray(prodOrd)&&prodOrd.length>0) setProdOrderRoot(prodOrd.map(x=>x.productId||x));
-      if(Object.keys(aktifMap).length>0) setAktifProdsRoot(aktifMap);
-      setTx(txs.map(t=>({
-        id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
-        shiftNama:t.shift_nama, kasir:t.kasir,
-        date:t.date, time:t.time,
-        total:t.total, cash:t.cash, kembalian:t.kembalian,
-        items:t.items||[],
-      })));
-      const parsed=parseUserOutletIds(usrs);
-      setUsersState(parsed);
-      // Merge user_outlets async (fire-and-forget)
-      supabase.from('user_outlets').select('*').then(({data:uoRows})=>{
-        if(!uoRows?.length) return;
-        const mp={};
-        uoRows.forEach(r=>{if(!mp[r.username])mp[r.username]=[];mp[r.username].push(r.outlet_id);});
-        setUsersState(prev=>{
-          const n={...prev};
-          Object.entries(mp).forEach(([u,ids])=>{if(n[u])n[u]={...n[u],outletIds:ids,outletId:ids[0]};});
-          return n;
+
+      // Merge transaksi hari ini ke state (replace yang lama, keep yang lebih lama)
+      if(txToday.length>0){
+        const mapped = txToday.map(t=>({
+          id:t.id, outletId:t.outlet_id, shiftId:t.shift_id,
+          shiftNama:t.shift_nama, kasir:t.kasir,
+          date:t.date, time:t.time,
+          total:t.total, cash:t.cash, kembalian:t.kembalian,
+          items:t.items||[],
+        }));
+        setTx(prev=>{
+          const todayIds = new Set(mapped.map(t=>t.id));
+          const older = prev.filter(t=>!todayIds.has(t.id) && t.date !== todayStr.replace(/-/g,'/'));
+          return [...mapped, ...older];
         });
-      }).catch(()=>{});
-    } catch(e) { console.error("Reload gagal:",e); }
+      }
+
+      // Merge bank transaksi hari ini
+      if(bTrxToday.length>0){
+        const mapped = bTrxToday.map(t=>({
+          id:t.id, waktu:t.waktu, tgl:t.tgl, shiftId:t.shift_id, nama:t.nama,
+          jenis:t.jenis, feeType:t.fee_type, fee:t.fee, nominal:t.nominal,
+          netNominal:t.net_nominal, outletId:t.outlet_id,
+        }));
+        setAllBankTrx(prev=>{
+          const todayIds = new Set(mapped.map(t=>t.id));
+          const older = prev.filter(t=>!todayIds.has(t.id));
+          return [...mapped, ...older];
+        });
+      }
+    }catch(e){ console.warn('reloadData:',e); }
   };
 
   // -- Load semua data dari Supabase saat pertama buka ----------------------
