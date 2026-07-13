@@ -7320,7 +7320,9 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
             {...t,nama:row.nama,jenis:row.jenis,feeType:row.fee_type,
              fee:row.fee,nominal:row.nominal,netNominal:row.net_nominal}:t));
         } else if(payload.eventType==='DELETE'){
-          setTrxList(prev=>prev.filter(t=>t.id!==payload.old?.id));
+          // Idempotent: filter hanya kalau masih ada (sudah dihapus optimistic = tidak ada efek)
+          const deletedId = payload.old?.id;
+          if(deletedId) setTrxList(prev=>prev.filter(t=>t.id!==deletedId));
         }
       }).subscribe((status)=>{
         if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
@@ -7661,16 +7663,19 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
       } else if(trx.feeType==="tarik"&&(+trx.fee||0)>0){
         const row1 = makeRow({nama:trx.nama+" (TARIK)",    jenis:"keluar",feeType:"tarik",fee:0,nominal:trx.nominal,netNominal:-(trx.nominal)});
         const row2 = makeRow({nama:trx.nama+" (FEE TARIK)",jenis:"masuk", feeType:"tarik",fee:0,nominal:trx.fee,    netNominal:+(trx.fee)});
-        await Promise.all([
-          dbBank.addTransaction(row1),
-          dbBank.addTransaction(row2),
-        ]);
-        setTrxList(prev=>[row2, row1, ...prev]);
+        await Promise.all([dbBank.addTransaction(row1),dbBank.addTransaction(row2)]);
+        // Tambah dengan duplicate check — realtime juga akan fire tapi akan di-skip karena sudah ada
+        setTrxList(prev=>{
+          const ids=new Set(prev.map(t=>t.id));
+          const toAdd=[row2,row1].filter(r=>!ids.has(r.id));
+          return toAdd.length>0?[...toAdd,...prev]:prev;
+        });
         notify("Tersimpan ✓","ok");
       } else {
         const row = makeRow(trx);
         await dbBank.addTransaction(row);
-        setTrxList(prev=>[row,...prev]);
+        // Tambah dengan duplicate check — realtime juga akan fire tapi akan di-skip karena sudah ada
+        setTrxList(prev=>prev.find(x=>x.id===row.id)?prev:[row,...prev]);
         notify("Tersimpan ✓","ok");
       }
       setShowForm(false); setEditTrx(null);
@@ -7683,8 +7688,18 @@ function BankPage({ user, outlets, saldoApps, onBack, notify, embedded=false, po
   };
 
   const deleteTrx = async (id) => {
-    try{ await dbBank.deleteTransaction(id); notify("Dihapus","warn"); }
-    catch{ notify("Gagal hapus!","err"); }
+    if(!window.confirm("Hapus transaksi ini?")) return;
+    // Hapus dari state lokal dulu (optimistic)
+    setTrxList(prev=>prev.filter(t=>t.id!==id));
+    try{
+      await dbBank.deleteTransaction(id);
+      notify("Dihapus","warn");
+    }catch(e){
+      // Kalau gagal, kembalikan data
+      notify("Gagal hapus!","err");
+      // Reload untuk restore data
+      loadAll(false);
+    }
   };
 
   if(loading) return (
