@@ -1990,10 +1990,21 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     setForm({productId:"",qty:"",note:""});
   };
 
-  const saveOpname = ()=>{
-    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
-    Object.entries(realStocks).forEach(([pid,qty])=>db.upsertStock(selectedOutlet,+pid,qty).catch(()=>{}));
-    notify("Stok opname disimpan ✓","ok");
+  const [savingOpname, setSavingOpname] = useState(false);
+  const saveOpname = async ()=>{
+    const entries = Object.entries(realStocks);
+    if(!entries.length) return notify("Belum ada stok nyata yang diisi","err");
+    setSavingOpname(true);
+    try{
+      for(const [pid,qty] of entries){
+        await db.upsertStock(selectedOutlet, +pid, +qty);
+      }
+      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
+      notify("Stok opname disimpan ✓","ok");
+    }catch(e){
+      notify("Gagal simpan opname: "+e.message,"err");
+    }
+    setSavingOpname(false);
   };
 
   // -- BULK OPERATIONS --------------------------------------------------------
@@ -2226,7 +2237,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
                 <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari produk..."
                   style={{width:"100%",padding:"7px 10px 7px 27px",borderRadius:9,border:"2px solid #b2ede6",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
               </div>
-              <button onClick={saveOpname} style={{background:"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💾 Simpan Opname</button>
+              <button onClick={saveOpname} disabled={savingOpname} style={{background:savingOpname?"#9ca3af":"linear-gradient(135deg,#0d9488,#14b8a6)",border:"none",borderRadius:9,padding:"8px 16px",color:"#fff",fontWeight:800,fontSize:12,cursor:savingOpname?"not-allowed":"pointer",fontFamily:"inherit"}}>{savingOpname?"⏳ Menyimpan...":"💾 Simpan Opname"}</button>
             </div>
             <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
