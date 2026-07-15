@@ -5554,12 +5554,47 @@ function NeracaPage({ onBack, notify, user, stocks, products, saldoApps={}, sald
 
 
 function QCAdminPage({ products, stocks, outlets, onBack, notify }) {
-  const [tab, setTab] = useState("modal"); // modal | log
+  const [tab, setTab] = useState("modal"); // modal | log | opname
   const [expandedCat, setExpandedCat] = useState(null);
   const [qcSessions, setQcSessions] = useState([]);
   const [qcChecksMap, setQcChecksMap] = useState({}); // sessionId -> [checks]
   const [loading, setLoading] = useState(true);
   const [expandedSession, setExpandedSession] = useState(null);
+  const [opnameRows, setOpnameRows] = useState([]);
+  const [loadingOpname, setLoadingOpname] = useState(true);
+  const [expandedOpname, setExpandedOpname] = useState(null);
+
+  useEffect(()=>{
+    let alive = true;
+    (async()=>{
+      try{
+        const {data} = await supabase.from('stok_opname').select('*').order('created_at',{ascending:false}).limit(3000);
+        if(alive) setOpnameRows(data||[]);
+      }catch(e){ console.warn('stok_opname load:',e); }
+      if(alive) setLoadingOpname(false);
+    })();
+    const ch = supabase.channel('stok-opname-rt')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'stok_opname'},async()=>{
+        const {data} = await supabase.from('stok_opname').select('*').order('created_at',{ascending:false}).limit(3000);
+        if(alive) setOpnameRows(data||[]);
+      })
+      .subscribe();
+    return ()=>{ alive=false; supabase.removeChannel(ch); };
+  },[]);
+
+  // Kelompokkan baris stok_opname (dari Kasir Lite) jadi per-sesi: outlet + user + tanggal
+  const opnameSessions = useMemo(()=>{
+    const groups={};
+    opnameRows.forEach(r=>{
+      const key=`${r.outlet_id}|${r.user}|${r.tgl}`;
+      if(!groups[key]) groups[key]={key,outlet_id:r.outlet_id,user:r.user,tgl:r.tgl,created_at:r.created_at,items:[]};
+      groups[key].items.push(r);
+      if(r.created_at>groups[key].created_at) groups[key].created_at=r.created_at;
+    });
+    return Object.values(groups).sort((a,b)=>b.created_at.localeCompare(a.created_at));
+  },[opnameRows]);
+  const outletNamaById = useCallback(oid=>outlets.find(o=>String(o.id)===String(oid))?.nama||oid,[outlets]);
+  const prodNamaById = useCallback(pid=>products.find(p=>String(p.id)===String(pid))?.name||`#${pid}`,[products]);
 
   useEffect(()=>{
     let alive = true;
@@ -5641,7 +5676,7 @@ function QCAdminPage({ products, stocks, outlets, onBack, notify }) {
       )}
 
       <div style={{display:"flex",gap:8,padding:"0 20px 14px"}}>
-        {[["modal","💰 Modal per Kategori"],["log","📋 Log QC Karyawan"]].map(([k,l])=>(
+        {[["modal","💰 Modal per Kategori"],["log","📋 Log QC Karyawan"],["opname","📦 Opname Kasir Lite"]].map(([k,l])=>(
           <button key={k} onClick={()=>setTab(k)}
             style={{padding:"8px 16px",borderRadius:10,border:`2px solid ${tab===k?"#0d9488":"#e0f5f1"}`,background:tab===k?"#e0faf5":"#fff",color:tab===k?"#0d9488":"#888",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
             {l}
@@ -5749,10 +5784,64 @@ function QCAdminPage({ products, stocks, outlets, onBack, notify }) {
           })}
         </div>
       )}
+
+      {tab==="opname" && (
+        <div style={{padding:"0 20px 30px",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11,color:"#aaa",marginBottom:2}}>Laporan stok fisik yang dikirim kasir dari aplikasi Kasir Lite (tidak mengubah stok sistem)</div>
+          {loadingOpname?(
+            <div style={{textAlign:"center",padding:30,color:"#bbb",fontSize:12}}>Memuat laporan opname...</div>
+          ):opnameSessions.length===0?(
+            <div style={{textAlign:"center",padding:30,color:"#bbb",fontSize:12,background:"#fff",borderRadius:14,border:"2px solid #e0f5f1"}}>Belum ada laporan stok fisik dari Kasir Lite</div>
+          ):opnameSessions.map(s=>{
+            const isOpen=expandedOpname===s.key;
+            const totalSelisih=s.items.filter(i=>i.selisih!==0).length;
+            return(
+              <div key={s.key} style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden"}}>
+                <div style={{padding:"14px 16px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>{s.user}</div>
+                      <div style={{fontSize:11,color:"#aaa"}}>{outletNamaById(s.outlet_id)} · {s.tgl} · {new Date(s.created_at).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})}</div>
+                    </div>
+                    <span style={{background:"#e0faf5",color:"#0d9488",fontWeight:800,fontSize:10,padding:"3px 10px",borderRadius:20}}>📦 Kasir Lite</span>
+                  </div>
+                  <div style={{display:"flex",gap:8}}>
+                    <div style={{flex:1,background:"#f0faf8",borderRadius:9,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:15,color:"#0d9488"}}>{s.items.length}</div>
+                      <div style={{fontSize:9,color:"#888"}}>Item Dicek</div>
+                    </div>
+                    <div style={{flex:1,background:totalSelisih>0?"#fef3c7":"#f0fdf4",borderRadius:9,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontWeight:900,fontSize:15,color:totalSelisih>0?"#d97706":"#16a34a"}}>{totalSelisih}</div>
+                      <div style={{fontSize:9,color:"#888"}}>Item Selisih</div>
+                    </div>
+                  </div>
+                  <button onClick={()=>setExpandedOpname(isOpen?null:s.key)} style={{width:"100%",marginTop:10,padding:"7px",borderRadius:8,border:"1px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                    {isOpen?"Tutup Rincian ▴":"Lihat Detail Rincian ▾"}
+                  </button>
+                </div>
+                {isOpen&&(
+                  <div style={{borderTop:"1px solid #f0faf8",padding:"10px 16px 14px",background:"#fafffe"}}>
+                    {s.items.map((c,i)=>(
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:i<s.items.length-1?"1px solid #f0faf8":"none"}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:"#1a2e2a"}}>{prodNamaById(c.product_id)}</div>
+                          <div style={{fontSize:10,color:"#aaa"}}>Sistem: {c.stok_sistem} → Fisik: {c.stok_fisik}</div>
+                        </div>
+                        <span style={{fontWeight:800,fontSize:12,color:c.selisih===0?"#16a34a":"#d97706"}}>
+                          {c.selisih===0?"✓ Cocok":(c.selisih>0?`+${c.selisih}`:c.selisih)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
-
 // ==============================================================================
 // QC STAFF PAGE — halaman standalone untuk role "qc" (Scan Only)
 // Login role qc -> langsung ke sini, terkunci, tidak ada akses lain
