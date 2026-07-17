@@ -3816,8 +3816,8 @@ function LaporanPage({ transactions, outlets, onBack }) {
             <div style={{background:isActive?"#e8f8f4":"#f0f0f0",border:`2px solid ${isActive?"#2ecc71":"#aaa"}`,borderRadius:20,padding:"5px 14px",fontSize:12,fontWeight:800,color:isActive?"#2ecc71":"#888",display:"flex",alignItems:"center",gap:5}}>
               {isActive?"🟢 SHIFT MASIH AKTIF":"⚫ SHIFT SUDAH DITUTUP"}
             </div>
-            {saldo?.waktuBuka&&<span style={{fontSize:11,color:"#aaa"}}>Buka: {saldo.waktuBuka}</span>}
-            {saldo?.waktuTutup&&<span style={{fontSize:11,color:"#aaa"}}>Tutup: {saldo.waktuTutup}</span>}
+            {saldo?.waktuBuka&&<span style={{fontSize:11,color:"#aaa"}}>Buka: {tglShift?`${tglShift} `:""}{saldo.waktuBuka}</span>}
+            {saldo?.waktuTutup&&<span style={{fontSize:11,color:"#aaa"}}>Tutup: {tglShift?`${tglShift} `:""}{saldo.waktuTutup}</span>}
             {/* Badge balance */}
             {isClosed&&saldo?.selisih!==undefined&&(
               <div style={{
@@ -3855,7 +3855,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                   <span style={{fontSize:20}}>🌙</span>
                   <span style={{fontWeight:900,fontSize:15,letterSpacing:.3}}>
-                    {saldo?.waktuTutup ? `JAM ${saldo.waktuTutup} — TUTUP KASIR` : "TUTUP KASIR"}
+                    {saldo?.waktuTutup ? `${tglShift?tglShift+" · ":""}JAM ${saldo.waktuTutup} — TUTUP KASIR` : "TUTUP KASIR"}
                   </span>
                 </div>
                 <div style={{fontSize:11,opacity:.75,marginBottom:14}}>{group.outletNama} · {group.label}</div>
@@ -6423,10 +6423,18 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
       notify("⚠ Koneksi lemah -- transaksi tersimpan, akan sync otomatis","warn");
     };
     syncTrx();
-    setStocks(prev=>{
-      const s={...prev,[selectedOutlet]:{...prev[selectedOutlet]}};
-      cart.forEach(i=>{if(!i.isManual) s[selectedOutlet][i.id]=Math.max(0,(s[selectedOutlet][i.id]||0)-i.qty);});
-      return s;
+    const stockUpdates={};
+    cart.forEach(i=>{if(!i.isManual){
+      const cur=stocks[selectedOutlet]?.[i.id]??0;
+      stockUpdates[i.id]=Math.max(0,cur-i.qty);
+    }});
+    setStocks(prev=>({...prev,[selectedOutlet]:{...(prev[selectedOutlet]||{}),...stockUpdates}}));
+    // Simpan pengurangan stok ke database — sebelumnya cuma diupdate di tampilan lokal
+    Object.entries(stockUpdates).forEach(([pid,qty])=>{
+      db.upsertStock(selectedOutlet,+pid,qty).catch(err=>{
+        console.error('Gagal update stok:',err);
+        notify("⚠️ Transaksi tersimpan, tapi stok gagal diupdate: "+err.message,"err");
+      });
     });
     setCartPersist([]);setCashInput("");setShowPayment(false);
     setLastTrx(trx);
@@ -16183,6 +16191,32 @@ export default function App() {
       supabase.removeChannel(userChannel);
       supabase.removeChannel(trxChannel);
       supabase.removeChannel(aktifChannel);
+    };
+  },[]);
+
+  // -- Fallback sinkronisasi stok --------------------------------------------
+  // Realtime kadang terputus diam-diam (terutama di tablet, waktu layar mati
+  // atau browser di-background) sehingga stok yang berubah di device lain
+  // tidak ter-refresh sampai halaman di-refresh manual. Effect ini menarik
+  // ulang data stok setiap kali tab/tablet kembali aktif, sebagai jaring
+  // pengaman di luar realtime.
+  useEffect(()=>{
+    const refetchStocks = async () => {
+      try{
+        const { data:stokRows } = await supabase.from('stocks').select('*');
+        if(stokRows){
+          const map = {};
+          stokRows.forEach(r=>{ if(!map[r.outlet_id]) map[r.outlet_id]={}; map[r.outlet_id][r.product_id]=r.qty??0; });
+          setStocksState(map);
+        }
+      }catch(e){ console.warn('refetch stocks gagal:',e); }
+    };
+    const onVisible = () => { if(document.visibilityState==='visible') refetchStocks(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refetchStocks);
+    return ()=>{
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refetchStocks);
     };
   },[]);
 
