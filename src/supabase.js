@@ -73,13 +73,13 @@ export const db = {
     if (error) throw error
     const result = {}
     data.forEach(u => {
-      result[u.username] = { pass: u.pass, nama: u.nama, role: u.role, outletId: u.outlet_id }
+      result[u.username] = { pass: u.pass, nama: u.nama, role: u.role, outletId: u.outlet_id, outletIds: u.outlet_ids || (u.outlet_id?[u.outlet_id]:[]) }
     })
     return result
   },
   upsertUser: async (username, u) => {
     const { error } = await supabase.from('users').upsert(
-      { username, pass: u.pass, nama: u.nama, role: u.role, outlet_id: u.outletId || null },
+      { username, pass: u.pass, nama: u.nama, role: u.role, outlet_id: u.outletId || null, outlet_ids: u.outletIds && u.outletIds.length ? u.outletIds : null },
       { onConflict: 'username' }
     )
     if (error) throw error
@@ -96,8 +96,11 @@ export const db = {
   },
   addTransaction: async (trx) => {
     const { error } = await supabase.from('transactions').insert([{
-      id: trx.id, outlet_id: trx.outletId, shift_id: trx.shiftId,
-      shift_nama: trx.shiftNama, kasir: trx.kasir,
+      id: trx.id,
+      outlet_id: trx.outlet_id ?? trx.outletId,
+      shift_id: trx.shift_id ?? trx.shiftId,
+      shift_nama: trx.shift_nama ?? trx.shiftNama,
+      kasir: trx.kasir,
       date: trx.date, time: trx.time,
       total: trx.total, cash: trx.cash, kembalian: trx.kembalian,
       items: trx.items
@@ -265,16 +268,22 @@ export const dbBank = {
   },
   addTransaction: async (t) => {
     const { error } = await supabase.from('bank_transactions').insert([{
-      id: t.id, waktu: t.waktu, tgl: t.tgl, shift_id: t.shiftId, nama: t.nama,
-      jenis: t.jenis, fee_type: t.feeType, fee: t.fee, nominal: t.nominal,
-      net_nominal: t.netNominal, outlet_id: t.outletId,
+      id: t.id, waktu: t.waktu, tgl: t.tgl,
+      shift_id: t.shift_id ?? t.shiftId,
+      nama: t.nama, jenis: t.jenis,
+      fee_type: t.fee_type ?? t.feeType,
+      fee: t.fee, nominal: t.nominal,
+      net_nominal: t.net_nominal ?? t.netNominal,
+      outlet_id: t.outlet_id ?? t.outletId,
     }])
     if (error) throw error
   },
   updateTransaction: async (id, t) => {
     const { error } = await supabase.from('bank_transactions').update({
-      nama: t.nama, jenis: t.jenis, fee_type: t.feeType, fee: t.fee,
-      nominal: t.nominal, net_nominal: t.netNominal,
+      nama: t.nama, jenis: t.jenis,
+      fee_type: t.fee_type ?? t.feeType,
+      fee: t.fee, nominal: t.nominal,
+      net_nominal: t.net_nominal ?? t.netNominal,
     }).eq('id', id)
     if (error) throw error
   },
@@ -298,17 +307,6 @@ export const dbBank = {
         saldo_data: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb, totalSaldo: shift.totalSaldo }
       });
     } catch(e) { console.error('Bank openShift error:', e.message); }
-  },
-  closeShift: async (shift, outletId, userId, closeData) => {
-    try {
-      await supabase.from('bank_shift_logs').insert({
-        id: shift.id, outlet_id: outletId, user_id: userId,
-        nama: shift.nama, start_time: shift.start, end_time: closeData.waktuTutup,
-        saldo_open: { saldoApps: shift.saldoApps, cashKemb: shift.cashKemb },
-        saldo_close: { saldoAppsC: closeData.saldoAppsC, uangLaci: closeData.uangLaci, uangSistem: closeData.uangSistem, selisih: closeData.selisih, catatan: closeData.catatan },
-      });
-    } catch(e) { console.error('Bank closeShift error:', e.message); }
-    try { await supabase.from('bank_shifts').delete().eq('outlet_id', outletId); } catch(e) { console.error(e); }
   },
   closeShift: async (shift, outletId, userId, closeData) => {
     await supabase.from('bank_shift_logs').insert({
