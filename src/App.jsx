@@ -1947,47 +1947,63 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     setRealStocks(s);
   };
 
-  const addLog = (type,oid,pid,qty,note="")=>{
+  const addLog = async (type,oid,pid,qty,note="")=>{
     const p=products.find(x=>x.id===+pid);
     const o=outlets.find(x=>x.id===oid);
     const logEntry={id:uid(),time:now(),type,outletNama:o?.nama,productName:p?.name,qty,note};
     setLog(prev=>[logEntry,...prev]);
-    db.addStockLog(logEntry).catch(()=>{});
+    try{ await db.addStockLog(logEntry); }catch(e){ console.warn('addStockLog gagal:',e); }
   };
 
-  const doMasuk = ()=>{
+  const doMasuk = async ()=>{
     if(!form.productId||!form.qty||+form.qty<=0) return notify("Lengkapi form!","err");
-    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:(prev[selectedOutlet]?.[form.productId]||0)+(+form.qty)}}));
-    db.upsertStock(selectedOutlet,+form.productId,(stocks[selectedOutlet]?.[form.productId]||0)+(+form.qty)).catch(()=>{});
-    addLog("masuk",selectedOutlet,form.productId,+form.qty,form.note);
-    notify(`Stok masuk +${form.qty} berhasil`,"ok");
-    setForm({productId:"",qty:"",note:""});
+    const newQty=(stocks[selectedOutlet]?.[form.productId]||0)+(+form.qty);
+    try{
+      await db.upsertStock(selectedOutlet,+form.productId,newQty);
+      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:newQty}}));
+      await addLog("masuk",selectedOutlet,form.productId,+form.qty,form.note);
+      notify(`Stok masuk +${form.qty} berhasil`,"ok");
+      setForm({productId:"",qty:"",note:""});
+    }catch(e){
+      notify("Gagal update stok: "+e.message,"err");
+    }
   };
 
-  const doKeluar = ()=>{
+  const doKeluar = async ()=>{
     if(!form.productId||!form.qty||+form.qty<=0) return notify("Lengkapi form!","err");
     const cur=stocks[selectedOutlet]?.[form.productId]||0;
     if(+form.qty>cur) return notify("Stok tidak cukup!","err");
-    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:cur-(+form.qty)}}));
-    db.upsertStock(selectedOutlet,+form.productId,cur-(+form.qty)).catch(()=>{});
-    addLog("keluar",selectedOutlet,form.productId,+form.qty,form.note);
-    notify(`Stok keluar -${form.qty} berhasil`,"ok");
-    setForm({productId:"",qty:"",note:""});
+    const newQty=cur-(+form.qty);
+    try{
+      await db.upsertStock(selectedOutlet,+form.productId,newQty);
+      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:newQty}}));
+      await addLog("keluar",selectedOutlet,form.productId,+form.qty,form.note);
+      notify(`Stok keluar -${form.qty} berhasil`,"ok");
+      setForm({productId:"",qty:"",note:""});
+    }catch(e){
+      notify("Gagal update stok: "+e.message,"err");
+    }
   };
 
-  const doTransfer = ()=>{
+  const doTransfer = async ()=>{
     if(!form.productId||!form.qty||+form.qty<=0||!transferTo) return notify("Lengkapi semua!","err");
     const cur=stocks[selectedOutlet]?.[form.productId]||0;
     if(+form.qty>cur) return notify("Stok tidak cukup!","err");
     const newSrc=cur-(+form.qty);
     const newDst=(stocks[transferTo]?.[form.productId]||0)+(+form.qty);
-    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:newSrc},[transferTo]:{...prev[transferTo],[form.productId]:newDst}}));
-    db.upsertStock(selectedOutlet,+form.productId,newSrc).catch(()=>{});
-    db.upsertStock(transferTo,+form.productId,newDst).catch(()=>{});
-    const oTujuan=outlets.find(o=>o.id===transferTo)?.nama;
-    addLog("transfer",selectedOutlet,form.productId,+form.qty,`→ ${oTujuan}`);
-    notify(`Transfer berhasil → ${oTujuan}`,"ok");
-    setForm({productId:"",qty:"",note:""});
+    try{
+      await Promise.all([
+        db.upsertStock(selectedOutlet,+form.productId,newSrc),
+        db.upsertStock(transferTo,+form.productId,newDst),
+      ]);
+      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],[form.productId]:newSrc},[transferTo]:{...prev[transferTo],[form.productId]:newDst}}));
+      const oTujuan=outlets.find(o=>o.id===transferTo)?.nama;
+      await addLog("transfer",selectedOutlet,form.productId,+form.qty,`→ ${oTujuan}`);
+      notify(`Transfer berhasil → ${oTujuan}`,"ok");
+      setForm({productId:"",qty:"",note:""});
+    }catch(e){
+      notify("Gagal transfer stok: "+e.message,"err");
+    }
   };
 
   const [savingOpname, setSavingOpname] = useState(false);
@@ -16049,10 +16065,12 @@ export default function App() {
   },[]);
 
   // -- Realtime listener -- stok & produk update otomatis di semua device -----
+  // Digabung jadi SATU channel (sebelumnya 6 channel terpisah) — lebih hemat
+  // koneksi ke Supabase, dan lebih stabil untuk sinkronisasi lintas device
+  // (komputer, laptop, tablet, smartphone tetap sama-sama dengar 1 koneksi).
   useEffect(()=>{
-    // Channel stocks: update stok otomatis di semua kasir
-    const stockChannel = supabase
-      .channel('realtime-stocks')
+    const mainChannel = supabase
+      .channel('realtime-main')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'stocks' },
         (payload) => {
@@ -16078,11 +16096,6 @@ export default function App() {
           }
         }
       )
-      .subscribe();
-
-    // Channel products: produk baru / edit / hapus otomatis
-    const productChannel = supabase
-      .channel('realtime-products')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'products' },
         (payload) => {
@@ -16100,11 +16113,6 @@ export default function App() {
           }
         }
       )
-      .subscribe();
-
-    // Channel outlets: perubahan outlet otomatis sync
-    const outletChannel = supabase
-      .channel('realtime-outlets')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'outlets' },
         (payload) => {
@@ -16122,11 +16130,6 @@ export default function App() {
           }
         }
       )
-      .subscribe();
-
-    // Channel users: perubahan user/kasir otomatis sync
-    const userChannel = supabase
-      .channel('realtime-users')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'users' },
         async () => {
@@ -16143,11 +16146,6 @@ export default function App() {
           }
         }
       )
-      .subscribe();
-
-    // Channel transactions: transaksi baru otomatis masuk ke semua device
-    const trxChannel = supabase
-      .channel('realtime-transactions')
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'transactions' },
         (payload) => {
@@ -16168,15 +16166,9 @@ export default function App() {
           );
         }
       )
-      .subscribe();
-
-    // Channel aktif_produk: perubahan produk aktif otomatis sync ke kasir
-    const aktifChannel = supabase
-      .channel('realtime-aktif-produk')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'aktif_produk' },
         async () => {
-          // Reload semua aktif produk dan update root state
           const aktifMap = await dbAktifProduk.getAllAktif().catch(()=>({}));
           if(aktifMap && Object.keys(aktifMap).length > 0) setAktifProdsRoot(aktifMap);
         }
@@ -16185,12 +16177,7 @@ export default function App() {
 
     // Cleanup saat komponen unmount
     return () => {
-      supabase.removeChannel(stockChannel);
-      supabase.removeChannel(productChannel);
-      supabase.removeChannel(outletChannel);
-      supabase.removeChannel(userChannel);
-      supabase.removeChannel(trxChannel);
-      supabase.removeChannel(aktifChannel);
+      supabase.removeChannel(mainChannel);
     };
   },[]);
 
