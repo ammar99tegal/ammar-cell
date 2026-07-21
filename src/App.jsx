@@ -3424,7 +3424,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
   const [refreshTrigger,   setRefreshTrigger]   = useState(0);
   const [freshTransactions,setFreshTransactions] = useState(null); // null = belum load
   // -- Filter tanggal di Laporan ---------------------------------------------
-  const [laporanDateFrom, setLaporanDateFrom] = useState(()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split('T')[0];});
+  const [laporanDateFrom, setLaporanDateFrom] = useState(()=>new Date().toISOString().split('T')[0]);
   const [laporanDateTo,   setLaporanDateTo]   = useState(()=>new Date().toISOString().split('T')[0]);
   const applyLaporanPreset = (k) => {
     const n=new Date();
