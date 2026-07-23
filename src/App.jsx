@@ -3206,7 +3206,9 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
 
   useEffect(()=>{
     loadAll();
-    const iv = setInterval(loadAll, 10000);
+    // Polling cadangan tiap 60 detik (bukan 10 detik) — realtime listener
+    // di bawah sudah menangani update instan, ini cuma jaga-jaga.
+    const iv = setInterval(loadAll, 60000);
     const ch = supabase.channel('laporan-bank-rt-v4')
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},()=>loadAll())
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shift_logs'},()=>loadAll())
@@ -3715,8 +3717,11 @@ function LaporanPage({ transactions, outlets, onBack }) {
       setShiftLogsLoading(false);
     };
     loadLogs();
-    // Reload setiap 5 detik -- lebih responsif
-    const iv = setInterval(loadLogs, 5000);
+    // Reload cadangan tiap 60 detik (bukan 5 detik) — realtime listener di bawah
+    // sudah menangani update instan; polling ini cuma jaga-jaga kalau realtime
+    // terputus. Sebelumnya 5 detik terlalu sering & boros bandwidth Supabase,
+    // apalagi query ini bisa narik sampai 20.000 baris tiap kali jalan.
+    const iv = setInterval(loadLogs, 60000);
 
     // Realtime komprehensif -- semua event yang bisa mengubah laporan shift
     const ch = supabase.channel('laporan-shift-rt-v2')
@@ -11254,14 +11259,21 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
   const [lastRefresh, setLastRefresh] = useState(null);
 
   // -- Load langsung dari Supabase -----------------------------------------
+  // PENTING: sebelumnya query ini narik SELURUH riwayat bank_transactions
+  // sejak awal (sampai 50.000 baris) tanpa batas tanggal, diulang tiap 30 detik.
+  // Ini penyebab utama boros egress/bandwidth Supabase. Sekarang dibatasi
+  // 90 hari terakhir saja (cukup untuk kebutuhan dashboard/analitik bulanan).
   const loadData = async () => {
     setLoading(true);
     try {
+      const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
+      const cutoffISO = cutoff.toISOString();
       const all = [];
-      for(let page=0; page<50; page++){
+      for(let page=0; page<20; page++){ // maks 20.000 baris dalam 90 hari, cukup aman
         const { data } = await supabase
           .from('bank_transactions')
           .select('id,tgl,waktu,shift_id,nama,jenis,fee,nominal,net_nominal,outlet_id,created_at')
+          .gte('created_at', cutoffISO)
           .order('created_at', { ascending: false })
           .range(page*1000, page*1000+999);
         if(!data||data.length===0) break;
@@ -11287,7 +11299,7 @@ function BankDashboardPage({ bankTrx: rawBankTrx, outlets, onBack }) {
 
   useEffect(() => {
     loadData();
-    const iv = setInterval(loadData, 30000); // reload tiap 30 detik
+    const iv = setInterval(loadData, 90000); // polling cadangan tiap 90 detik (sebelumnya 30 detik)
     const ch = supabase.channel('bankdash-rt')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bank_transactions'},(p) => {
         const r = p.new;
