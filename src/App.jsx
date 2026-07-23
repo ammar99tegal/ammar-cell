@@ -3458,9 +3458,16 @@ function LaporanPage({ transactions, outlets, onBack }) {
     };
     for(const raw of candidates) {
       const d = parseAny(raw);
-      if(d) return d>=from && d<=to;
+      // Sebelumnya: return langsung begitu kandidat PERTAMA berhasil di-parse
+      // (biasanya waktuBuka). Ini salah — kalau shift dibuka kemarin tapi baru
+      // ditutup HARI INI, waktuBuka jatuh di luar rentang, jadi shift itu
+      // hilang dari laporan padahal seharusnya muncul (karena ditutup hari ini).
+      // Sekarang: shift dianggap masuk rentang kalau SALAH SATU kandidat
+      // (buka ATAU tutup ATAU tanggal transaksi) jatuh di dalam rentang.
+      if(d && d>=from && d<=to) return true;
     }
-    return true; // tidak bisa tentukan → tampilkan
+    if(candidates.some(raw=>parseAny(raw))) return false; // ada kandidat valid tapi semuanya di luar rentang
+    return true; // tidak ada kandidat yang bisa ditentukan → tampilkan (aman)
   };
 
   const allShifts = [...new Map(transactions.filter(t=>t.shiftId).map(t=>[t.shiftId,{id:t.shiftId,nama:t.shiftNama||t.shiftId}])).values()];
@@ -4330,7 +4337,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
               style={{border:"none",background:"none",outline:"none",fontSize:11,fontFamily:"inherit",color:"#1e293b",cursor:"pointer"}}/>
           </div>
           <div style={{display:"flex",gap:4}}>
-            {[{l:"Hari Ini",k:"today"},{l:"7 Hari",k:"7d"},{l:"30 Hari",k:"30d"},{l:"Bulan Ini",k:"month"}].map(p=>(
+            {[{l:"Hari Ini",k:"today"}].map(p=>(
               <button key={p.k} onClick={()=>applyLaporanPreset(p.k)}
                 style={{padding:"5px 10px",borderRadius:9,border:"1px solid #e0f5f1",background:"#fff",color:"#0d9488",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:"inherit",transition:"background .15s"}}
                 onMouseEnter={e=>e.currentTarget.style.background="#e0faf5"}
