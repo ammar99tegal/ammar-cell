@@ -3224,12 +3224,18 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
   const filterTo   = dateTo   ? new Date(dateTo)   : null;
   if(filterFrom) filterFrom.setHours(0,0,0,0);
   if(filterTo)   filterTo.setHours(23,59,59,999);
-  const inRange = (startTime) => {
+  const inRange = (startTime, endTime) => {
     if(!filterFrom||!filterTo) return true;
-    if(!startTime) return true; // tidak ada tanggal → tampilkan
-    const d = parseDate(startTime);
-    if(!d) return true; // tidak bisa parse → tampilkan
-    return d>=filterFrom && d<=filterTo;
+    // Cek SEMUA kandidat tanggal (buka & tutup) — sebelumnya cuma cek start_time,
+    // jadi shift yang dibuka kemarin tapi ditutup hari ini hilang dari laporan.
+    const candidates = [startTime, endTime].filter(Boolean);
+    if(candidates.length===0) return true; // tidak ada tanggal → tampilkan
+    for(const raw of candidates){
+      const d = parseDate(raw);
+      if(d && d>=filterFrom && d<=filterTo) return true;
+    }
+    const anyParsed = candidates.some(raw=>parseDate(raw));
+    return anyParsed ? false : true; // kalau tak satupun bisa di-parse, tampilkan (aman)
   };
 
   const buildShifts = () => {
@@ -3241,7 +3247,8 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
       if((l.saldo_close||{}).disembunyikan) return;
       // Coba ambil tanggal dari berbagai field
       const startRaw = l.start_time||l.created_at||null;
-      if(!inRange(startRaw)) return;
+      const endRaw = l.end_time||null;
+      if(!inRange(startRaw, endRaw)) return;
       const trxList = bankTrx.filter(t=>t.shiftId===l.id);
       const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s,t)=>s+(t.netNominal||0),0);
       const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s,t)=>s+Math.abs(t.netNominal||0),0);
@@ -3269,7 +3276,11 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
       if(filterOutlet!=='all' && s.outlet_id!==filterOutlet) return;
       const sd=s.saldo_data||{};
       const startRaw = s.start_time||s.created_at||null;
-      // Active shift selalu tampil (tidak difilter tanggal karena sedang berjalan)
+      // Shift aktif juga ikut filter tanggal (berdasarkan waktu buka) —
+      // konsisten dengan Laporan Kasir. Sebelumnya shift aktif SELALU tampil
+      // di rentang tanggal manapun, jadi kalau ada shift lama yang lupa
+      // ditutup, dia numpuk terus di setiap tampilan "Hari Ini".
+      if(!inRange(startRaw, null)) return;
       const trxList = bankTrx.filter(t=>t.shiftId===s.id);
       const masuk   = trxList.filter(t=>(t.netNominal||0)>0).reduce((s2,t)=>s2+(t.netNominal||0),0);
       const keluar  = trxList.filter(t=>(t.netNominal||0)<0).reduce((s2,t)=>s2+Math.abs(t.netNominal||0),0);
