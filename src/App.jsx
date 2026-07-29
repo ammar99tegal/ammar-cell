@@ -12062,27 +12062,10 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
           <div style={{fontFamily:"monospace",fontWeight:900,fontSize:17,color:"#fff",background:"rgba(0,0,0,.2)",padding:"5px 14px",borderRadius:20,letterSpacing:"1px"}}>{clock}</div>
         </div>
 
-        {/* KPI bar */}
-        <div style={{background:"rgba(0,0,0,.12)",borderTop:"1px solid rgba(255,255,255,.1)",padding:"7px 20px",display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
-          {[
-            {l:"Kasir Aktif",        v:`${kasirShifts.filter(s=>visibleOutlets.some(o=>String(o.id)===String(s.outlet_id))).length} shift`,    c:"#a7f3d0"},
-            {l:"Omset Kasir Hari Ini", v:fmtRp(totalOmset),           c:"#fcd34d"},
-            {l:"Transaksi Hari Ini",   v:`${todayTrx.length} trx`,    c:"#fff"},
-            {l:"Uang Sistem Bank",     v:fmtRp(totalBankSistem),       c:"#bfdbfe"},
-            {l:"Grand Total",          v:fmtRp(totalOmset+totalBankSistem), c:"#fca5a5"},
-          ].map(k=>(
-            <div key={k.l} style={{textAlign:"center"}}>
-              <div style={{fontWeight:900,fontSize:13,color:k.c}}>{k.v}</div>
-              <div style={{fontSize:9,color:"rgba(255,255,255,.6)",fontWeight:600,marginTop:1}}>{k.l}</div>
-            </div>
-          ))}
-        </div>
-
         {/* ── Tab bar ── */}
         <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,.1)"}}>
           {[
             {k:"live",   icon:"🔴", label:"Live Kasir & Bank"},
-            {k:"stok",   icon:"📦", label:"Stok per Outlet",  badge:totalHabis>0?`${totalHabis} habis`:null, badgeColor:"#fca5a5"},
             {k:"compare",icon:"⚖️", label:"Compare Outlet"},
           ].map(t=>(
             <button key={t.k} onClick={()=>setMonitorTab(t.k)}
