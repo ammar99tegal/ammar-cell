@@ -3176,9 +3176,10 @@ function LaporanBankList({ bankTrxMap, bankShiftLogs, shiftLogs, outlets, filter
 
   const loadAll = async () => {
     try {
+      const cutoffLB = new Date(); cutoffLB.setDate(cutoffLB.getDate()-90);
       const [trxRes, logsRes, activeRes] = await Promise.all([
-        supabase.from('bank_transactions').select('*').order('created_at',{ascending:false}).limit(2000),
-        supabase.from('bank_shift_logs').select('*').order('created_at',{ascending:false}).limit(300),
+        supabase.from('bank_transactions').select('*').gte('created_at',cutoffLB.toISOString()).order('created_at',{ascending:false}).limit(2000),
+        supabase.from('bank_shift_logs').select('*').gte('created_at',cutoffLB.toISOString()).order('created_at',{ascending:false}).limit(300),
         supabase.from('bank_shifts').select('*'),
       ]);
       setBankTrx((trxRes.data||[]).map(r=>({
@@ -11842,12 +11843,16 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         // Load active shifts -- ambil semua, filter di frontend
         const {data:shifts,error} = await supabase.from('active_shifts').select('*');
         if(!error) setKasirShifts(shifts||[]);
-        // Load semua bank transactions dengan pagination (bypass Supabase hard-cap 1000/req)
+        // Load bank transactions 90 hari terakhir saja (bukan seluruh riwayat
+        // sejak awal) — sebelumnya narik sampai 50.000 baris tanpa batas
+        // tanggal, boros bandwidth kalau halaman Monitor sering dibuka/dibiarkan terbuka.
+        const cutoffMon = new Date(); cutoffMon.setDate(cutoffMon.getDate()-90);
         const bankTrxAll = [];
-        for(let page=0; page<50; page++){
+        for(let page=0; page<20; page++){
           try{
             const {data:pg} = await supabase.from('bank_transactions')
-              .select('*').order('created_at',{ascending:false})
+              .select('*').gte('created_at', cutoffMon.toISOString())
+              .order('created_at',{ascending:false})
               .range(page*1000, page*1000+999);
             if(!pg||pg.length===0) break;
             bankTrxAll.push(...pg.map(t=>({
