@@ -12205,7 +12205,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         })}
 
         {/* -- TRANSAKSI KASIR + RIWAYAT BANK berdampingan -- */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginTop:4}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:4}}>
 
           {/* Transaksi Kasir */}
           <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden",display:"flex",flexDirection:"column"}}>
@@ -12301,53 +12301,10 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
             </div>
           </div>
 
-          {/* Panel 3: Log Auto Reset 23:00 */}
-          <div style={{background:"#fff",borderRadius:14,border:"2px solid #e0f5f1",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-            <div style={{padding:"12px 16px",borderBottom:"2px solid #e0f5f1",display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
-              <span style={{fontSize:14}}>⏰</span>
-              <span style={{fontWeight:800,fontSize:13,color:"#1a2e2a"}}>Log Auto Reset 23:00</span>
-              <span style={{background:"#f0f0f0",color:"#555",fontWeight:800,fontSize:11,padding:"1px 8px",borderRadius:20,marginLeft:"auto"}}>{resetLog.length} hari</span>
-            </div>
-            <div style={{overflowY:"auto",flex:1,maxHeight:400}}>
-              {resetLog.length===0?(
-                <div style={{textAlign:"center",color:"#ccc",padding:32,fontSize:13}}>Belum ada log reset otomatis</div>
-              ):resetLog.map((r,i)=>{
-                const detail = r.detail||{};
-                const kasirShiftList = detail.kasir||[];
-                const bankShiftList  = detail.bank||[];
-                const allShifts = [...kasirShiftList,...bankShiftList];
-                return(
-                  <div key={r.id} style={{borderTop:i>0?"1px solid #f0faf8":"none"}}>
-                    <div onClick={()=>setExpandLog(expandLog===r.id?null:r.id)}
-                      style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",cursor:"pointer",background:expandLog===r.id?"#f0fdf9":"#fff",transition:"background .2s"}}>
-                      <div style={{width:30,height:30,borderRadius:8,background:"#e8f8f0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>✓</div>
-                      <div style={{flex:1}}>
-                        <div style={{fontWeight:700,fontSize:12,color:"#1a2e2a"}}>{r.tgl}</div>
-                        <div style={{fontSize:10,color:"#aaa"}}>Jam {r.waktu} . {r.jumlah_shift||allShifts.length} shift ditutup</div>
-                      </div>
-                      <div style={{fontSize:11,color:"#aaa"}}>{expandLog===r.id?"▲":"▼"}</div>
-                    </div>
-                    {expandLog===r.id&&(
-                      <div style={{background:"#f8fffe",borderTop:"1px solid #e0f5f1",padding:"8px 14px 10px"}}>
-                        {allShifts.length===0?(
-                          <div style={{fontSize:11,color:"#aaa"}}>Detail tidak tersedia</div>
-                        ):allShifts.map((s,si)=>(
-                          <div key={si} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderBottom:si<allShifts.length-1?"1px dashed #e0f5f1":"none"}}>
-                            <span style={{color:"#555",fontWeight:600}}>{s.user_id||s.user} . {outlets.find(o=>o.id===s.outlet_id)?.nama?.replace("Ammar Cell ","")||s.outlet||s.outlet_id}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
         </div>
 
         <div style={{textAlign:"center",marginTop:12,fontSize:10,color:"#aaa",fontWeight:600}}>
-          🔴 LIVE -- Supabase Realtime . Auto reset jam 23:00 setiap hari
+          🔴 LIVE -- Supabase Realtime
         </div>
 
         </>)} {/* END monitorTab==="live" */}
@@ -15610,84 +15567,11 @@ export default function App() {
 
   const notify = (msg,type="ok")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); };
 
-  // -- Auto reset shift jam 23.00 setiap hari ----------------------------------
-  useEffect(()=>{
-    let lastResetDate = null;
-
-    const autoReset = async () => {
-      const now = new Date();
-      const h = now.getHours();
-      const dateStr = now.toLocaleDateString("id-ID");
-
-      // Jam 23:00 - 23:05 dan belum reset hari ini
-      if(h === 23 && new Date().getHours() === 23 && lastResetDate !== dateStr) {
-        lastResetDate = dateStr;
-        try {
-          // Ambil semua shift aktif
-          const {data: activeShifts} = await supabase.from('active_shifts').select('*');
-          const {data: activeBankShifts} = await supabase.from('bank_shifts').select('*');
-
-          // Simpan ke shift_logs sebagai auto-close
-          if(activeShifts?.length > 0) {
-            for(const s of activeShifts) {
-              await supabase.from('shift_logs').insert({
-                id: s.id + '_autoreset',
-                outlet_id: s.outlet_id,
-                user_id: s.user_id,
-                nama: s.nama,
-                start_time: s.start_time,
-                end_time: new Date().toISOString(),
-                saldo_open: s.saldo_data || {},
-                saldo_close: { catatan: 'Auto-reset sistem jam 23:00' },
-                rekap: { autoReset: true, resetDate: dateStr },
-              }).catch(()=>{});
-            }
-            // Hapus semua active_shifts
-            await supabase.from('active_shifts').delete().neq('id','__none__');
-          }
-
-          // Simpan bank_shifts ke bank_shift_logs lalu hapus
-          if(activeBankShifts?.length > 0) {
-            for(const s of activeBankShifts) {
-              await supabase.from('bank_shift_logs').insert({
-                id: s.id + '_autoreset',
-                outlet_id: s.outlet_id,
-                user_id: s.user_id,
-                nama: s.nama,
-                start_time: s.start_time,
-                end_time: new Date().toISOString(),
-                saldo_open: s.saldo_data || {},
-                saldo_close: { catatan: 'Auto-reset sistem jam 23:00' },
-              }).catch(()=>{});
-            }
-            await supabase.from('bank_shifts').delete().neq('id','__none__');
-          }
-
-          // Simpan log reset ke tabel reset_logs
-          const totalShifts = (activeShifts?.length||0) + (activeBankShifts?.length||0);
-          if(totalShifts > 0) {
-            await supabase.from('reset_logs').insert({
-              id: uid(),
-              tgl: dateStr,
-              waktu: '23:00:00',
-              jumlah_shift: totalShifts,
-              detail: { kasir: activeShifts||[], bank: activeBankShifts||[] },
-            }).catch(()=>{});
-            console.log(`[AutoReset] ${dateStr} 23:00 -- ${totalShifts} shift ditutup otomatis`);
-          }
-        } catch(e) { console.warn('autoReset error:', e); }
-      }
-
-      // DISABLED: Cleanup otomatis berdasarkan created_at DIHAPUS
-      // karena timezone mismatch bisa hapus shift yang baru dibuka
-      // Cleanup hanya dilakukan manual oleh admin atau saat tutup shift
-    };
-
-    // Cek setiap menit
-    autoReset();
-    const iv = setInterval(autoReset, 60*1000);
-    return ()=>clearInterval(iv);
-  },[]);
+  // -- Auto reset shift jam 23:00 -- DIHAPUS SEPENUHNYA atas permintaan.
+  // Sebelumnya di sini ada useEffect yang tiap menit mengecek jam, dan kalau
+  // sudah jam 23:00 akan menutup PAKSA semua shift kasir & bank yang masih
+  // aktif di semua outlet secara otomatis. Sekarang shift tidak akan pernah
+  // ditutup otomatis lagi -- staf harus menutup shift sendiri secara manual.
 
   // -- Auto reload saat app kembali ke foreground (tab aktif lagi) ----------
   // -- Connection monitor: ping Supabase tiap 10 detik ---------------------
