@@ -11860,22 +11860,19 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
     };
     load();
 
-    const chShift = supabase.channel('monitor-shifts')
+    // Digabung jadi 1 channel (sebelumnya 4 channel terpisah: monitor-shifts,
+    // monitor-trx, monitor-bank, monitor-stok-v2) — mengurangi jumlah koneksi
+    // realtime ke Supabase.
+    const chMonitor = supabase.channel('monitor-main')
       .on('postgres_changes',{event:'*',schema:'public',table:'active_shifts'},async()=>{
         try{ const {data} = await supabase.from('active_shifts').select('*'); setKasirShifts(data||[]); }catch{}
       })
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_shifts'},async()=>{
         try{ const {data} = await supabase.from('bank_shifts').select('*'); setBankShifts(data||[]); }catch{}
       })
-      .subscribe();
-
-    const chTrx = supabase.channel('monitor-trx')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'transactions'},()=>{
         supabase.from('active_shifts').select('*').then(({data})=>{ if(data) setKasirShifts(data); });
-      }).subscribe();
-
-    // Realtime bank transactions
-    const chBank = supabase.channel('monitor-bank')
+      })
       .on('postgres_changes',{event:'*',schema:'public',table:'bank_transactions'},(payload)=>{
         if(payload.eventType==='INSERT'&&payload.new){
           const r=payload.new;
@@ -11884,32 +11881,7 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         } else if(payload.eventType==='DELETE'){
           setBankTrxList(prev=>prev.filter(t=>t.id!==payload.old?.id));
         }
-      }).subscribe();
-
-    return()=>{ supabase.removeChannel(chShift); supabase.removeChannel(chTrx); supabase.removeChannel(chBank); };
-  },[]);
-
-  // -- Realtime stok listener --
-  useEffect(()=>{
-    // Load fresh stok dari DB
-    const loadStok = async () => {
-      try {
-        const { data:stokRows } = await supabase.from('stocks').select('*');
-        if(stokRows) {
-          const map = {};
-          stokRows.forEach(r=>{ if(!map[r.outlet_id]) map[r.outlet_id]={}; map[r.outlet_id][r.product_id]=r.qty??0; });
-          setLiveStocks(map);
-        }
-        const { data:prodRows } = await supabase.from('products').select('*');
-        if(prodRows) setLiveProducts(prodRows);
-        // Load urutan produk
-        const ord = await dbProductOrder.getOrder().catch(()=>[]);
-        if(ord&&ord.length) setLiveProdOrder(ord.map(String));
-      } catch(e){ console.warn('loadStok monitor:',e); }
-    };
-    loadStok();
-
-    const chStok = supabase.channel('monitor-stok-v2')
+      })
       .on('postgres_changes',{event:'*',schema:'public',table:'stocks'},(p)=>{
         const r = p.new||p.old;
         if(!r) return;
@@ -11927,13 +11899,32 @@ function MonitorPage({ user, outlets, transactions, stocks: stocksProp, products
         else setLiveProducts(prev=>prev.map(x=>x.id===r.id?{...x,...r}:x));
       })
       .on('postgres_changes',{event:'*',schema:'public',table:'product_order'},()=>{
-        // Urutan produk diubah dari menu Produk & Stok — sync ke monitor
         dbProductOrder.getOrder().then(ord=>{
           if(ord&&ord.length) setLiveProdOrder(ord.map(String));
         }).catch(()=>{});
       })
       .subscribe();
-    return()=>supabase.removeChannel(chStok);
+
+    return()=>{ supabase.removeChannel(chMonitor); };
+  },[]);
+
+  // -- Load fresh stok dari DB (sekali di awal; update selanjutnya lewat channel gabungan di atas) --
+  useEffect(()=>{
+    const loadStok = async () => {
+      try {
+        const { data:stokRows } = await supabase.from('stocks').select('*');
+        if(stokRows) {
+          const map = {};
+          stokRows.forEach(r=>{ if(!map[r.outlet_id]) map[r.outlet_id]={}; map[r.outlet_id][r.product_id]=r.qty??0; });
+          setLiveStocks(map);
+        }
+        const { data:prodRows } = await supabase.from('products').select('*');
+        if(prodRows) setLiveProducts(prodRows);
+        const ord = await dbProductOrder.getOrder().catch(()=>[]);
+        if(ord&&ord.length) setLiveProdOrder(ord.map(String));
+      } catch(e){ console.warn('loadStok monitor:',e); }
+    };
+    loadStok();
   },[]);
 
   // Hitung cash laci per kasir dari transaksi hari ini
@@ -15655,10 +15646,13 @@ export default function App() {
       }
     };
 
-    // Reload data setiap 20 detik sebagai fallback realtime putus (dipercepat dari 90s)
+    // Reload data cadangan (jaga-jaga kalau realtime terputus) — sebelumnya
+    // 20 detik, terlalu sering mengingat ini jalan di level ROOT untuk setiap
+    // sesi/device yang login sekaligus (bisa belasan device bersamaan).
+    // Diperlambat jadi 45 detik, cukup sebagai jaring pengaman tanpa boros.
     const reloadIv = setInterval(()=>{
       if(document.visibilityState==='visible'&&navigator.onLine) reloadData();
-    }, 20000);
+    }, 45000);
 
     window.addEventListener('online',  onOnline);
     window.addEventListener('offline', onOffline);
@@ -16266,32 +16260,17 @@ export default function App() {
 
   const calcOmset = list=>list.reduce((s,t)=>{const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0);return s+t.total-rv;},0);
 
-  // Ambil data bank hari ini dari Supabase untuk cashflow
-  const [bankStatsHari, setBankStatsHari] = useState({masuk:0,keluar:0,fee:0});
-  useEffect(()=>{
-    const loadBankStats = async () => {
-      try {
-        const allTrx = await dbBank.getTransactions();
-        const todayTrx = allTrx.filter(t=>t.tgl===today());
-        const masuk  = todayTrx.filter(t=>t.netNominal>0).reduce((s,t)=>s+t.netNominal,0);
-        const keluar = todayTrx.filter(t=>t.netNominal<0).reduce((s,t)=>s+Math.abs(t.netNominal),0);
-        const fee    = todayTrx.filter(t=>t.feeType==="fee").reduce((s,t)=>s+t.fee,0);
-        setBankStatsHari({masuk,keluar,fee});
-      } catch{}
-    };
-    loadBankStats();
-    const iv = setInterval(loadBankStats, 60000);
-    return ()=>clearInterval(iv);
-  },[]);
+  // Note: bankStatsHari & loadBankStats DIHAPUS -- sebelumnya di sini ada
+  // polling tiap 60 detik yang narik data bank transactions cuma untuk
+  // widget "Cashflow Hari Ini" yang sudah dihapus dari tampilan. Sekarang
+  // dihapus juga sumber datanya biar tidak boros bandwidth untuk sesuatu
+  // yang sudah tidak ditampilkan.
 
   const stats = {
     omsetHari:      calcOmset(transactions.filter(t=>t.date===today())),
     txHari:         transactions.filter(t=>t.date===today()).length,
     stokMenipis:    products.filter(p=>outlets.some(o=>(stocks[o.id]?.[p.id]??0)<=2)).length,
     totalProduk:    products.length,
-    bankMasukHari:  bankStatsHari.masuk,
-    bankKeluarHari: bankStatsHari.keluar,
-    feeHari:        bankStatsHari.fee,
   };
 
   const isAdmin   = user?.role==="admin";
