@@ -443,7 +443,10 @@ function LoginPage({ users, onLogin, onChangePass }) {
 // ==============================================================================
 // MENU UTAMA
 // ==============================================================================
-function MenuUtama({ user, onNavigate, onLogout, stats }) {
+function MenuUtama({ user, onNavigate, onLogout, stats, showPreOrderBanner, preOrderRecap, onDismissPreOrder }) {
+  const [showPreOrderDetail, setShowPreOrderDetail] = useState(false);
+  const [expandedPreOrderKey, setExpandedPreOrderKey] = useState(null);
+  const KAT_LABEL = { saldo:"Saldo Aplikasi", voucher:"VC", perdana:"Perdana", aksesoris:"Aksesoris" };
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"gabungan", icon:"🏦",          label:"Kasir + Bank (1 Laci)", desc:"Transaksi kasir & bank — shift bank", color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
@@ -479,6 +482,17 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
         </button>
       </div>
       <div style={{padding:"22px",maxWidth:900,margin:"0 auto"}}>
+        {user.role==="admin"&&showPreOrderBanner&&(
+          <div onClick={()=>{ setShowPreOrderDetail(true); onDismissPreOrder(); }}
+            style={{background:"#fffbe6",border:"2px solid #f39c12",borderRadius:12,padding:"12px 16px",marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:20}}>🔔</span>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#b7770d"}}>Rekap Pre Order Stok — 21:00 sudah siap</div>
+              <div style={{fontSize:11,color:"#b7770d",opacity:.8}}>Tap untuk lihat rincian modal yang perlu di-restock</div>
+            </div>
+            <span style={{color:"#b7770d",fontSize:18}}>›</span>
+          </div>
+        )}
         {user.role==="admin"&&(
           <>
             {/* Baris 1: KPI utama */}
@@ -514,6 +528,65 @@ function MenuUtama({ user, onNavigate, onLogout, stats }) {
           </div>
         )}
       </div>
+
+      {showPreOrderDetail&&preOrderRecap&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:900,padding:16}}
+          onClick={()=>{setShowPreOrderDetail(false);setExpandedPreOrderKey(null);}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:20,width:480,maxWidth:"100%",maxHeight:"85vh",overflowY:"auto",fontFamily:"'Nunito',sans-serif",boxShadow:"0 24px 60px rgba(0,0,0,.25)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{fontWeight:900,fontSize:15,color:"#0a7a70"}}>📦 Rekap Pre Order Stok</div>
+              <button onClick={()=>{setShowPreOrderDetail(false);setExpandedPreOrderKey(null);}} style={{background:"none",border:"none",fontSize:20,color:"#aaa",cursor:"pointer",lineHeight:1}}>×</button>
+            </div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Berdasarkan penjualan semua kasir hari ini, {today()}</div>
+
+            {Object.keys(preOrderRecap.byOutlet).length===0?(
+              <div style={{textAlign:"center",color:"#ccc",padding:30,fontSize:13}}>Belum ada penjualan hari ini</div>
+            ):Object.entries(preOrderRecap.byOutlet).map(([outletNama,katData])=>(
+              <div key={outletNama} style={{marginBottom:16}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#1a2e2a",marginBottom:7}}>🏪 {outletNama}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  {preOrderRecap.KATS.map(k=>{
+                    const key = outletNama+"|"+k;
+                    const isOpen = expandedPreOrderKey===key;
+                    const total = katData[k].total;
+                    return (
+                      <div key={k} onClick={()=>setExpandedPreOrderKey(isOpen?null:key)}
+                        style={{cursor:"pointer",padding:"9px 11px",background:isOpen?"#e0faf5":"#f8fffe",border:isOpen?"1px solid #0d948855":"1px solid transparent",borderRadius:8}}>
+                        <div style={{fontSize:11,color:"#888",fontWeight:600}}>{KAT_LABEL[k]}</div>
+                        <div style={{fontWeight:800,fontSize:13,color:total>0?"#0a7a70":"#ccc"}}>{fmtRp(total)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {preOrderRecap.KATS.map(k=>{
+                  const key = outletNama+"|"+k;
+                  if(expandedPreOrderKey!==key) return null;
+                  const produk = katData[k].produk;
+                  return (
+                    <div key={key} style={{marginTop:8,padding:"10px 12px",background:"#fff",border:"1px solid #e0f5f1",borderRadius:9}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"#0a7a70",marginBottom:6}}>Rincian {KAT_LABEL[k]}</div>
+                      {produk.length===0?(
+                        <div style={{textAlign:"center",color:"#ccc",fontSize:12,padding:6}}>Belum ada penjualan kategori ini</div>
+                      ):produk.map((p,i)=>(
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"4px 0",borderTop:i>0?"1px dashed #e0f5f1":"none"}}>
+                          <span style={{color:"#555"}}>{p.name}</span>
+                          <span style={{color:"#aaa"}}>{p.qty}x</span>
+                          <span style={{fontWeight:700,color:"#0a7a70"}}>{fmtRp(p.modal)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
+            <div style={{background:"#e0faf5",borderRadius:10,padding:"11px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
+              <span style={{fontWeight:800,fontSize:13,color:"#0a7a70"}}>Total modal perlu di-restock</span>
+              <span style={{fontWeight:900,fontSize:18,color:"#0a7a70"}}>{fmtRp(preOrderRecap.grandTotal)}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -16273,6 +16346,70 @@ export default function App() {
     totalProduk:    products.length,
   };
 
+  // -- Rekap Pre Order Stok (Saldo Aplikasi, VC, Perdana, Aksesoris) ----------
+  // Dihitung dari data transaksi yang SUDAH ada di memori (tidak ada query
+  // baru sama sekali) -- jadi tidak menambah beban Supabase. Direkap ulang
+  // otomatis tiap hari, tidak disimpan ke database (memang tidak perlu riwayat).
+  // Struktur: per outlet -> per kategori -> daftar produk (untuk drill-down).
+  const preOrderRecap = useMemo(()=>{
+    const todayTx = transactions.filter(t=>t.date===today());
+    const KATS = ['saldo','voucher','perdana','aksesoris'];
+    const byOutlet = {};
+    let grandTotal = 0;
+    todayTx.forEach(t=>{
+      const outletNama = outlets.find(o=>String(o.id)===String(t.outletId))?.nama || t.outletId || "Lainnya";
+      if(!byOutlet[outletNama]){
+        byOutlet[outletNama] = {};
+        KATS.forEach(k=>{ byOutlet[outletNama][k] = {total:0, produkMap:{}}; });
+      }
+      (t.items||[]).forEach(item=>{
+        if(item.refunded) return;
+        let kat = item.qcKategori||item.qc_kategori;
+        if(!kat){
+          const prod = products.find(p=>p.id===item.id);
+          kat = prod?.qcKategori||prod?.qc_kategori;
+        }
+        if(!KATS.includes(kat)) return;
+        const modal = (item.modal||0)*(item.qty||0);
+        const bucket = byOutlet[outletNama][kat];
+        if(!bucket.produkMap[item.name]) bucket.produkMap[item.name]={qty:0,modal:0};
+        bucket.produkMap[item.name].qty += item.qty||0;
+        bucket.produkMap[item.name].modal += modal;
+        bucket.total += modal;
+        grandTotal += modal;
+      });
+    });
+    // Ubah produkMap jadi array terurut (modal terbesar dulu) buat drill-down
+    Object.values(byOutlet).forEach(katData=>{
+      KATS.forEach(k=>{
+        katData[k].produk = Object.entries(katData[k].produkMap)
+          .map(([name,d])=>({name,...d}))
+          .sort((a,b)=>b.modal-a.modal);
+        delete katData[k].produkMap;
+      });
+    });
+    return { byOutlet, grandTotal, KATS };
+  },[transactions,products,outlets]);
+
+  // Banner muncul jam 21:00, sekali per hari (tersimpan di localStorage biar
+  // tidak muncul lagi kalau sudah pernah dibuka hari itu)
+  const [showPreOrderBanner,setShowPreOrderBanner] = useState(false);
+  useEffect(()=>{
+    const checkTime=()=>{
+      const now=new Date();
+      const dismissedKey = 'preorder_dismissed_'+now.toLocaleDateString("id-ID");
+      const alreadyDismissed = localStorage.getItem(dismissedKey);
+      setShowPreOrderBanner(now.getHours()>=21 && !alreadyDismissed);
+    };
+    checkTime();
+    const iv = setInterval(checkTime, 60000);
+    return ()=>clearInterval(iv);
+  },[]);
+  const dismissPreOrderBanner = ()=>{
+    localStorage.setItem('preorder_dismissed_'+new Date().toLocaleDateString("id-ID"), '1');
+    setShowPreOrderBanner(false);
+  };
+
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
   const isCashflowOnly = user?.role==="cashflow";
@@ -16398,7 +16535,8 @@ export default function App() {
         </div>
       )}
 
-      {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}/>}
+      {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}
+        showPreOrderBanner={showPreOrderBanner} preOrderRecap={preOrderRecap} onDismissPreOrder={dismissPreOrderBanner}/>}
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
       {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto} users={users} products={products} stocks={stocks}/>}
       {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
