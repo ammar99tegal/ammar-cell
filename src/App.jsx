@@ -10293,7 +10293,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
 
         {/* Content */}
         <div style={{padding:"12px 12px 0"}}>
-          {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} notify={notify}/>}
+          {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} onEditEntry={cfEditEntry} notify={notify}/>}
           {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
           {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
           {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
@@ -10349,7 +10349,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
         </div>
       </div>
       <div className="cf-main-content cf-content" style={{padding:"14px 20px",maxWidth:1080,margin:"0 auto"}}>
-        {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} notify={notify}/>}
+        {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} onEditEntry={cfEditEntry} notify={notify}/>}
         {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
         {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
         {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
@@ -10537,7 +10537,7 @@ function CfVersusRow({label,sub,sistem,input}) {
 // Otomatis menganalisis transaksi kasir + bank untuk rentang tanggal yang
 // dipilih, plus form pencatatan pengeluaran/pembelian manual oleh admin
 // (disimpan permanen lewat cfLog/cashflow_entries, infrastruktur yang sudah ada).
-function CfTabIdentifikasi({transactions, outlets, cfLog, onAddEntry, onDeleteEntry, notify}) {
+function CfTabIdentifikasi({transactions, outlets, cfLog, onAddEntry, onDeleteEntry, onEditEntry, notify}) {
   const [dateMode, setDateMode] = useState("hari_ini"); // hari_ini | kemarin | custom
   const [customFrom, setCustomFrom] = useState(()=>new Date().toISOString().slice(0,10));
   const [customTo, setCustomTo] = useState(()=>new Date().toISOString().slice(0,10));
@@ -10618,19 +10618,76 @@ function CfTabIdentifikasi({transactions, outlets, cfLog, onAddEntry, onDeleteEn
   const bankNet    = bankMasuk - bankKeluar;
 
   // -- Pengeluaran/pemasukan manual dari cfLog (sudah tersimpan permanen) -----
-  const manualEntries = useMemo(()=>
+  // PENTING: entri auto (Penjualan/Kas Bank per outlet) sudah dihitung
+  // langsung dari kasirOmset & bankFeePerOutlet di atas -- kalau ikut
+  // dijumlah lagi di sini, jadi double-count. Makanya di-exclude di sini,
+  // list-nya sendiri (untuk ditampilkan) masih termasuk semua biar transparan.
+  const manualEntriesAll = useMemo(()=>
     (cfLog||[]).filter(e=>{
       const d = parseIdDate(e.tgl);
       if(!d) return false;
       return d>=fromDate && d<=toDate;
     })
   ,[cfLog,fromDate,toDate]);
-  const manualMasuk  = manualEntries.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
-  const manualKeluar = manualEntries.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+  const manualEntries = useMemo(()=>manualEntriesAll,[manualEntriesAll]);
+  const manualOnly = useMemo(()=>manualEntriesAll.filter(e=>!String(e.id).startsWith("auto-")),[manualEntriesAll]);
+  const manualMasuk  = manualOnly.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const manualKeluar = manualOnly.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
 
   const totalMasuk  = kasirOmset + bankMasuk + manualMasuk;
   const totalKeluar = bankKeluar + manualKeluar;
   const totalBersih = totalMasuk - totalKeluar;
+
+  // -- Rincian per outlet, dipakai untuk auto-jurnal di bawah ------------------
+  const kasirPerOutlet = useMemo(()=>{
+    const m = {};
+    kasirTx.forEach(t=>{
+      const outletNama = (outlets||[]).find(o=>String(o.id)===String(t.outletId))?.nama || t.outletId || "Lainnya";
+      if(!m[outletNama]) m[outletNama] = [];
+      m[outletNama].push(t);
+    });
+    const result = {};
+    Object.entries(m).forEach(([nama,list])=>{ result[nama] = calcOmset(list); });
+    return result;
+  },[kasirTx,outlets]);
+
+  const bankFeePerOutlet = useMemo(()=>{
+    const m = {};
+    bankTrx.forEach(t=>{
+      const outletNama = (outlets||[]).find(o=>String(o.id)===String(t.outlet_id))?.nama || t.outlet_id || "Lainnya";
+      m[outletNama] = (m[outletNama]||0) + (t.fee||0);
+    });
+    return m;
+  },[bankTrx,outlets]);
+
+  // -- Auto-jurnal real-time: Debit Kas / Kredit Pendapatan, 1 entri
+  // RINGKASAN per outlet per hari (bukan per transaksi). Cuma jalan untuk
+  // "Hari Ini" -- tidak mengubah buku hari-hari yang sudah lewat/ditutup.
+  // ID entri dibuat deterministik (auto-kasir-{outlet}-{tanggal}) supaya
+  // kalau totalnya berubah, entrinya di-UPDATE, bukan bikin baris baru.
+  // Bank: cuma bagian FEE yang dicatat jadi pendapatan (nominal transfer
+  // besar cuma titipan lewat, bukan pendapatan asli).
+  useEffect(()=>{
+    if(dateMode!=="hari_ini") return;
+    const tglStr = new Date().toLocaleDateString("id-ID");
+    const safeId = s => String(s).replace(/[^a-zA-Z0-9]/g,"_");
+    Object.entries(kasirPerOutlet).forEach(([outletNama,omset])=>{
+      if(omset<=0) return;
+      const id = `auto-kasir-${safeId(outletNama)}-${safeId(tglStr)}`;
+      const existing = (cfLog||[]).find(e=>e.id===id);
+      const payload = { tgl:tglStr, jenis:"masuk", kat:"Pendapatan Penjualan", nama:`Penjualan ${outletNama}`, nominal:omset };
+      if(existing){ if(existing.nominal!==omset) onEditEntry(id,payload); }
+      else onAddEntry({ id, ...payload });
+    });
+    Object.entries(bankFeePerOutlet).forEach(([outletNama,fee])=>{
+      if(fee<=0) return;
+      const id = `auto-bank-${safeId(outletNama)}-${safeId(tglStr)}`;
+      const existing = (cfLog||[]).find(e=>e.id===id);
+      const payload = { tgl:tglStr, jenis:"masuk", kat:"Pendapatan Jasa Bank", nama:`Kas Bank ${outletNama}`, nominal:fee };
+      if(existing){ if(existing.nominal!==fee) onEditEntry(id,payload); }
+      else onAddEntry({ id, ...payload });
+    });
+  },[kasirPerOutlet,bankFeePerOutlet,dateMode,cfLog,onAddEntry,onEditEntry]);
 
   const KATEGORI_OPTIONS = ["Operasional","Belanja Stok","Gaji","Sewa","Listrik/Air","Lain-lain"];
 
@@ -10752,19 +10809,23 @@ function CfTabIdentifikasi({transactions, outlets, cfLog, onAddEntry, onDeleteEn
         )}
 
         {manualEntries.length===0?(
-          <div style={{textAlign:"center",color:"#ccc",fontSize:12,padding:10}}>Belum ada catatan manual untuk rentang ini</div>
-        ):manualEntries.map(e=>(
-          <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderTop:"1px dashed #e0f5f1"}}>
-            <div>
-              <span style={{color:"#555"}}>{e.nama}</span>
-              <span style={{color:"#bbb",marginLeft:6}}>· {e.kat}</span>
+          <div style={{textAlign:"center",color:"#ccc",fontSize:12,padding:10}}>Belum ada catatan untuk rentang ini</div>
+        ):manualEntries.map(e=>{
+          const isAuto = String(e.id).startsWith("auto-");
+          return (
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderTop:"1px dashed #e0f5f1"}}>
+              <div>
+                <span style={{color:"#555"}}>{e.nama}</span>
+                <span style={{color:"#bbb",marginLeft:6}}>· {e.kat}</span>
+                <span style={{fontSize:9,fontWeight:700,color:isAuto?"#0d9488":"#aaa",background:isAuto?"#e0faf5":"#f1f5f9",padding:"1px 6px",borderRadius:8,marginLeft:6}}>{isAuto?"Auto":"Manual"}</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontWeight:700,color:e.jenis==="keluar"?"#b91c1c":"#0a7a70"}}>{e.jenis==="keluar"?"-":"+"}{fmtRp(e.nominal)}</span>
+                {!isAuto&&<button onClick={()=>onDeleteEntry(e.id)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>🗑</button>}
+              </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontWeight:700,color:e.jenis==="keluar"?"#b91c1c":"#0a7a70"}}>{e.jenis==="keluar"?"-":"+"}{fmtRp(e.nominal)}</span>
-              <button onClick={()=>onDeleteEntry(e.id)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>🗑</button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={{background:"#e0faf5",borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -11152,6 +11213,10 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:700,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.nama}</div>
                     <span style={{fontSize:9,fontWeight:700,color:kat.c,background:kat.bg,padding:"1px 6px",borderRadius:20,display:"inline-block",marginTop:1}}>{kat.l}</span>
+                    <span style={{fontSize:9,color:"#aaa",marginLeft:6}}>
+                      {e.jenis==="masuk" ? `Dr Kas · Cr ${kat.l}` : `Dr ${kat.l} · Cr Kas`}
+                    </span>
+                    {String(e.id).startsWith("auto-")&&<span style={{fontSize:8,fontWeight:700,color:"#0d9488",background:"#e0faf5",padding:"1px 6px",borderRadius:8,marginLeft:6}}>Auto</span>}
                   </div>
                   <div style={{fontWeight:900,fontSize:13,color:e.jenis==="masuk"?"#16a34a":"#dc2626",flexShrink:0}}>{e.jenis==="masuk"?"+":"-"}{fmtRp(e.nominal)}</div>
                   {/* Tombol Edit */}
@@ -11159,11 +11224,13 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
                     style={{background:"none",border:"none",color:"#b2ede6",cursor:"pointer",fontSize:13,padding:"2px 4px"}}
                     title="Edit entri"
                     onMouseEnter={ev=>ev.currentTarget.style.color="#0d9488"} onMouseLeave={ev=>ev.currentTarget.style.color="#b2ede6"}>✏️</button>
-                  {/* Tombol Hapus */}
-                  <button onClick={()=>{if(window.confirm(`Hapus entri "${e.nama}"?`)) onDelete&&onDelete(e.id);}}
-                    style={{background:"none",border:"none",color:"#ddd",cursor:"pointer",fontSize:13,padding:"2px 4px"}}
-                    title="Hapus entri"
-                    onMouseEnter={ev=>ev.currentTarget.style.color="#ff4757"} onMouseLeave={ev=>ev.currentTarget.style.color="#ddd"}>✕</button>
+                  {/* Tombol Hapus -- disembunyikan untuk entri auto (akan dibuat ulang otomatis) */}
+                  {!String(e.id).startsWith("auto-")&&(
+                    <button onClick={()=>{if(window.confirm(`Hapus entri "${e.nama}"?`)) onDelete&&onDelete(e.id);}}
+                      style={{background:"none",border:"none",color:"#ddd",cursor:"pointer",fontSize:13,padding:"2px 4px"}}
+                      title="Hapus entri"
+                      onMouseEnter={ev=>ev.currentTarget.style.color="#ff4757"} onMouseLeave={ev=>ev.currentTarget.style.color="#ddd"}>✕</button>
+                  )}
                 </div>
               );
             })}
