@@ -16429,12 +16429,24 @@ export default function App() {
     if(explicit) return explicit;
     const name = String(item?.name||'').toLowerCase();
     const cat  = String(category||item?.category||'').toLowerCase().trim();
+    // Cek kata utuh (biar "ff"/"ml"/"pls" yang pendek tidak salah kena kata lain
+    // yang kebetulan mengandung huruf itu, mis. "staff")
+    const hasWord = (kw) => new RegExp(`(^|[^a-z0-9])${kw}([^a-z0-9]|$)`).test(name);
+
+    // Aksesoris: kategori resmi "Aksesoris", atau nama mengandung kata kunci aksesoris
+    // (banyak produk aksesoris kategorinya masih pakai nama brand, bukan "Aksesoris")
     if(cat==='aksesoris') return 'aksesoris';
-    const saldoKeywords = ['siul','pulsa','maxim','dana','gopay','go-pay','shopeepay','shopee pay','linkaja','link aja','ovo','grab'];
+    const aksesorisKeywords = ['earphone','kabel','casing','case','charger','power bank','powerbank','headset','tws'];
+    if(aksesorisKeywords.some(kw=>name.includes(kw))) return 'aksesoris';
+
+    // Saldo Aplikasi: e-wallet, pulsa, masa aktif, token listrik, top up game (FF/ML), dll
+    const saldoKeywords = ['siul','pulsa','maxim','dana','gopay','go-pay','shopeepay','shopee pay','linkaja','link aja','ovo','grab','masa aktif','token'];
     if(saldoKeywords.some(kw=>name.includes(kw))) return 'saldo';
+    if(hasWord('ff') || hasWord('ml') || hasWord('pls')) return 'saldo';
+
     // Perdana: nama mengandung "perdana", "kartu perdana", atau kata "SP" berdiri sendiri
     // (dicek sebagai kata utuh biar tidak salah kena kata lain yang kebetulan ada huruf "sp")
-    if(name.includes('perdana') || /(^|\s)sp(\s|$)/.test(name)) return 'perdana';
+    if(name.includes('perdana') || hasWord('sp')) return 'perdana';
     if(name.startsWith('vc ')) return 'voucher';
     return null;
   };
