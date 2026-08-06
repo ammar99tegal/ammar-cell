@@ -15885,11 +15885,19 @@ export default function App() {
 
   const reloadData = async () => {
     try {
-      // Reload ringan — hanya transaksi hari ini + stok, bukan semua 30 hari
-      // Ini dipanggil setiap 20 detik, harus cepat dan hemat RAM
+      // Reload ringan — hanya transaksi hari ini, BUKAN stok.
+      // PENTING: sebelumnya di sini ada db.getStocks() yang menarik ulang
+      // SELURUH tabel stok tiap 45 detik dan menimpa state lokal secara
+      // borongan (setStocksState(stks)). Kalau proses ini kebetulan jalan di
+      // tengah-tengah admin menyimpan opname/bulk stok (yang butuh beberapa
+      // detik untuk banyak produk), dia bisa menangkap snapshot SETENGAH JALAN
+      // (sebagian produk sudah tersimpan, sebagian belum) lalu menimpa balik
+      // hasil opname yang baru saja disimpan -- persis race condition yang
+      // dilaporkan (sebagian produk balik ke nilai lama setelah disimpan).
+      // Stok sudah punya realtime tersendiri (per-baris, presisi) lewat
+      // channel 'realtime-main', jadi tidak perlu ditarik ulang borongan di sini.
       const todayStr = new Date().toISOString().split('T')[0];
-      const [stks, txToday, bTrxToday] = await Promise.all([
-        db.getStocks().catch(()=>({})),
+      const [txToday, bTrxToday] = await Promise.all([
         supabase.from('transactions').select('*')
           .gte('created_at', todayStr).order('created_at',{ascending:false})
           .then(r=>r.data||[]).catch(()=>[]),
@@ -15897,8 +15905,6 @@ export default function App() {
           .gte('created_at', todayStr).order('created_at',{ascending:false})
           .then(r=>r.data||[]).catch(()=>[]),
       ]);
-
-      setStocksState(stks);
 
       // Merge transaksi hari ini ke state (replace yang lama, keep yang lebih lama)
       if(txToday.length>0){
