@@ -10364,6 +10364,7 @@ const APPS_CF  = ["Digipos","Dana","GoPay","OVO","ShopeePay"];
 
 const CF_KAT = {
   pendapatan:  {l:"Pendapatan Penjualan", c:"#16a34a", bg:"#f0fdf4", icon:"💰"},
+  bankfee:     {l:"Pendapatan Jasa Bank", c:"#0d9488", bg:"#e0faf5", icon:"🏦"},
   setoran:     {l:"Setoran Outlet",        c:"#059669", bg:"#ecfdf5", icon:"🏪"},
   hpp:         {l:"Harga Pokok (HPP)",     c:"#dc2626", bg:"#fff5f5", icon:"📦"},
   operasional: {l:"Beban Operasional",     c:"#d97706", bg:"#fffbeb", icon:"⚙️"},
@@ -10373,8 +10374,23 @@ const CF_KAT = {
   modal:       {l:"Modal / Investasi",      c:"#6d28d9", bg:"#f5f3ff", icon:"💎"},
   lainnya:     {l:"Lain-lain",              c:"#6b7280", bg:"#f9fafb", icon:"📝"},
 };
-const CF_KAT_IN  = ["pendapatan","setoran","modal","lainnya"];
+const CF_KAT_IN  = ["pendapatan","bankfee","setoran","modal","lainnya"];
 const CF_KAT_OUT = ["hpp","operasional","gaji","marketing","aset","lainnya"];
+
+// -- Pemetaan kategori -> tipe akun & saldo normalnya (dipakai Buku Besar) --
+// Debit-normal : Aset, Beban, Prive  |  Kredit-normal : Utang, Modal, Pendapatan
+const AKUN_TIPE = {
+  pendapatan:  {tipe:"pendapatan", normal:"kredit", grup:"💰 PENDAPATAN (Revenue)",   grupC:"#16a34a", grupBg:"#f0fdf4"},
+  bankfee:     {tipe:"pendapatan", normal:"kredit", grup:"💰 PENDAPATAN (Revenue)",   grupC:"#16a34a", grupBg:"#f0fdf4"},
+  setoran:     {tipe:"modal",      normal:"kredit", grup:"💎 MODAL (Ekuitas)",         grupC:"#6d28d9", grupBg:"#f5f3ff"},
+  modal:       {tipe:"modal",      normal:"kredit", grup:"💎 MODAL (Ekuitas)",         grupC:"#6d28d9", grupBg:"#f5f3ff"},
+  hpp:         {tipe:"beban",      normal:"debit",  grup:"⚙️ BEBAN (Expense)",         grupC:"#d97706", grupBg:"#fffbeb"},
+  operasional: {tipe:"beban",      normal:"debit",  grup:"⚙️ BEBAN (Expense)",         grupC:"#d97706", grupBg:"#fffbeb"},
+  gaji:        {tipe:"beban",      normal:"debit",  grup:"⚙️ BEBAN (Expense)",         grupC:"#d97706", grupBg:"#fffbeb"},
+  marketing:   {tipe:"beban",      normal:"debit",  grup:"⚙️ BEBAN (Expense)",         grupC:"#d97706", grupBg:"#fffbeb"},
+  aset:        {tipe:"aset",       normal:"debit",  grup:"🏗️ ASET (Aktiva)",           grupC:"#1d4ed8", grupBg:"#eff6ff"},
+  lainnya:     {tipe:"lainnya",    normal:null,      grup:"📝 LAIN-LAIN",               grupC:"#6b7280", grupBg:"#f9fafb"},
+};
 
 const OUTLETS = ["Ammar Cell Merpati","Ammar Cell Cikrik"];
 const BANKS   = ["BRI","BCA","BSI"];
@@ -10675,16 +10691,16 @@ function CfTabIdentifikasi({transactions, outlets, cfLog, onAddEntry, onDeleteEn
       if(omset<=0) return;
       const id = `auto-kasir-${safeId(outletNama)}-${safeId(tglStr)}`;
       const existing = (cfLog||[]).find(e=>e.id===id);
-      const payload = { tgl:tglStr, jenis:"masuk", kat:"Pendapatan Penjualan", nama:`Penjualan ${outletNama}`, nominal:omset };
-      if(existing){ if(existing.nominal!==omset) onEditEntry(id,payload); }
+      const payload = { tgl:tglStr, jenis:"masuk", kat:"pendapatan", nama:`Penjualan ${outletNama}`, nominal:omset };
+      if(existing){ if(existing.nominal!==omset||existing.kat!=="pendapatan") onEditEntry(id,payload); }
       else onAddEntry({ id, ...payload });
     });
     Object.entries(bankFeePerOutlet).forEach(([outletNama,fee])=>{
       if(fee<=0) return;
       const id = `auto-bank-${safeId(outletNama)}-${safeId(tglStr)}`;
       const existing = (cfLog||[]).find(e=>e.id===id);
-      const payload = { tgl:tglStr, jenis:"masuk", kat:"Pendapatan Jasa Bank", nama:`Kas Bank ${outletNama}`, nominal:fee };
-      if(existing){ if(existing.nominal!==fee) onEditEntry(id,payload); }
+      const payload = { tgl:tglStr, jenis:"masuk", kat:"bankfee", nama:`Kas Bank ${outletNama}`, nominal:fee };
+      if(existing){ if(existing.nominal!==fee||existing.kat!=="bankfee") onEditEntry(id,payload); }
       else onAddEntry({ id, ...payload });
     });
   },[kasirPerOutlet,bankFeePerOutlet,dateMode,cfLog,onAddEntry,onEditEntry]);
@@ -11254,70 +11270,110 @@ function CfTabJurnal({log,setLog,onDelete,onEdit,onResetAll,onRefresh}) {
 // ========================================================
 function CfTabBukuBesar({log}) {
   const [open,setOpen]=useState({});
+
+  // Bangun per-akun. "lainnya" dipecah 2 berdasarkan jenis (masuk/keluar)
+  // supaya tidak ambigu -- sebelumnya "Lain-lain" nyampur transaksi masuk
+  // & keluar dalam 1 kelompok yang membingungkan.
   const akunMap={};
-  log.forEach(e=>{const k=e.kat||"lainnya";if(!akunMap[k])akunMap[k]={kat:k,entries:[],d:0,k:0};akunMap[k].entries.push(e);if(e.jenis==="masuk")akunMap[k].k+=e.nominal;else akunMap[k].d+=e.nominal;});
-  const akuns=Object.values(akunMap);
-  const totK=akuns.reduce((s,a)=>s+a.k,0), totD=akuns.reduce((s,a)=>s+a.d,0);
+  log.forEach(e=>{
+    let k = e.kat||"lainnya";
+    if(k==="lainnya") k = e.jenis==="masuk" ? "lainnya_masuk" : "lainnya_keluar";
+    if(!akunMap[k]) akunMap[k]={key:k, entries:[], debit:0, kredit:0};
+    akunMap[k].entries.push(e);
+    if(e.jenis==="masuk") akunMap[k].kredit += e.nominal;
+    else akunMap[k].debit += e.nominal;
+  });
+  const akuns = Object.values(akunMap);
+
+  const getInfo = (key) => {
+    if(key==="lainnya_masuk")  return {l:"Pendapatan Lain-lain", icon:"📝", c:"#16a34a", bg:"#f0fdf4", tipe:AKUN_TIPE.pendapatan};
+    if(key==="lainnya_keluar") return {l:"Beban Lain-lain",      icon:"📝", c:"#d97706", bg:"#fffbeb", tipe:AKUN_TIPE.operasional};
+    return {...(CF_KAT[key]||CF_KAT.lainnya), tipe: AKUN_TIPE[key]||AKUN_TIPE.operasional};
+  };
+
+  // Kelompokkan akun-akun ke grup tipe (ASET/BEBAN/PENDAPATAN/MODAL)
+  const grupMap={};
+  akuns.forEach(a=>{
+    const info=getInfo(a.key);
+    const gKey=info.tipe.grup;
+    if(!grupMap[gKey]) grupMap[gKey]={label:gKey, c:info.tipe.grupC, bg:info.tipe.grupBg, normal:info.tipe.normal, akuns:[]};
+    grupMap[gKey].akuns.push({...a, info});
+  });
+  // Urutan tampil: Aset, Beban, Pendapatan, Modal, lain-lain kalau ada
+  const urutan=["🏗️ ASET (Aktiva)","⚙️ BEBAN (Expense)","💰 PENDAPATAN (Revenue)","💎 MODAL (Ekuitas)"];
+  const grups=Object.values(grupMap).sort((a,b)=>urutan.indexOf(a.label)-urutan.indexOf(b.label));
+
+  const totD=akuns.reduce((s,a)=>s+a.debit,0), totK=akuns.reduce((s,a)=>s+a.kredit,0);
+  const seimbang=Math.abs(totD-totK)<1;
+
   return (
     <div>
       <CfExportBar buttons={[
         {l:"Export CSV Buku Besar",icon:"📊",c:"#1d4ed8",badge:"per akun",fn:()=>{
           const rows=[[CO+" -- BUKU BESAR"],["Akun","Tanggal","Keterangan","Debit","Kredit","Saldo Running"]];
-          akuns.forEach(a=>{let run=0;a.entries.forEach((e,i)=>{if(e.jenis==="masuk")run+=e.nominal;else run-=e.nominal;rows.push([i===0?(CF_KAT[a.kat]?.l||a.kat):"",e.tgl,e.nama,e.jenis==="keluar"?e.nominal:0,e.jenis==="masuk"?e.nominal:0,run]);});});
+          akuns.forEach(a=>{const info=getInfo(a.key);let run=0;a.entries.forEach((e,i)=>{if(e.jenis==="masuk")run+=e.nominal;else run-=e.nominal;rows.push([i===0?info.l:"",e.tgl,e.nama,e.jenis==="keluar"?e.nominal:0,e.jenis==="masuk"?e.nominal:0,run]);});});
           cfDlCSV(rows,`BukuBesar_${today().replace(/\//g,"-")}.csv`);
         }},
         {l:"Export CSV Rekap",icon:"📋",c:"#7c3aed",fn:()=>cfDlCSV([
-          [CO+" -- REKAP BUKU BESAR"],["Akun","Debit","Kredit","Saldo"],
-          ...akuns.map(a=>[CF_KAT[a.kat]?.l||a.kat,a.d,a.k,a.k-a.d]),
-          ["TOTAL",totD,totK,totK-totD],
+          [CO+" -- REKAP BUKU BESAR"],["Akun","Tipe","Debit","Kredit","Saldo (normal)"],
+          ...akuns.map(a=>{const info=getInfo(a.key);const saldo=info.tipe.normal==="kredit"?a.kredit-a.debit:a.debit-a.kredit;return [info.l,info.tipe.tipe,a.debit,a.kredit,saldo];}),
+          ["TOTAL","",totD,totK,totK-totD],
         ],`Rekap_${today().replace(/\//g,"-")}.csv`)},
       ]}/>
       <CfKPI items={[
-        {l:"Total Kredit (Masuk)",v:fmtRp(totK),c:"#16a34a",bg:"#f0fdf4"},
-        {l:"Total Debit (Keluar)",v:fmtRp(totD),c:"#dc2626",bg:"#fff5f5"},
-        {l:"Saldo Bersih",v:fmtRp(totK-totD),c:(totK-totD)>=0?"#0d9488":"#dc2626",bg:(totK-totD)>=0?"#e0faf5":"#fff5f5"},
+        {l:"Total Debit",v:fmtRp(totD),c:"#0a7a70",bg:"#e0faf5"},
+        {l:"Total Kredit",v:fmtRp(totK),c:"#b91c1c",bg:"#fff0f0"},
+        {l:"Status",v:seimbang?"✓ Seimbang":"⚠ Selisih "+fmtRp(Math.abs(totD-totK)),c:seimbang?"#16a34a":"#d97706",bg:seimbang?"#f0fdf4":"#fffbeb"},
         {l:"Akun Aktif",v:`${akuns.length} akun`,c:"#6b7280",bg:"#f9fafb"},
       ]}/>
-      {akuns.map(a=>{
-        const kat=CF_KAT[a.kat]||CF_KAT.lainnya; const isOpen=open[a.kat]; let run=0;
-        return (
-          <div key={a.kat} style={{background:"#fff",borderRadius:14,border:`2px solid ${kat.c}18`,overflow:"hidden",marginBottom:10}}>
-            <div style={{height:3,background:`linear-gradient(90deg,${kat.c},${kat.c}55)`}}/>
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",cursor:"pointer"}}
-              onClick={()=>setOpen(p=>({...p,[a.kat]:!p[a.kat]}))}
-              onMouseEnter={e=>e.currentTarget.style.background=kat.bg} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              <div style={{width:34,height:34,borderRadius:10,background:kat.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>{kat.icon}</div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:800,fontSize:13,color:kat.c}}>{kat.l}</div>
-                <div style={{fontSize:10,color:"#aaa"}}>{a.entries.length} transaksi</div>
-              </div>
-              <div style={{textAlign:"right",marginRight:8}}>
-                {a.k>0&&<div style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>+{fmtRp(a.k)}</div>}
-                {a.d>0&&<div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>-{fmtRp(a.d)}</div>}
-              </div>
-              <span style={{color:"#ccc",transition:"transform .2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"none"}}>▾</span>
-            </div>
-            {isOpen&&(
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,borderTop:`1px solid ${kat.c}18`}}>
-                <thead><tr style={{background:kat.bg}}>
-                  {["Tanggal","Keterangan","Debit","Kredit","Saldo Running"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",fontWeight:700,color:kat.c,fontSize:11}}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {a.entries.map((e,i)=>{if(e.jenis==="masuk")run+=e.nominal;else run-=e.nominal;return(
-                    <tr key={e.id} style={{borderTop:"1px solid #f5f5f5",background:i%2===0?"#fff":"#fafffe"}}>
-                      <td style={{padding:"6px 12px",color:"#888",fontSize:11}}>{e.tgl}</td>
-                      <td style={{padding:"6px 12px",fontWeight:600}}>{e.nama}</td>
-                      <td style={{padding:"6px 12px",color:"#dc2626",fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"--"}</td>
-                      <td style={{padding:"6px 12px",color:"#16a34a",fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"--"}</td>
-                      <td style={{padding:"6px 12px",fontWeight:800,color:run>=0?"#0d9488":"#dc2626"}}>{run>=0?"+":""}{fmtRp(run)}</td>
-                    </tr>);
-                  })}
-                </tbody>
-              </table>
-            )}
+
+      {grups.map(g=>(
+        <div key={g.label} style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:800,color:g.c,background:g.bg,padding:"6px 12px",borderRadius:8,marginBottom:8}}>
+            {g.label} — saldo normal {g.normal==="debit"?"Debit":"Kredit"}
           </div>
-        );
-      })}
+          {g.akuns.map(a=>{
+            const isOpen=open[a.key]; let run=0;
+            const saldo = g.normal==="debit" ? a.debit-a.kredit : a.kredit-a.debit;
+            return (
+              <div key={a.key} style={{background:"#fff",borderRadius:12,border:`2px solid ${a.info.c}18`,overflow:"hidden",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",cursor:"pointer"}}
+                  onClick={()=>setOpen(p=>({...p,[a.key]:!p[a.key]}))}
+                  onMouseEnter={e=>e.currentTarget.style.background=a.info.bg} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{width:30,height:30,borderRadius:9,background:a.info.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{a.info.icon}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:800,fontSize:12,color:a.info.c}}>{a.info.l}</div>
+                    <div style={{fontSize:10,color:"#aaa"}}>{a.entries.length} transaksi</div>
+                  </div>
+                  <div style={{textAlign:"right",marginRight:6}}>
+                    <div style={{fontSize:9,color:"#bbb"}}>Dr {fmtRp(a.debit)} · Cr {fmtRp(a.kredit)}</div>
+                    <div style={{fontWeight:800,fontSize:13,color:a.info.c}}>{fmtRp(Math.abs(saldo))}</div>
+                  </div>
+                  <span style={{color:"#ccc",transition:"transform .2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"none"}}>▾</span>
+                </div>
+                {isOpen&&(
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,borderTop:`1px solid ${a.info.c}18`}}>
+                    <thead><tr style={{background:a.info.bg}}>
+                      {["Tanggal","Keterangan","Debit","Kredit","Saldo Running"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",fontWeight:700,color:a.info.c,fontSize:11}}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {a.entries.map((e,i)=>{if(e.jenis==="masuk")run+=e.nominal;else run-=e.nominal;return(
+                        <tr key={e.id} style={{borderTop:"1px solid #f5f5f5",background:i%2===0?"#fff":"#fafffe"}}>
+                          <td style={{padding:"6px 12px",color:"#888",fontSize:11}}>{e.tgl}</td>
+                          <td style={{padding:"6px 12px",fontWeight:600}}>{e.nama}{String(e.id).startsWith("auto-")&&<span style={{fontSize:8,fontWeight:700,color:"#0d9488",background:"#e0faf5",padding:"1px 6px",borderRadius:8,marginLeft:6}}>Auto</span>}</td>
+                          <td style={{padding:"6px 12px",color:"#0a7a70",fontWeight:700}}>{e.jenis==="keluar"?fmtRp(e.nominal):"--"}</td>
+                          <td style={{padding:"6px 12px",color:"#b91c1c",fontWeight:700}}>{e.jenis==="masuk"?fmtRp(e.nominal):"--"}</td>
+                          <td style={{padding:"6px 12px",fontWeight:800,color:"#333"}}>{run>=0?"+":""}{fmtRp(run)}</td>
+                        </tr>);
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -11328,8 +11384,8 @@ function CfTabBukuBesar({log}) {
 function CfTabLapKeu({log}) {
   const [sub,setSub]=useState("lr");
   const masuk=log.filter(e=>e.jenis==="masuk"), keluar=log.filter(e=>e.jenis==="keluar");
-  const pend=masuk.filter(e=>["pendapatan","setoran"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
-  const pLain=masuk.filter(e=>!["pendapatan","setoran"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
+  const pend=masuk.filter(e=>["pendapatan","bankfee","setoran"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
+  const pLain=masuk.filter(e=>!["pendapatan","bankfee","setoran"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
   const hpp=keluar.filter(e=>e.kat==="hpp").reduce((s,e)=>s+e.nominal,0);
   const labaKotor=pend-hpp;
   const opEx=keluar.filter(e=>["operasional","gaji","marketing"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
@@ -11339,7 +11395,7 @@ function CfTabLapKeu({log}) {
   const pajak=ebt>0?Math.floor(ebt*.01):0;
   const labaBersih=ebt-pajak;
   const margin=pend>0?(labaBersih/pend*100).toFixed(1):"0.0";
-  const kasOp=masuk.filter(e=>["pendapatan","setoran"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0)-keluar.filter(e=>["operasional","gaji","hpp"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
+  const kasOp=masuk.filter(e=>["pendapatan","bankfee","setoran"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0)-keluar.filter(e=>["operasional","gaji","hpp"].includes(e.kat)).reduce((s,e)=>s+e.nominal,0);
   const kasInv=-keluar.filter(e=>e.kat==="aset").reduce((s,e)=>s+e.nominal,0);
   const kasFin=masuk.filter(e=>e.kat==="modal").reduce((s,e)=>s+e.nominal,0);
   const kasNet=kasOp+kasInv+kasFin;
