@@ -2067,22 +2067,23 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     const entries = Object.entries(realStocks);
     if(!entries.length) return notify("Belum ada stok nyata yang diisi","err");
     setSavingOpname(true);
-    // PENTING: sebelumnya pakai for-loop dengan await berurutan -- kalau 1
-    // produk gagal (misal koneksi sempat putus), loop LANGSUNG BERHENTI TOTAL
-    // dan produk-produk setelahnya di daftar tidak pernah dicoba disimpan sama
-    // sekali. Sekarang tiap produk dicoba independen (tidak saling menggagalkan),
-    // dan yang gagal dilaporkan spesifik biar bisa dicoba ulang cuma yang itu.
+    if(typeof window!=="undefined") window.__savingOpname = true;
+    // Sebelumnya simpan satu-satu berurutan (for-loop + await) -- untuk 100+
+    // produk bisa makan waktu 10+ detik, dan selama itu ada celah besar buat
+    // race condition dengan auto-refresh stok (refetchStocks) yang bisa
+    // menimpa dengan data yang belum lengkap tersimpan. Sekarang semua
+    // disimpan PARALEL sekaligus -- jauh lebih cepat, celah race condition
+    // jadi sangat kecil.
+    const results = await Promise.allSettled(
+      entries.map(([pid,qty])=>db.upsertStock(selectedOutlet, +pid, +qty).then(()=>[pid,+qty]))
+    );
     const succeeded = {};
     const failed = [];
-    for(const [pid,qty] of entries){
-      try{
-        await db.upsertStock(selectedOutlet, +pid, +qty);
-        succeeded[pid] = +qty;
-      }catch(e){
-        failed.push(pid);
-        console.warn('Gagal simpan stok produk',pid,e);
-      }
-    }
+    results.forEach((r,i)=>{
+      const [pid] = entries[i];
+      if(r.status==='fulfilled'){ succeeded[pid]=r.value[1]; }
+      else{ failed.push(pid); console.warn('Gagal simpan stok produk',pid,r.reason); }
+    });
     if(Object.keys(succeeded).length>0){
       setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...succeeded}}));
     }
@@ -2093,6 +2094,7 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
       notify(`⚠️ ${Object.keys(succeeded).length} berhasil, ${failed.length} GAGAL (${namaGagal}${failed.length>3?", ...":""}) — coba simpan lagi`,"err");
     }
     setSavingOpname(false);
+    if(typeof window!=="undefined") window.__savingOpname = false;
   };
 
   // -- BULK OPERATIONS --------------------------------------------------------
@@ -16447,6 +16449,9 @@ export default function App() {
   // pengaman di luar realtime.
   useEffect(()=>{
     const refetchStocks = async () => {
+      // Kalau ada opname yang sedang disimpan, tunda dulu -- jangan sampai
+      // refetch ini menimpa data yang belum selesai tersimpan semua.
+      if(typeof window!=="undefined" && window.__savingOpname) return;
       try{
         const { data:stokRows } = await supabase.from('stocks').select('*');
         if(stokRows){
@@ -16468,7 +16473,10 @@ export default function App() {
   // -- Realtime active_shifts -- laporan admin update otomatis ----------------
   useEffect(()=>{
     let ch;
+    let retryCount = 0;
+    let stopped = false;
     const subscribe = () => {
+      if(stopped) return;
       if(ch) try{ supabase.removeChannel(ch); }catch{}
       ch = supabase.channel('realtime-shifts')
         .on('postgres_changes',{event:'INSERT',schema:'public',table:'active_shifts'},()=>{ reloadData(); })
@@ -16485,15 +16493,27 @@ export default function App() {
           setAllBankTrx(prev=>prev.filter(x=>x.id!==p.old?.id));
         })
         .subscribe((status)=>{
-          // Auto-reconnect jika channel mati
+          if(status==='SUBSCRIBED'){
+            retryCount = 0; // konek berhasil, reset hitungan percobaan
+            return;
+          }
+          // Auto-reconnect dengan backoff bertahap (3s, 6s, 12s... maks 60s)
+          // dan batas maksimal 8 percobaan -- sebelumnya coba tiap 3 detik
+          // TANPA BATAS, bisa ratusan kali dan boros koneksi Supabase.
           if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
-            console.warn('[Realtime] Channel shifts mati ('+status+'), reconnect dalam 3s...');
-            setTimeout(subscribe, 3000);
+            if(retryCount>=8){
+              console.warn('[Realtime] Channel shifts gagal konek setelah 8x percobaan, berhenti mencoba. Refresh halaman untuk coba lagi.');
+              return;
+            }
+            const delay = Math.min(3000*Math.pow(2,retryCount), 60000);
+            retryCount++;
+            console.warn(`[Realtime] Channel shifts mati (${status}), reconnect dalam ${delay/1000}s... (percobaan ${retryCount}/8)`);
+            setTimeout(subscribe, delay);
           }
         });
     };
     subscribe();
-    return ()=>{ try{ supabase.removeChannel(ch); }catch{} };
+    return ()=>{ stopped = true; try{ supabase.removeChannel(ch); }catch{} };
   },[]);
 
   // -- Realtime portal: misi, todos, absensi, izin, settings, foto ----------
