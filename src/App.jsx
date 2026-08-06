@@ -443,7 +443,7 @@ function LoginPage({ users, onLogin, onChangePass }) {
 // ==============================================================================
 // MENU UTAMA
 // ==============================================================================
-function MenuUtama({ user, onNavigate, onLogout, stats, showPreOrderBanner, preOrderRecap, onDismissPreOrder }) {
+function MenuUtama({ user, onNavigate, onLogout, stats, preOrderRecap }) {
   const [showPreOrderDetail, setShowPreOrderDetail] = useState(false);
   const [expandedPreOrderKey, setExpandedPreOrderKey] = useState(null);
   const KAT_LABEL = { saldo:"Saldo Aplikasi", voucher:"VC", perdana:"Perdana", aksesoris:"Aksesoris" };
@@ -482,14 +482,15 @@ function MenuUtama({ user, onNavigate, onLogout, stats, showPreOrderBanner, preO
         </button>
       </div>
       <div style={{padding:"22px",maxWidth:900,margin:"0 auto"}}>
-        {user.role==="admin"&&showPreOrderBanner&&(
-          <div onClick={()=>{ setShowPreOrderDetail(true); onDismissPreOrder(); }}
+        {user.role==="admin"&&preOrderRecap&&preOrderRecap.grandTotal>0&&(
+          <div onClick={()=>setShowPreOrderDetail(true)}
             style={{background:"#fffbe6",border:"2px solid #f39c12",borderRadius:12,padding:"12px 16px",marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:20}}>🔔</span>
+            <span style={{fontSize:20}}>📦</span>
             <div style={{flex:1}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#b7770d"}}>Rekap Pre Order Stok — 21:00 sudah siap</div>
-              <div style={{fontSize:11,color:"#b7770d",opacity:.8}}>Tap untuk lihat rincian modal yang perlu di-restock</div>
+              <div style={{fontWeight:800,fontSize:13,color:"#b7770d"}}>Rekap Pre Order Stok — {preOrderRecap.tanggal}</div>
+              <div style={{fontSize:11,color:"#b7770d",opacity:.8}}>Tap untuk lihat rincian modal yang perlu di-restock · berganti tiap 21:30</div>
             </div>
+            <span style={{fontWeight:900,fontSize:13,color:"#b7770d"}}>{fmtRp(preOrderRecap.grandTotal)}</span>
             <span style={{color:"#b7770d",fontSize:18}}>›</span>
           </div>
         )}
@@ -16412,15 +16413,55 @@ export default function App() {
 
   // -- Rekap Pre Order Stok (Saldo Aplikasi, VC, Perdana, Aksesoris) ----------
   // Dihitung dari data transaksi yang SUDAH ada di memori (tidak ada query
-  // baru sama sekali) -- jadi tidak menambah beban Supabase. Direkap ulang
-  // otomatis tiap hari, tidak disimpan ke database (memang tidak perlu riwayat).
-  // Struktur: per outlet -> per kategori -> daftar produk (untuk drill-down).
+  // baru sama sekali) -- jadi tidak menambah beban Supabase.
+  //
+  // Klasifikasi produk TIDAK mengandalkan qcKategori (banyak produk belum
+  // ditandai) -- pakai kata kunci nama produk & kategori produk sebagai
+  // gantinya, urutan prioritas:
+  //   1. qcKategori eksplisit kalau sudah ada (dipercaya kalau ada)
+  //   2. kategori produk = "Aksesoris" -> aksesoris
+  //   3. nama mengandung kata kunci saldo (siul, pulsa, maxim, dana, gopay,
+  //      shopeepay, linkaja, ovo, grab) -> saldo
+  //   4. nama mengandung "perdana" -> perdana
+  //   5. nama diawali "vc " -> voucher (VC)
+  const classifyPreOrderProduk = (item, category) => {
+    const explicit = item?.qcKategori||item?.qc_kategori;
+    if(explicit) return explicit;
+    const name = String(item?.name||'').toLowerCase();
+    const cat  = String(category||item?.category||'').toLowerCase().trim();
+    if(cat==='aksesoris') return 'aksesoris';
+    const saldoKeywords = ['siul','pulsa','maxim','dana','gopay','go-pay','shopeepay','shopee pay','linkaja','link aja','ovo','grab'];
+    if(saldoKeywords.some(kw=>name.includes(kw))) return 'saldo';
+    // Perdana: nama mengandung "perdana", "kartu perdana", atau kata "SP" berdiri sendiri
+    // (dicek sebagai kata utuh biar tidak salah kena kata lain yang kebetulan ada huruf "sp")
+    if(name.includes('perdana') || /(^|\s)sp(\s|$)/.test(name)) return 'perdana';
+    if(name.startsWith('vc ')) return 'voucher';
+    return null;
+  };
+
+  // Rekap "hari berjalan" untuk pre-order: sebelum jam 21:30, yang ditampilkan
+  // masih rekap KEMARIN (biar tetap bisa dilihat sampai giliran ganti tiba);
+  // begitu lewat jam 21:30, otomatis pindah ke rekap HARI INI. Dicek ringan
+  // tiap beberapa menit (cuma bandingkan waktu, tanpa query apa pun).
+  const computePreOrderRecapDate = () => {
+    const now = new Date();
+    const past2130 = now.getHours()>21 || (now.getHours()===21 && now.getMinutes()>=30);
+    if(past2130) return today();
+    const y = new Date(now); y.setDate(y.getDate()-1);
+    return y.toLocaleDateString("id-ID");
+  };
+  const [preOrderRecapDate, setPreOrderRecapDate] = useState(computePreOrderRecapDate);
+  useEffect(()=>{
+    const iv = setInterval(()=>setPreOrderRecapDate(computePreOrderRecapDate()), 5*60000);
+    return ()=>clearInterval(iv);
+  },[]);
+
   const preOrderRecap = useMemo(()=>{
-    const todayTx = transactions.filter(t=>t.date===today());
+    const targetTx = transactions.filter(t=>t.date===preOrderRecapDate);
     const KATS = ['saldo','voucher','perdana','aksesoris'];
     const byOutlet = {};
     let grandTotal = 0;
-    todayTx.forEach(t=>{
+    targetTx.forEach(t=>{
       const outletNama = outlets.find(o=>String(o.id)===String(t.outletId))?.nama || t.outletId || "Lainnya";
       if(!byOutlet[outletNama]){
         byOutlet[outletNama] = {};
@@ -16428,13 +16469,10 @@ export default function App() {
       }
       (t.items||[]).forEach(item=>{
         if(item.refunded) return;
-        let kat = item.qcKategori||item.qc_kategori;
-        if(!kat){
-          const prod = products.find(p=>p.id===item.id);
-          kat = prod?.qcKategori||prod?.qc_kategori;
-        }
+        const prod = products.find(p=>p.id===item.id);
+        const kat = classifyPreOrderProduk(item, prod?.category);
         if(!KATS.includes(kat)) return;
-        const modal = (item.modal||0)*(item.qty||0);
+        const modal = (item.modal||prod?.modal||0)*(item.qty||0);
         const bucket = byOutlet[outletNama][kat];
         if(!bucket.produkMap[item.name]) bucket.produkMap[item.name]={qty:0,modal:0};
         bucket.produkMap[item.name].qty += item.qty||0;
@@ -16452,27 +16490,8 @@ export default function App() {
         delete katData[k].produkMap;
       });
     });
-    return { byOutlet, grandTotal, KATS };
-  },[transactions,products,outlets]);
-
-  // Banner muncul jam 21:00, sekali per hari (tersimpan di localStorage biar
-  // tidak muncul lagi kalau sudah pernah dibuka hari itu)
-  const [showPreOrderBanner,setShowPreOrderBanner] = useState(false);
-  useEffect(()=>{
-    const checkTime=()=>{
-      const now=new Date();
-      const dismissedKey = 'preorder_dismissed_'+now.toLocaleDateString("id-ID");
-      const alreadyDismissed = localStorage.getItem(dismissedKey);
-      setShowPreOrderBanner(now.getHours()>=21 && !alreadyDismissed);
-    };
-    checkTime();
-    const iv = setInterval(checkTime, 60000);
-    return ()=>clearInterval(iv);
-  },[]);
-  const dismissPreOrderBanner = ()=>{
-    localStorage.setItem('preorder_dismissed_'+new Date().toLocaleDateString("id-ID"), '1');
-    setShowPreOrderBanner(false);
-  };
+    return { byOutlet, grandTotal, KATS, tanggal: preOrderRecapDate };
+  },[transactions,products,outlets,preOrderRecapDate]);
 
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
@@ -16600,7 +16619,7 @@ export default function App() {
       )}
 
       {page==="menu"      && <MenuUtama    user={user} onNavigate={setPage} onLogout={()=>{setUser(null);setPage("menu");}} stats={stats}
-        showPreOrderBanner={showPreOrderBanner} preOrderRecap={preOrderRecap} onDismissPreOrder={dismissPreOrderBanner}/>}
+        preOrderRecap={preOrderRecap}/>}
       {page==="pilih"     && (user?.role==="kasir"||user?.role==="bank"||user?.role==="staff"||user?.role==="karyawan") && <PilihAksesPage user={user} outlets={outlets} onPilih={handlePilih} onLogout={()=>{setUser(null);setPage("menu");setPilihScene(null);}}/>}
       {page==="portal"    && user && (user.role==="karyawan"||user.role==="kasir"||user.role==="bank"||user.role==="staff") && <PortalKaryawan user={user} outlets={outlets} transactions={transactions} misi={portalMisi} note={portalNote} shift={portalShift} absensiMap={portalAbsensi} izinMap={portalIzin} setAbsensiMap={setPortalAbsensi} setIzinMap={setPortalIzin} onLogout={()=>{setUser(null);setPage("menu");}} onKembali={()=>setPage("pilih")} notify={notify} todos={portalTodos} todoStatus={portalTodoStatus} poinRate={portalPoinRate} misiProgress={portalMisiProgress} misiFoto={portalMisiFoto} setMisiFoto={setPortalMisiFoto} users={users} products={products} stocks={stocks}/>}
       {page==="strategi" && isAdmin && <StrategiBulananPage transactions={transactions} outlets={outlets} products={products} misi={portalMisi} setMisi={setPortalMisi} notify={notify} onBack={()=>setPage("menu")}/>}
