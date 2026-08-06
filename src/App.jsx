@@ -446,7 +446,7 @@ function LoginPage({ users, onLogin, onChangePass }) {
 function MenuUtama({ user, onNavigate, onLogout, stats, preOrderRecap }) {
   const [showPreOrderDetail, setShowPreOrderDetail] = useState(false);
   const [expandedPreOrderKey, setExpandedPreOrderKey] = useState(null);
-  const KAT_LABEL = { saldo:"Saldo Aplikasi", voucher:"VC", perdana:"Perdana", aksesoris:"Aksesoris" };
+  const KAT_LABEL = { saldo:"Saldo Aplikasi", voucher:"VC", perdana:"Perdana", aksesoris:"Aksesoris", lainnya:"Lainnya" };
   const menus = [
     {id:"kasir",    icon:Ic.Cart(),     label:"Kasir",              desc:"Buka transaksi penjualan",     color:"#0d9488", bg:"#e0faf5", roles:["admin","karyawan"]},
     {id:"gabungan", icon:"🏦",          label:"Kasir + Bank (1 Laci)", desc:"Transaksi kasir & bank — shift bank", color:"#2980b9", bg:"#e8f4fd", roles:["admin"]},
@@ -538,7 +538,7 @@ function MenuUtama({ user, onNavigate, onLogout, stats, preOrderRecap }) {
               <div style={{fontWeight:900,fontSize:15,color:"#0a7a70"}}>📦 Rekap Pre Order Stok</div>
               <button onClick={()=>{setShowPreOrderDetail(false);setExpandedPreOrderKey(null);}} style={{background:"none",border:"none",fontSize:20,color:"#aaa",cursor:"pointer",lineHeight:1}}>×</button>
             </div>
-            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Berdasarkan penjualan semua kasir hari ini, {today()}</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:14}}>Berdasarkan penjualan semua kasir tanggal {preOrderRecap.tanggal}</div>
 
             {Object.keys(preOrderRecap.byOutlet).length===0?(
               <div style={{textAlign:"center",color:"#ccc",padding:30,fontSize:13}}>Belum ada penjualan hari ini</div>
@@ -16458,7 +16458,7 @@ export default function App() {
 
   const preOrderRecap = useMemo(()=>{
     const targetTx = transactions.filter(t=>t.date===preOrderRecapDate);
-    const KATS = ['saldo','voucher','perdana','aksesoris'];
+    const KATS = ['saldo','voucher','perdana','aksesoris','lainnya'];
     const byOutlet = {};
     let grandTotal = 0;
     targetTx.forEach(t=>{
@@ -16470,8 +16470,11 @@ export default function App() {
       (t.items||[]).forEach(item=>{
         if(item.refunded) return;
         const prod = products.find(p=>p.id===item.id);
-        const kat = classifyPreOrderProduk(item, prod?.category);
-        if(!KATS.includes(kat)) return;
+        let kat = classifyPreOrderProduk(item, prod?.category);
+        // Kalau tidak kenal kategorinya, JANGAN dihilangkan diam-diam --
+        // masukkan ke "Lainnya" biar tetap kelihatan & totalnya tetap pas
+        // dengan modal sebenarnya (sesuai profit asli).
+        if(!KATS.includes(kat)) kat = 'lainnya';
         const modal = (item.modal||prod?.modal||0)*(item.qty||0);
         const bucket = byOutlet[outletNama][kat];
         if(!bucket.produkMap[item.name]) bucket.produkMap[item.name]={qty:0,modal:0};
