@@ -2066,14 +2066,30 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
     const entries = Object.entries(realStocks);
     if(!entries.length) return notify("Belum ada stok nyata yang diisi","err");
     setSavingOpname(true);
-    try{
-      for(const [pid,qty] of entries){
+    // PENTING: sebelumnya pakai for-loop dengan await berurutan -- kalau 1
+    // produk gagal (misal koneksi sempat putus), loop LANGSUNG BERHENTI TOTAL
+    // dan produk-produk setelahnya di daftar tidak pernah dicoba disimpan sama
+    // sekali. Sekarang tiap produk dicoba independen (tidak saling menggagalkan),
+    // dan yang gagal dilaporkan spesifik biar bisa dicoba ulang cuma yang itu.
+    const succeeded = {};
+    const failed = [];
+    for(const [pid,qty] of entries){
+      try{
         await db.upsertStock(selectedOutlet, +pid, +qty);
+        succeeded[pid] = +qty;
+      }catch(e){
+        failed.push(pid);
+        console.warn('Gagal simpan stok produk',pid,e);
       }
-      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
-      notify("Stok opname disimpan ✓","ok");
-    }catch(e){
-      notify("Gagal simpan opname: "+e.message,"err");
+    }
+    if(Object.keys(succeeded).length>0){
+      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...succeeded}}));
+    }
+    if(failed.length===0){
+      notify(`Stok opname disimpan ✓ (${entries.length} produk)`,"ok");
+    }else{
+      const namaGagal = failed.map(pid=>products.find(p=>String(p.id)===String(pid))?.name||pid).slice(0,3).join(", ");
+      notify(`⚠️ ${Object.keys(succeeded).length} berhasil, ${failed.length} GAGAL (${namaGagal}${failed.length>3?", ...":""}) — coba simpan lagi`,"err");
     }
     setSavingOpname(false);
   };
@@ -2099,43 +2115,59 @@ function StokPage({ products, outlets, stocks, setStocks, onBack, notify, _initT
 
     setBulkSaving(true);
     let successCount=0;
+    const failedNames=[];
     const newStocks={...stocks};
 
     for(const row of toProcess){
       const cur = newStocks[selectedOutlet]?.[row.id]??0;
       const qty = +row.qty;
 
-      if(bulkType==="masuk"){
-        const newQty=cur+qty;
-        if(!newStocks[selectedOutlet]) newStocks[selectedOutlet]={};
-        newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newQty};
-        await db.upsertStock(selectedOutlet,row.id,newQty).catch(()=>{});
-        addLog("masuk",selectedOutlet,row.id,qty,row.note||"bulk masuk");
-      } else if(bulkType==="keluar"){
-        if(qty>cur){ notify(`Stok ${row.name} tidak cukup (${cur})!`,"warn"); continue; }
-        const newQty=cur-qty;
-        newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newQty};
-        await db.upsertStock(selectedOutlet,row.id,newQty).catch(()=>{});
-        addLog("keluar",selectedOutlet,row.id,qty,row.note||"bulk keluar");
-      } else if(bulkType==="transfer"){
-        if(qty>cur){ notify(`Stok ${row.name} tidak cukup (${cur})!`,"warn"); continue; }
-        const newSrc=cur-qty;
-        const newDst=(newStocks[bulkTransferTo]?.[row.id]??0)+qty;
-        newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newSrc};
-        if(!newStocks[bulkTransferTo]) newStocks[bulkTransferTo]={};
-        newStocks[bulkTransferTo]={...newStocks[bulkTransferTo],[row.id]:newDst};
-        await db.upsertStock(selectedOutlet,row.id,newSrc).catch(()=>{});
-        await db.upsertStock(bulkTransferTo,row.id,newDst).catch(()=>{});
-        const oTujuan=outlets.find(o=>o.id===bulkTransferTo)?.nama;
-        addLog("transfer",selectedOutlet,row.id,qty,`→ ${oTujuan} (bulk)`);
+      try{
+        if(bulkType==="masuk"){
+          const newQty=cur+qty;
+          await db.upsertStock(selectedOutlet,row.id,newQty);
+          if(!newStocks[selectedOutlet]) newStocks[selectedOutlet]={};
+          newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newQty};
+          addLog("masuk",selectedOutlet,row.id,qty,row.note||"bulk masuk");
+        } else if(bulkType==="keluar"){
+          if(qty>cur){ notify(`Stok ${row.name} tidak cukup (${cur})!`,"warn"); continue; }
+          const newQty=cur-qty;
+          await db.upsertStock(selectedOutlet,row.id,newQty);
+          newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newQty};
+          addLog("keluar",selectedOutlet,row.id,qty,row.note||"bulk keluar");
+        } else if(bulkType==="transfer"){
+          if(qty>cur){ notify(`Stok ${row.name} tidak cukup (${cur})!`,"warn"); continue; }
+          const newSrc=cur-qty;
+          const newDst=(newStocks[bulkTransferTo]?.[row.id]??0)+qty;
+          await Promise.all([
+            db.upsertStock(selectedOutlet,row.id,newSrc),
+            db.upsertStock(bulkTransferTo,row.id,newDst),
+          ]);
+          newStocks[selectedOutlet]={...newStocks[selectedOutlet],[row.id]:newSrc};
+          if(!newStocks[bulkTransferTo]) newStocks[bulkTransferTo]={};
+          newStocks[bulkTransferTo]={...newStocks[bulkTransferTo],[row.id]:newDst};
+          const oTujuan=outlets.find(o=>o.id===bulkTransferTo)?.nama;
+          addLog("transfer",selectedOutlet,row.id,qty,`→ ${oTujuan} (bulk)`);
+        }
+        successCount++;
+      }catch(e){
+        // PENTING: sebelumnya error di sini ditelan diam-diam (.catch(()=>{}))
+        // dan produk itu tetap dianggap "berhasil" + tampilan tetap diupdate
+        // seolah tersimpan, padahal database-nya tidak berubah. Sekarang
+        // produk yang gagal TIDAK diupdate di tampilan, dan dilaporkan jelas.
+        failedNames.push(row.name);
+        console.warn('Gagal bulk stok produk',row.id,e);
       }
-      successCount++;
     }
 
     setStocks(newStocks);
     setBulkSaving(false);
     setBulkMode(false);
-    notify(`${successCount} produk berhasil diproses ✓`,"ok");
+    if(failedNames.length===0){
+      notify(`${successCount} produk berhasil diproses ✓`,"ok");
+    }else{
+      notify(`⚠️ ${successCount} berhasil, ${failedNames.length} GAGAL (${failedNames.slice(0,3).join(", ")}${failedNames.length>3?", ...":""}) — coba lagi`,"err");
+    }
   };
 
   // Urutan: _prodOrder (global dari ProdukPage admin) override segalanya kecuali ada sort eksplisit
@@ -4515,7 +4547,7 @@ function LaporanPage({ transactions, outlets, onBack }) {
     </div>
   );
 }
-function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stocks, setStocks, prodOrder }) {
+function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stocks, setStocks, prodOrder, notify=()=>{} }) {
   const [realStocks,  setRealStocks]  = useState(()=>{ const m={}; products.forEach(p=>{m[p.id]=outletStock[p.id]??0;}); return m; });
   const [opnameSaved, setOpnameSaved] = useState(false);
   const [srch,        setSrch]        = useState("");
@@ -4550,9 +4582,34 @@ function KasirStokPage({ products, outletStock, outletNama, selectedOutlet, stoc
   };
 
   const saveOpname = async () => {
-    setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...realStocks}}));
-    await Promise.all(Object.entries(realStocks).map(([pid,qty])=>db.upsertStock(selectedOutlet,+pid,qty).catch(()=>{})));
-    setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
+    const entries = Object.entries(realStocks);
+    if(!entries.length) return notify("Belum ada stok nyata yang diisi","err");
+    // PENTING: sebelumnya update tampilan LANGSUNG (optimis) sebelum tahu hasil
+    // simpan ke database, dan errornya "ditelan" diam-diam (.catch(()=>{})) --
+    // jadi kalau ada yang gagal, tampilan tetap bilang berhasil padahal tidak
+    // tersimpan. Sekarang tiap produk dicoba independen, tampilan cuma
+    // diupdate untuk yang BENERAN berhasil, dan yang gagal dilaporkan jelas.
+    const succeeded = {};
+    const failed = [];
+    for(const [pid,qty] of entries){
+      try{
+        await db.upsertStock(selectedOutlet, +pid, +qty);
+        succeeded[pid] = +qty;
+      }catch(e){
+        failed.push(pid);
+        console.warn('Gagal simpan stok produk',pid,e);
+      }
+    }
+    if(Object.keys(succeeded).length>0){
+      setStocks(prev=>({...prev,[selectedOutlet]:{...prev[selectedOutlet],...succeeded}}));
+    }
+    if(failed.length===0){
+      setOpnameSaved(true); setTimeout(()=>setOpnameSaved(false),2500);
+      notify(`Stok opname disimpan ✓ (${entries.length} produk)`,"ok");
+    }else{
+      const namaGagal = failed.map(pid=>products.find(p=>String(p.id)===String(pid))?.name||pid).slice(0,3).join(", ");
+      notify(`⚠️ ${Object.keys(succeeded).length} berhasil, ${failed.length} GAGAL (${namaGagal}${failed.length>3?", ...":""}) — coba simpan lagi`,"err");
+    }
   };
 
   // baseFP: filter + sort (hanya jika bukan default urutan produk)
@@ -6966,6 +7023,7 @@ function KasirApp({ user, products, stocks, setStocks, transactions, setTx, outl
           stocks={stocks}
           setStocks={setStocks}
           prodOrder={prodOrder}
+          notify={notify}
         />
       )}
 
