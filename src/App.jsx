@@ -10249,7 +10249,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
   };
 
   const cfTabs=[
-    {k:"kalkulator",l:"🧮 Kalkulator",   badge:"Cash"},
+    {k:"kalkulator",l:"🔍 Identifikasi Transaksi", badge:null},
     {k:"jurnal",    l:"📋 Jurnal",        badge:"CSV"},
     {k:"besar",     l:"📚 Buku Besar",    badge:"CSV"},
     {k:"lapkeu",    l:"📊 Lap. Keuangan", badge:"LR+AK+Neraca"},
@@ -10259,7 +10259,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
   // -- MOBILE LAYOUT ------------------------------------------------------------
   if(isMobile) {
     const cfMobileTabs = [
-      {k:"kalkulator", l:"Kalkulator", icon:"🧮"},
+      {k:"kalkulator", l:"Identifikasi", icon:"🔍"},
       {k:"jurnal",     l:"Jurnal",     icon:"📋"},
       {k:"besar",      l:"Buku Besar", icon:"📚"},
       {k:"lapkeu",     l:"Lap. Keu",   icon:"📊"},
@@ -10291,7 +10291,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
 
         {/* Content */}
         <div style={{padding:"12px 12px 0"}}>
-          {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
+          {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} notify={notify}/>}
           {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
           {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
           {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
@@ -10347,7 +10347,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
         </div>
       </div>
       <div className="cf-main-content cf-content" style={{padding:"14px 20px",maxWidth:1080,margin:"0 auto"}}>
-        {cfTab==="kalkulator" && <CfTabKalkulator log={cfLog} setLog={cfAddEntries} outletNames={outletNames} sistemMasuk={sistemMasukHari}/>}
+        {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} notify={notify}/>}
         {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
         {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
         {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
@@ -10526,6 +10526,248 @@ function CfVersusRow({label,sub,sistem,input}) {
           border:`1px solid ${ok?"#86efac":sel>0?"#fde047":"#fca5a5"}`}}>
           {ok?"✅ Sama":sel>0?`▲ +${fmtRp(sel)}`:`▼ -${fmtRp(Math.abs(sel))}`}
         </span>
+      </div>
+    </div>
+  );
+}
+
+// -- IDENTIFIKASI TRANSAKSI -- menggantikan Kalkulator Cash lama -------------
+// Otomatis menganalisis transaksi kasir + bank untuk rentang tanggal yang
+// dipilih, plus form pencatatan pengeluaran/pembelian manual oleh admin
+// (disimpan permanen lewat cfLog/cashflow_entries, infrastruktur yang sudah ada).
+function CfTabIdentifikasi({transactions, outlets, cfLog, onAddEntry, onDeleteEntry, notify}) {
+  const [dateMode, setDateMode] = useState("hari_ini"); // hari_ini | kemarin | custom
+  const [customFrom, setCustomFrom] = useState(()=>new Date().toISOString().slice(0,10));
+  const [customTo, setCustomTo] = useState(()=>new Date().toISOString().slice(0,10));
+  const [bankTrx, setBankTrx] = useState([]);
+  const [loadingBank, setLoadingBank] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [formNama, setFormNama] = useState("");
+  const [formJenis, setFormJenis] = useState("keluar");
+  const [formKategori, setFormKategori] = useState("Operasional");
+  const [formNominal, setFormNominal] = useState("");
+  const [formTgl, setFormTgl] = useState(()=>new Date().toISOString().slice(0,10));
+  const [saving, setSaving] = useState(false);
+
+  const parseIdDate = (s) => {
+    if(!s) return null;
+    const parts = String(s).split("/");
+    if(parts.length!==3) return null;
+    const [d,m,y] = parts.map(Number);
+    if(!d||!m||!y) return null;
+    return new Date(y,m-1,d);
+  };
+
+  // -- Tentukan rentang tanggal aktual berdasarkan mode yang dipilih ----------
+  const { fromDate, toDate, label } = useMemo(()=>{
+    const now = new Date();
+    if(dateMode==="hari_ini"){
+      const d0 = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+      return { fromDate:d0, toDate:d0, label:`Hari Ini · ${now.toLocaleDateString("id-ID")}` };
+    }
+    if(dateMode==="kemarin"){
+      const y = new Date(now); y.setDate(y.getDate()-1);
+      const d0 = new Date(y.getFullYear(),y.getMonth(),y.getDate());
+      return { fromDate:d0, toDate:d0, label:`Kemarin · ${y.toLocaleDateString("id-ID")}` };
+    }
+    const f = customFrom ? new Date(customFrom+"T00:00:00") : now;
+    const t = customTo ? new Date(customTo+"T00:00:00") : now;
+    return { fromDate:f, toDate:t, label:`${f.toLocaleDateString("id-ID")} — ${t.toLocaleDateString("id-ID")}` };
+  },[dateMode,customFrom,customTo]);
+
+  // -- Ambil transaksi bank sesuai rentang tanggal (di-load ulang tiap ganti
+  // tanggal, bukan polling terus-menerus -- efisien karena cuma jalan saat
+  // halaman ini dibuka & saat tanggal diganti)
+  useEffect(()=>{
+    let alive = true;
+    setLoadingBank(true);
+    const fromISO = new Date(fromDate); fromISO.setHours(0,0,0,0);
+    const toISO = new Date(toDate); toISO.setHours(23,59,59,999);
+    supabase.from("bank_transactions").select("*")
+      .gte("created_at", fromISO.toISOString())
+      .lte("created_at", toISO.toISOString())
+      .order("created_at",{ascending:false})
+      .limit(2000)
+      .then(({data,error})=>{
+        if(!alive) return;
+        if(!error && data) setBankTrx(data);
+        setLoadingBank(false);
+      });
+    return ()=>{ alive=false; };
+  },[fromDate,toDate]);
+
+  // -- Kasir: filter dari transactions (prop, sudah ada di memori) ------------
+  const kasirTx = useMemo(()=>
+    (transactions||[]).filter(t=>{
+      const d = parseIdDate(t.date);
+      if(!d) return false;
+      return d>=fromDate && d<=toDate;
+    })
+  ,[transactions,fromDate,toDate]);
+
+  const calcOmset  = list => list.reduce((s,t)=>{ const rv=(t.items||[]).filter(i=>i.refunded).reduce((rs,i)=>rs+i.price*i.qty,0); return s+t.total-rv; },0);
+  const calcProfit = list => list.reduce((s,t)=>s+(t.items||[]).filter(i=>!i.refunded).reduce((ss,i)=>ss+(i.price-(i.modal||0))*i.qty,0),0);
+  const kasirOmset  = calcOmset(kasirTx);
+  const kasirProfit = calcProfit(kasirTx);
+
+  const bankMasuk  = bankTrx.filter(t=>t.net_nominal>0).reduce((s,t)=>s+t.net_nominal,0);
+  const bankKeluar = bankTrx.filter(t=>t.net_nominal<0).reduce((s,t)=>s+Math.abs(t.net_nominal),0);
+  const bankFee    = bankTrx.reduce((s,t)=>s+(t.fee||0),0);
+  const bankNet    = bankMasuk - bankKeluar;
+
+  // -- Pengeluaran/pemasukan manual dari cfLog (sudah tersimpan permanen) -----
+  const manualEntries = useMemo(()=>
+    (cfLog||[]).filter(e=>{
+      const d = parseIdDate(e.tgl);
+      if(!d) return false;
+      return d>=fromDate && d<=toDate;
+    })
+  ,[cfLog,fromDate,toDate]);
+  const manualMasuk  = manualEntries.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const manualKeluar = manualEntries.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+
+  const totalMasuk  = kasirOmset + bankMasuk + manualMasuk;
+  const totalKeluar = bankKeluar + manualKeluar;
+  const totalBersih = totalMasuk - totalKeluar;
+
+  const KATEGORI_OPTIONS = ["Operasional","Belanja Stok","Gaji","Sewa","Listrik/Air","Lain-lain"];
+
+  const handleSubmit = async () => {
+    if(!formNama.trim()||!formNominal||+formNominal<=0) return notify&&notify("Lengkapi nama & nominal dulu","error");
+    setSaving(true);
+    const tglObj = new Date(formTgl+"T00:00:00");
+    try{
+      await onAddEntry({
+        id: uid(),
+        tgl: tglObj.toLocaleDateString("id-ID"),
+        jenis: formJenis,
+        kat: formKategori,
+        nama: formNama.trim(),
+        nominal: +formNominal,
+      });
+      notify&&notify("Pengeluaran/pemasukan dicatat ✓","ok");
+      setFormNama(""); setFormNominal(""); setShowForm(false);
+    }catch(e){ notify&&notify("Gagal simpan","error"); }
+    setSaving(false);
+  };
+
+  const inpS = {width:"100%",padding:"8px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"};
+  const lblS = {fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4};
+
+  return (
+    <div style={{fontFamily:"'Nunito',sans-serif"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:14}}>
+        <span style={{fontSize:13,color:"#555",fontWeight:700}}>📅 {label}</span>
+        <div style={{display:"flex",gap:6}}>
+          {[["hari_ini","Hari Ini"],["kemarin","Kemarin"],["custom","Custom"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setDateMode(k)}
+              style={{padding:"6px 12px",borderRadius:9,border:`2px solid ${dateMode===k?"#0d9488":"#e0f5f1"}`,background:dateMode===k?"#0d9488":"#fff",color:dateMode===k?"#fff":"#0d9488",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {dateMode==="custom"&&(
+        <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:140}}>
+            <label style={lblS}>Dari</label>
+            <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} style={{...inpS,marginBottom:0}}/>
+          </div>
+          <div style={{flex:1,minWidth:140}}>
+            <label style={lblS}>Sampai</label>
+            <input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} style={{...inpS,marginBottom:0}}/>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:18}}>
+        <div style={{background:"#e0faf5",borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:"#0a7a70",fontWeight:700}}>Total Masuk</div>
+          <div style={{fontSize:18,fontWeight:800,color:"#0a7a70"}}>{fmtRp(totalMasuk)}</div>
+        </div>
+        <div style={{background:"#fff0f0",borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:"#b91c1c",fontWeight:700}}>Total Keluar</div>
+          <div style={{fontSize:18,fontWeight:800,color:"#b91c1c"}}>{fmtRp(totalKeluar)}</div>
+        </div>
+        <div style={{background:"#f8fffe",border:"2px solid #e0f5f1",borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:"#555",fontWeight:700}}>Selisih Bersih</div>
+          <div style={{fontSize:18,fontWeight:800,color:"#1a2e2a"}}>{fmtRp(totalBersih)}</div>
+        </div>
+      </div>
+
+      <div style={{fontSize:12,fontWeight:800,color:"#555",marginBottom:8}}>RINCIAN SUMBER</div>
+
+      <div style={{border:"2px solid #e0f5f1",borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:13}}>🛒 Penjualan Kasir</div>
+          <div style={{fontSize:11,color:"#888"}}>{kasirTx.length} transaksi · profit {fmtRp(kasirProfit)}</div>
+        </div>
+        <div style={{fontWeight:800,color:"#0a7a70"}}>+{fmtRp(kasirOmset)}</div>
+      </div>
+
+      <div style={{border:"2px solid #e0f5f1",borderRadius:10,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:13}}>🏦 Bank {loadingBank&&<span style={{fontSize:10,color:"#aaa",fontWeight:600}}>(memuat...)</span>}</div>
+          <div style={{fontSize:11,color:"#888"}}>{bankTrx.length} transaksi · masuk {fmtRp(bankMasuk)} · keluar {fmtRp(bankKeluar)} · fee {fmtRp(bankFee)}</div>
+        </div>
+        <div style={{fontWeight:800,color:bankNet>=0?"#0a7a70":"#b91c1c"}}>{bankNet>=0?"+":""}{fmtRp(bankNet)}</div>
+      </div>
+
+      <div style={{border:"2px solid #e0f5f1",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:13}}>📝 Pengeluaran/Pemasukan Manual (Admin)</div>
+          <button onClick={()=>setShowForm(v=>!v)} style={{fontSize:11,padding:"5px 10px",borderRadius:8,border:"2px solid #0d9488",background:showForm?"#0d9488":"#fff",color:showForm?"#fff":"#0d9488",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            {showForm?"Tutup":"+ Tambah"}
+          </button>
+        </div>
+
+        {showForm&&(
+          <div style={{background:"#f8fffe",borderRadius:9,padding:12,marginBottom:10}}>
+            <label style={lblS}>Nama / Keterangan</label>
+            <input value={formNama} onChange={e=>setFormNama(e.target.value)} placeholder="Contoh: Beli galon + snack karyawan" style={inpS}/>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              {[["keluar","Pengeluaran"],["masuk","Pemasukan"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setFormJenis(k)}
+                  style={{flex:1,padding:9,borderRadius:9,border:`2px solid ${formJenis===k?(k==="keluar"?"#e74c3c":"#0d9488"):"#e0f5f1"}`,background:formJenis===k?(k==="keluar"?"#fff0f0":"#e0faf5"):"#fff",color:formJenis===k?(k==="keluar"?"#e74c3c":"#0d9488"):"#aaa",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <label style={lblS}>Kategori</label>
+            <select value={formKategori} onChange={e=>setFormKategori(e.target.value)} style={inpS}>
+              {KATEGORI_OPTIONS.map(k=><option key={k} value={k}>{k}</option>)}
+            </select>
+            <label style={lblS}>Nominal</label>
+            <input type="number" value={formNominal} onChange={e=>setFormNominal(e.target.value)} placeholder="0" style={inpS}/>
+            <label style={lblS}>Tanggal</label>
+            <input type="date" value={formTgl} onChange={e=>setFormTgl(e.target.value)} style={{...inpS,marginBottom:12}}/>
+            <button onClick={handleSubmit} disabled={saving}
+              style={{width:"100%",padding:11,borderRadius:9,border:"none",background:saving?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:saving?"not-allowed":"pointer",fontFamily:"inherit"}}>
+              {saving?"⏳ Menyimpan...":"💾 Simpan"}
+            </button>
+          </div>
+        )}
+
+        {manualEntries.length===0?(
+          <div style={{textAlign:"center",color:"#ccc",fontSize:12,padding:10}}>Belum ada catatan manual untuk rentang ini</div>
+        ):manualEntries.map(e=>(
+          <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"6px 0",borderTop:"1px dashed #e0f5f1"}}>
+            <div>
+              <span style={{color:"#555"}}>{e.nama}</span>
+              <span style={{color:"#bbb",marginLeft:6}}>· {e.kat}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontWeight:700,color:e.jenis==="keluar"?"#b91c1c":"#0a7a70"}}>{e.jenis==="keluar"?"-":"+"}{fmtRp(e.nominal)}</span>
+              <button onClick={()=>onDeleteEntry(e.id)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:"#e0faf5",borderRadius:10,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontWeight:800,fontSize:13,color:"#0a7a70"}}>Total kas bersih {dateMode==="hari_ini"?"hari ini":dateMode==="kemarin"?"kemarin":"rentang ini"}</span>
+        <span style={{fontWeight:900,fontSize:16,color:"#0a7a70"}}>{fmtRp(totalBersih)}</span>
       </div>
     </div>
   );
