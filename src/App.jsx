@@ -1,6 +1,6 @@
 // Ammar Cell App -- build 20260710-0900
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbAktifProduk, supabase } from "./supabase.js";
+import { db, dbSaldo, dbSaldoBank, dbShift, dbBank, dbProductOrder, dbStokOrder, dbCashflow, dbPenyesuaian, dbAktifProduk, supabase } from "./supabase.js";
 
 // ==============================================================================
 // CONSTANTS
@@ -10170,6 +10170,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
 
   useEffect(()=>{
     loadCfEntries();
+    loadPenyesuaian();
     const ch = supabase.channel("cashflow-rt-v2")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"cashflow_entries"},(p)=>{
         const r=p.new; if(!r) return;
@@ -10238,6 +10239,23 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
 
   const cfRefresh = () => loadCfEntries();
 
+  // -- Jurnal Penyesuaian (akhir periode) --------------------------------------
+  const [cfPenyesuaian, setCfPenyesuaian] = useState([]);
+  const loadPenyesuaian = () => {
+    dbPenyesuaian.getEntries().then(entries=>{ if(Array.isArray(entries)) setCfPenyesuaian(entries); })
+      .catch(err=>console.warn('penyesuaian load error:',err));
+  };
+  const cfAddPenyesuaian = async (entry) => {
+    const withId = {...entry, id: entry.id||uid()};
+    setCfPenyesuaian(prev=>[withId,...prev]);
+    try { await dbPenyesuaian.addEntry(withId); }
+    catch(err){ setCfPenyesuaian(prev=>prev.filter(x=>x.id!==withId.id)); notify&&notify("Gagal simpan penyesuaian","error"); }
+  };
+  const cfDeletePenyesuaian = async (id) => {
+    setCfPenyesuaian(prev=>prev.filter(x=>x.id!==id));
+    try { await dbPenyesuaian.deleteEntry(id); } catch(err){ console.warn("deletePenyesuaian:",err); }
+  };
+
   const outletNames     = (outlets||[]).map(o=>o.nama);
   const sistemMasukHari = 0;
   const cfMasuk  = cfLog.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
@@ -10248,12 +10266,14 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
   const handleCfTab = (k) => {
     setCfTab(k);
     if(["jurnal","besar","lapkeu","analisis"].includes(k)) loadCfEntries();
+    if(k==="neraca_saldo"){ loadCfEntries(); loadPenyesuaian(); }
   };
 
   const cfTabs=[
     {k:"kalkulator",l:"🔍 Identifikasi Transaksi", badge:null},
     {k:"jurnal",    l:"📋 Jurnal",        badge:"CSV"},
     {k:"besar",     l:"📚 Buku Besar",    badge:"CSV"},
+    {k:"neraca_saldo",l:"⚖️ Neraca Saldo", badge:null},
     {k:"lapkeu",    l:"📊 Lap. Keuangan", badge:"LR+AK+Neraca"},
     {k:"analisis",  l:"🎯 Analisis",      badge:"CSV+PDF"},
   ];
@@ -10264,6 +10284,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
       {k:"kalkulator", l:"Identifikasi", icon:"🔍"},
       {k:"jurnal",     l:"Jurnal",     icon:"📋"},
       {k:"besar",      l:"Buku Besar", icon:"📚"},
+      {k:"neraca_saldo",l:"Neraca Saldo", icon:"⚖️"},
       {k:"lapkeu",     l:"Lap. Keu",   icon:"📊"},
       {k:"analisis",   l:"Analisis",   icon:"🎯"},
     ];
@@ -10296,6 +10317,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
           {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} onEditEntry={cfEditEntry} notify={notify}/>}
           {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
           {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
+          {cfTab==="neraca_saldo" && <CfTabNeracaSaldo log={cfLog} penyesuaian={cfPenyesuaian} onAddPenyesuaian={cfAddPenyesuaian} onDeletePenyesuaian={cfDeletePenyesuaian}/>}
           {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
           {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
         </div>
@@ -10352,6 +10374,7 @@ function CashflowPage({ transactions, outlets, onBack, notify, initialTab="kalku
         {cfTab==="kalkulator" && <CfTabIdentifikasi transactions={transactions} outlets={outlets} cfLog={cfLog} onAddEntry={cfAddEntries} onDeleteEntry={cfDeleteEntry} onEditEntry={cfEditEntry} notify={notify}/>}
         {cfTab==="jurnal"     && <CfTabJurnal     log={cfLog} setLog={cfAddEntries} onDelete={cfDeleteEntry} onEdit={cfEditEntry} onResetAll={cfResetAll} onRefresh={cfRefresh}/>}
         {cfTab==="besar"      && <CfTabBukuBesar  log={cfLog}/>}
+          {cfTab==="neraca_saldo" && <CfTabNeracaSaldo log={cfLog} penyesuaian={cfPenyesuaian} onAddPenyesuaian={cfAddPenyesuaian} onDeletePenyesuaian={cfDeletePenyesuaian}/>}
         {cfTab==="lapkeu"     && <CfTabLapKeu     log={cfLog}/>}
         {cfTab==="analisis"   && <CfTabAnalisis   log={cfLog}/>}
       </div>
@@ -11374,6 +11397,210 @@ function CfTabBukuBesar({log}) {
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ========================================================
+// NERACA SALDO -- (Neraca Saldo, Jurnal Penyesuaian, Neraca Saldo Disesuaikan)
+// ========================================================
+// Daftar akun standar yang cuma muncul lewat penyesuaian (tidak ada di
+// Buku Besar transaksi biasa), beserta saldo normalnya.
+const AKUN_PENYESUAIAN_STANDAR = {
+  "Kas": "debit",
+  "Piutang": "debit",
+  "Beban Dibayar Dimuka": "debit",
+  "Beban Penyusutan": "debit",
+  "Akumulasi Penyusutan": "kredit",
+  "Utang Akrual (Beban Masih Harus Dibayar)": "kredit",
+  "Pendapatan Diterima Dimuka": "kredit",
+};
+const AKUN_PENYESUAIAN_OPTIONS = Object.keys(AKUN_PENYESUAIAN_STANDAR);
+
+function CfTabNeracaSaldo({log, penyesuaian, onAddPenyesuaian, onDeletePenyesuaian}) {
+  const [sub,setSub]=useState("saldo"); // saldo | penyesuaian | saldo_disesuaikan
+  const [showForm,setShowForm]=useState(false);
+  const [fTgl,setFTgl]=useState(()=>new Date().toISOString().slice(0,10));
+  const [fKet,setFKet]=useState("");
+  const [fDebit,setFDebit]=useState(AKUN_PENYESUAIAN_OPTIONS[3]);
+  const [fKredit,setFKredit]=useState(AKUN_PENYESUAIAN_OPTIONS[4]);
+  const [fNominal,setFNominal]=useState("");
+  const [saving,setSaving]=useState(false);
+
+  // -- Bangun saldo per akun dari Buku Besar (sama logic dengan CfTabBukuBesar) --
+  const akunMap={};
+  log.forEach(e=>{
+    let k=e.kat||"lainnya";
+    if(k==="lainnya") k = e.jenis==="masuk" ? "lainnya_masuk" : "lainnya_keluar";
+    if(!akunMap[k]) akunMap[k]={key:k,debit:0,kredit:0};
+    if(e.jenis==="masuk") akunMap[k].kredit+=e.nominal; else akunMap[k].debit+=e.nominal;
+  });
+  const getInfo=(key)=>{
+    if(key==="lainnya_masuk")  return {l:"Pendapatan Lain-lain", tipe:AKUN_TIPE.pendapatan};
+    if(key==="lainnya_keluar") return {l:"Beban Lain-lain",      tipe:AKUN_TIPE.operasional};
+    return {l:(CF_KAT[key]?.l||key), tipe:AKUN_TIPE[key]||AKUN_TIPE.operasional};
+  };
+  // "Kas" dihitung sebagai selisih semua transaksi (Debit Kas dari masuk, Kredit Kas dari keluar)
+  const kasDebit = log.filter(e=>e.jenis==="masuk").reduce((s,e)=>s+e.nominal,0);
+  const kasKredit = log.filter(e=>e.jenis==="keluar").reduce((s,e)=>s+e.nominal,0);
+
+  // Neraca Saldo dasar: {label: {debit,kredit,normal}}
+  const neracaDasar = { "Kas": {debit:kasDebit, kredit:kasKredit, normal:"debit"} };
+  Object.values(akunMap).forEach(a=>{
+    const info=getInfo(a.key);
+    neracaDasar[info.l] = { debit:a.debit, kredit:a.kredit, normal:info.tipe.normal||"debit" };
+  });
+
+  const buildRows = (map) => Object.entries(map).map(([label,d])=>{
+    const saldo = d.normal==="kredit" ? d.kredit-d.debit : d.debit-d.kredit;
+    return { label, debit: d.normal==="debit"?Math.max(saldo,0):0, kredit: d.normal==="kredit"?Math.max(saldo,0):0, saldo };
+  }).filter(r=>r.debit!==0||r.kredit!==0);
+
+  const rowsDasar = buildRows(neracaDasar);
+  const totDasarD = rowsDasar.reduce((s,r)=>s+r.debit,0);
+  const totDasarK = rowsDasar.reduce((s,r)=>s+r.kredit,0);
+
+  // -- Neraca Saldo Setelah Penyesuaian: gabung dasar + entri penyesuaian ------
+  const neracaSetelah = JSON.parse(JSON.stringify(neracaDasar));
+  penyesuaian.forEach(p=>{
+    const normD = AKUN_PENYESUAIAN_STANDAR[p.akunDebit] || neracaDasar[p.akunDebit]?.normal || "debit";
+    const normK = AKUN_PENYESUAIAN_STANDAR[p.akunKredit] || neracaDasar[p.akunKredit]?.normal || "kredit";
+    if(!neracaSetelah[p.akunDebit]) neracaSetelah[p.akunDebit] = {debit:0,kredit:0,normal:normD};
+    if(!neracaSetelah[p.akunKredit]) neracaSetelah[p.akunKredit] = {debit:0,kredit:0,normal:normK};
+    neracaSetelah[p.akunDebit].debit += p.nominal;
+    neracaSetelah[p.akunKredit].kredit += p.nominal;
+  });
+  const rowsSetelah = buildRows(neracaSetelah);
+  const totSetelahD = rowsSetelah.reduce((s,r)=>s+r.debit,0);
+  const totSetelahK = rowsSetelah.reduce((s,r)=>s+r.kredit,0);
+
+  const submitPenyesuaian = async () => {
+    if(!fKet.trim()||!fNominal||+fNominal<=0||fDebit===fKredit) return;
+    setSaving(true);
+    await onAddPenyesuaian({
+      tgl: new Date(fTgl+"T00:00:00").toLocaleDateString("id-ID"),
+      keterangan: fKet.trim(), akunDebit: fDebit, akunKredit: fKredit, nominal: +fNominal,
+    });
+    setFKet(""); setFNominal(""); setShowForm(false);
+    setSaving(false);
+  };
+
+  const inpS={width:"100%",padding:"8px 11px",borderRadius:9,border:"2px solid #b2ede6",fontSize:13,outline:"none",fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"};
+  const lblS={fontSize:11,fontWeight:700,color:"#555",display:"block",marginBottom:4};
+
+  const TableNeraca = ({rows,totD,totK,title,subtitle}) => (
+    <div style={{background:"#fff",border:"1px solid #e0f5f1",borderRadius:12,padding:16}}>
+      <div style={{fontWeight:800,fontSize:13,color:"#0a7a70",marginBottom:2}}>{title}</div>
+      <div style={{fontSize:10,color:"#aaa",marginBottom:10}}>{subtitle}</div>
+      <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}>
+        <thead><tr style={{borderBottom:"2px solid #e0f5f1"}}>
+          <th style={{padding:"5px 0",textAlign:"left",fontWeight:700,color:"#555"}}>Akun</th>
+          <th style={{padding:"5px 0",textAlign:"right",fontWeight:700,color:"#555"}}>Debit</th>
+          <th style={{padding:"5px 0",textAlign:"right",fontWeight:700,color:"#555"}}>Kredit</th>
+        </tr></thead>
+        <tbody>
+          {rows.length===0?(
+            <tr><td colSpan={3} style={{textAlign:"center",color:"#ccc",padding:16}}>Belum ada data</td></tr>
+          ):rows.map(r=>(
+            <tr key={r.label} style={{borderTop:"1px dashed #e0f5f1"}}>
+              <td style={{padding:"6px 0"}}>{r.label}</td>
+              <td style={{padding:"6px 0",textAlign:"right",fontWeight:700,color:"#0a7a70"}}>{r.debit>0?fmtRp(r.debit):"—"}</td>
+              <td style={{padding:"6px 0",textAlign:"right",fontWeight:700,color:"#b91c1c"}}>{r.kredit>0?fmtRp(r.kredit):"—"}</td>
+            </tr>
+          ))}
+          {rows.length>0&&(
+            <tr style={{borderTop:"2px solid #e0f5f1"}}>
+              <td style={{padding:"7px 0",fontWeight:800}}>TOTAL</td>
+              <td style={{padding:"7px 0",textAlign:"right",fontWeight:900,color:"#0a7a70"}}>{fmtRp(totD)}</td>
+              <td style={{padding:"7px 0",textAlign:"right",fontWeight:900,color:"#b91c1c"}}>{fmtRp(totK)}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {rows.length>0&&(
+        <div style={{textAlign:"center",marginTop:8,fontSize:11,fontWeight:700,color:Math.abs(totD-totK)<1?"#16a34a":"#d97706"}}>
+          {Math.abs(totD-totK)<1?"✓ Seimbang":"⚠ Selisih "+fmtRp(Math.abs(totD-totK))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {[["saldo","⚖️ Neraca Saldo"],["penyesuaian","📐 Jurnal Penyesuaian"],["saldo_disesuaikan","✅ Neraca Saldo Disesuaikan"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setSub(k)}
+            style={{padding:"7px 14px",borderRadius:9,border:`2px solid ${sub===k?"#0d9488":"#e0f5f1"}`,background:sub===k?"#0d9488":"#fff",color:sub===k?"#fff":"#0d9488",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {sub==="saldo"&&(
+        <TableNeraca rows={rowsDasar} totD={totDasarD} totK={totDasarK}
+          title="⚖️ Neraca Saldo" subtitle="Diambil otomatis dari saldo akhir tiap akun di Buku Besar"/>
+      )}
+
+      {sub==="penyesuaian"&&(
+        <div style={{background:"#fff",border:"1px solid #e0f5f1",borderRadius:12,padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#0a7a70"}}>📐 Jurnal Penyesuaian</div>
+            <button onClick={()=>setShowForm(v=>!v)} style={{fontSize:11,padding:"5px 10px",borderRadius:8,border:"2px solid #0d9488",background:showForm?"#0d9488":"#fff",color:showForm?"#fff":"#0d9488",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {showForm?"Tutup":"+ Tambah Penyesuaian"}
+            </button>
+          </div>
+          <div style={{fontSize:10,color:"#aaa",marginBottom:10}}>Diisi manual kalau ada -- sistem tidak bisa menebak otomatis</div>
+
+          {showForm&&(
+            <div style={{background:"#f8fffe",borderRadius:9,padding:12,marginBottom:12}}>
+              <label style={lblS}>Keterangan</label>
+              <input value={fKet} onChange={e=>setFKet(e.target.value)} placeholder="Contoh: Penyusutan peralatan bulan Agustus" style={inpS}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div>
+                  <label style={lblS}>Akun Debit (Dr)</label>
+                  <select value={fDebit} onChange={e=>setFDebit(e.target.value)} style={inpS}>
+                    {AKUN_PENYESUAIAN_OPTIONS.map(a=><option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lblS}>Akun Kredit (Cr)</label>
+                  <select value={fKredit} onChange={e=>setFKredit(e.target.value)} style={inpS}>
+                    {AKUN_PENYESUAIAN_OPTIONS.map(a=><option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+              <label style={lblS}>Nominal</label>
+              <input type="number" value={fNominal} onChange={e=>setFNominal(e.target.value)} placeholder="0" style={inpS}/>
+              <label style={lblS}>Tanggal</label>
+              <input type="date" value={fTgl} onChange={e=>setFTgl(e.target.value)} style={{...inpS,marginBottom:12}}/>
+              <button onClick={submitPenyesuaian} disabled={saving}
+                style={{width:"100%",padding:11,borderRadius:9,border:"none",background:saving?"#ccc":"linear-gradient(135deg,#0d9488,#14b8a6)",color:"#fff",fontWeight:800,fontSize:13,cursor:saving?"not-allowed":"pointer",fontFamily:"inherit"}}>
+                {saving?"⏳ Menyimpan...":"💾 Simpan Penyesuaian"}
+              </button>
+            </div>
+          )}
+
+          {penyesuaian.length===0?(
+            <div style={{border:"1px dashed #e0f5f1",borderRadius:9,padding:20,textAlign:"center",color:"#ccc",fontSize:12}}>Belum ada penyesuaian dicatat</div>
+          ):penyesuaian.map(p=>(
+            <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"8px 0",borderTop:"1px dashed #e0f5f1"}}>
+              <div>
+                <div style={{fontWeight:700}}>{p.keterangan}</div>
+                <div style={{fontSize:10,color:"#aaa"}}>{p.tgl} · Dr {p.akunDebit} · Cr {p.akunKredit}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontWeight:700,color:"#0a7a70"}}>{fmtRp(p.nominal)}</span>
+                <button onClick={()=>onDeletePenyesuaian(p.id)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sub==="saldo_disesuaikan"&&(
+        <TableNeraca rows={rowsSetelah} totD={totSetelahD} totK={totSetelahK}
+          title="✅ Neraca Saldo Setelah Penyesuaian" subtitle="Neraca Saldo dasar + semua Jurnal Penyesuaian (otomatis gabung)"/>
+      )}
     </div>
   );
 }
@@ -16874,24 +17101,33 @@ export default function App() {
         if(!KATS.includes(kat)) kat = 'lainnya';
         const modal = (item.modal||prod?.modal||0)*(item.qty||0);
         const bucket = byOutlet[outletNama][kat];
-        if(!bucket.produkMap[item.name]) bucket.produkMap[item.name]={qty:0,modal:0};
+        if(!bucket.produkMap[item.name]) bucket.produkMap[item.name]={qty:0,modal:0,id:item.id};
         bucket.produkMap[item.name].qty += item.qty||0;
         bucket.produkMap[item.name].modal += modal;
         bucket.total += modal;
         grandTotal += modal;
       });
     });
-    // Ubah produkMap jadi array terurut (modal terbesar dulu) buat drill-down
+    // Ubah produkMap jadi array, urutkan mengikuti urutan produk di halaman
+    // Stok (prodOrder) -- kalau produknya tidak ada di prodOrder (misal sudah
+    // dihapus), taruh di akhir urutan berdasarkan modal terbesar.
     Object.values(byOutlet).forEach(katData=>{
       KATS.forEach(k=>{
         katData[k].produk = Object.entries(katData[k].produkMap)
           .map(([name,d])=>({name,...d}))
-          .sort((a,b)=>b.modal-a.modal);
+          .sort((a,b)=>{
+            const ia = prodOrder ? prodOrder.indexOf(String(a.id)) : -1;
+            const ib = prodOrder ? prodOrder.indexOf(String(b.id)) : -1;
+            if(ia===-1&&ib===-1) return b.modal-a.modal;
+            if(ia===-1) return 1;
+            if(ib===-1) return -1;
+            return ia-ib;
+          });
         delete katData[k].produkMap;
       });
     });
     return { byOutlet, grandTotal, KATS, tanggal: preOrderRecapDate };
-  },[transactions,products,outlets,preOrderRecapDate]);
+  },[transactions,products,outlets,preOrderRecapDate,prodOrder]);
 
   const isAdmin   = user?.role==="admin";
   const isMonitor = user?.role==="monitor";
